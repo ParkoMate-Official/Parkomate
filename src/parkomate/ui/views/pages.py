@@ -1,41 +1,42 @@
-"""Login, starting, session-end and fatal-error pages."""
+"""Login, starting, session summary and fatal-error (settings problem) pages."""
 
 from __future__ import annotations
 
-from PySide6.QtCore import Qt
-from PySide6.QtGui import QKeySequence, QShortcut
-from PySide6.QtWidgets import (
-    QFrame,
-    QGridLayout,
-    QHBoxLayout,
-    QLabel,
-    QLineEdit,
-    QVBoxLayout,
-    QWidget,
-)
+from pathlib import Path
+
+from PySide6.QtCore import Qt, QUrl
+from PySide6.QtGui import QDesktopServices, QGuiApplication, QKeySequence, QShortcut
+from PySide6.QtWidgets import QGridLayout, QHBoxLayout, QSizePolicy, QVBoxLayout, QWidget
 
 from parkomate import __version__
 from parkomate.core.enums import PRODUCTION_STAGES
 from parkomate.core.errors import ErrorCode, ParkomateError, SettingsError
-from parkomate.i18n import t
-from parkomate.ui.components.icons import Icon
-from parkomate.ui.components.widgets import (
-    BigButton,
-    LanguageSwitch,
-    StatusPill,
-    TrLabel,
-    card,
-)
+from parkomate.i18n import t, translator
+from parkomate.ui.components.base import Divider
+from parkomate.ui.components.buttons import AppButton
+from parkomate.ui.components.cards import Banner, Card, IconBadge, KpiTile
+from parkomate.ui.components.data import StackedBar
+from parkomate.ui.components.inputs import FormField, PasswordField, TextField
+from parkomate.ui.components.layout import ScrollArea
+from parkomate.ui.components.progress import Spinner
+from parkomate.ui.components.segmented import LanguageSwitch
+from parkomate.ui.components.shellparts import ProductMark, SimulationBand
+from parkomate.ui.components.text import SelectableText, Text, TrText
 from parkomate.ui.qt_i18n import error_cause, error_steps, error_title, language_notifier
-from parkomate.ui.theme.legacy import font
-from parkomate.ui.theme.legacy import COLORS, SIZES
+from parkomate.ui.theme.tokens import COLORS, SIZES, SPACE
 from parkomate.ui.viewmodels.station import LoginPhase, SendState, StationController
+
+CENTER = Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignVCenter
+LOGIN_WIDTH = SIZES.drawer + SIZES.ring // 2  # the login card is always this wide
+SUMMARY_WIDTH = SIZES.content_max * 2 // 3
 
 
 def _centered(widget: QWidget, width: int) -> QWidget:
-    page = QWidget()
-    page.setObjectName("Page")
-    outer = QVBoxLayout(page)
+    """``widget`` centred on a page; scrolls instead of overlapping on small screens."""
+    scroll = ScrollArea()
+    outer = scroll.layout_
+    margin = SIZES.page_margin
+    outer.setContentsMargins(margin, margin, margin, margin)
     outer.addStretch(1)
     row = QHBoxLayout()
     row.addStretch(1)
@@ -44,44 +45,12 @@ def _centered(widget: QWidget, width: int) -> QWidget:
     row.addStretch(1)
     outer.addLayout(row)
     outer.addStretch(1)
-    return page
+    return scroll
 
 
-class MessageBox(QFrame):
-    """Inline error/info box: title + cause + steps."""
-
-    def __init__(self, status: str = "fail") -> None:
-        super().__init__()
-        self.setProperty("tone", status)
-        layout = QHBoxLayout(self)
-        layout.setContentsMargins(SIZES.space_m, SIZES.space_m, SIZES.space_m, SIZES.space_m)
-        self.icon = Icon("warn", 36, COLORS.fail_fg if status == "fail" else COLORS.info_fg)
-        layout.addWidget(self.icon, 0, Qt.AlignmentFlag.AlignTop)
-        text = QVBoxLayout()
-        self.title = QLabel()
-        self.title.setFont(font(SIZES.font_h2, bold=True))
-        self.title.setWordWrap(True)
-        self.body = QLabel()
-        self.body.setWordWrap(True)
-        text.addWidget(self.title)
-        text.addWidget(self.body)
-        layout.addLayout(text, 1)
-        self.setVisible(False)
-
-    def show_error(self, error: ParkomateError) -> None:
-        self.title.setText(error_title(error))
-        steps = error_steps(error)
-        lines = [error_cause(error), *(f"{i}.  {s}" for i, s in enumerate(steps, start=1))]
-        self.body.setText("\n".join(lines))
-        self.setAccessibleName(f"{self.title.text()}. {self.body.text()}")
-        self.setVisible(True)
-
-    def show_text(self, title: str, body: str) -> None:
-        self.title.setText(title)
-        self.body.setText(body)
-        self.body.setVisible(bool(body))
-        self.setAccessibleName(f"{title}. {body}")
-        self.setVisible(True)
+def _show_error(banner: Banner, error: ParkomateError) -> None:
+    banner.set_texts(error_title(error), error_cause(error), error_steps(error))
+    banner.setVisible(True)
 
 
 class StartingView(QWidget):
@@ -90,12 +59,17 @@ class StartingView(QWidget):
         self.setObjectName("Page")
         layout = QVBoxLayout(self)
         layout.addStretch(1)
-        brand = TrLabel("app.brand", role="h1")
-        brand.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        text = TrLabel("starting.text", role="muted")
-        text.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        layout.addWidget(brand)
-        layout.addWidget(text)
+        layout.addWidget(ProductMark(SIZES.mark_large), 0, Qt.AlignmentFlag.AlignHCenter)
+        layout.addSpacing(SPACE.l)
+        layout.addWidget(TrText("app.brand", "headline", align=CENTER))
+        layout.addSpacing(SPACE.s)
+        row = QHBoxLayout()
+        row.setSpacing(SPACE.s)
+        row.addStretch(1)
+        row.addWidget(Spinner())
+        row.addWidget(TrText("starting.text", "body_lg", "secondary"))
+        row.addStretch(1)
+        layout.addLayout(row)
         layout.addStretch(1)
 
 
@@ -104,82 +78,78 @@ class LoginView(QWidget):
         super().__init__()
         self.c = controller
         self.setObjectName("Page")
-        panel, layout = card()
-        header = QHBoxLayout()
-        brand = TrLabel("app.brand")
-        brand.setFont(font(SIZES.font_h1 + 4, bold=True))
-        brand.setWordWrap(False)
-        header.addWidget(brand, 1)
+        panel = Card()
+        pad = SPACE.xxl  # 32 px inside the login card (N1)
+        panel.layout_.setContentsMargins(pad, pad, pad, pad)
+        layout = panel.body
+        layout.setSpacing(SPACE.l)
+        header = QVBoxLayout()
+        header.setSpacing(SPACE.s)
+        header.addWidget(ProductMark(SIZES.mark_large), 0, Qt.AlignmentFlag.AlignHCenter)
+        header.addWidget(TrText("app.brand", "headline", align=CENTER))
+        self.station = Text("", "body", "secondary", align=CENTER)
+        header.addWidget(self.station)
+        layout.addLayout(header)
+        # the language switch sits in the top-right corner of the page
         self.language = LanguageSwitch()
         self.language.language_selected.connect(controller.set_language)
-        header.addWidget(self.language)
-        layout.addLayout(header)
-        self.station = QLabel()
-        self.station.setProperty("role", "muted")
-        layout.addWidget(self.station)
-        self.notice = MessageBox("info")
+        self.notice = Banner("warning")
+        self.notice.setVisible(False)
         layout.addWidget(self.notice)
 
         self.form = QWidget()
         form = QVBoxLayout(self.form)
         form.setContentsMargins(0, 0, 0, 0)
-        form.setSpacing(SIZES.space_s)
-        form.addWidget(TrLabel("login.operator_id", role="h2"))
-        self.code = QLineEdit()
+        form.setSpacing(SPACE.l)
+        self.code = TextField("login.operator_id_hint", max_width=None)
         self.code.setMaxLength(32)
         self.code.returnPressed.connect(self._submit)
-        form.addWidget(self.code)
-        form.addWidget(TrLabel("login.password", role="h2"))
-        password_row = QHBoxLayout()
-        self.password = QLineEdit()
-        self.password.setEchoMode(QLineEdit.EchoMode.Password)
+        form.addWidget(FormField("login.operator_id", self.code))
+        self.password = PasswordField("login.password_hint")
+        self.password.setMaximumWidth(LOGIN_WIDTH)
         self.password.returnPressed.connect(self._submit)
-        password_row.addWidget(self.password, 1)
-        self.show_password = BigButton("action.show_password")
-        self.show_password.setCheckable(True)
-        self.show_password.toggled.connect(self._toggle_password)
-        password_row.addWidget(self.show_password)
-        form.addLayout(password_row)
-        self.error = MessageBox("fail")
+        self.show_password = self.password.eye  # the eye is inside the field (N1)
+        form.addWidget(FormField("login.password", self.password))
+        self.error = Banner("error")
+        self.error.setVisible(False)
         form.addWidget(self.error)
-        self.login_button = BigButton("action.login", variant="primary", hint_key="key.enter")
+        self.login_button = AppButton("action.login", variant="filled", hint_key="key.enter")
+        self.login_button.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         self.login_button.clicked.connect(self._submit)
         form.addWidget(self.login_button)
         layout.addWidget(self.form)
 
-        self.ambient = QFrame()
-        self.ambient.setProperty("tone", "info")
-        ambient_layout = QHBoxLayout(self.ambient)
-        ambient_layout.setContentsMargins(
-            SIZES.space_l, SIZES.space_l, SIZES.space_l, SIZES.space_l
-        )
-        ambient_layout.addWidget(Icon("thermo", 48, COLORS.info_fg))
-        self.ambient_text = QLabel()
-        self.ambient_text.setFont(font(SIZES.font_h1, bold=True))
-        self.ambient_text.setWordWrap(True)
-        ambient_layout.addWidget(self.ambient_text, 1)
+        self.ambient = QWidget()
+        ambient = QVBoxLayout(self.ambient)
+        ambient.setContentsMargins(0, SPACE.l, 0, SPACE.l)
+        ambient.setSpacing(SPACE.m)
+        self.ambient_badge = IconBadge("device_thermostat", "info")
+        ambient.addWidget(self.ambient_badge, 0, Qt.AlignmentFlag.AlignHCenter)
+        self.ambient_text = Text("", "title", align=CENTER, wrap=True)
+        ambient.addWidget(self.ambient_text)
         layout.addWidget(self.ambient)
 
-        self.footer = QLabel()
-        self.footer.setProperty("role", "small")
+        layout.addWidget(Divider())
+        self.footer = Text("", "caption", "tertiary", align=CENTER)
         layout.addWidget(self.footer)
 
         QWidget.setTabOrder(self.code, self.password)
         QWidget.setTabOrder(self.password, self.show_password)
         QWidget.setTabOrder(self.show_password, self.login_button)
-        page = _centered(panel, 640)
         outer = QVBoxLayout(self)
         outer.setContentsMargins(0, 0, 0, 0)
-        outer.addWidget(page)
+        outer.setSpacing(0)
+        self.band = SimulationBand()
+        outer.addWidget(self.band)
+        corner = QHBoxLayout()
+        corner.setContentsMargins(SIZES.page_margin, SPACE.l, SIZES.page_margin, 0)
+        corner.addStretch(1)
+        corner.addWidget(self.language)
+        outer.addLayout(corner)
+        outer.addWidget(_centered(panel, LOGIN_WIDTH))
         controller.login_changed.connect(self.update_view)
         language_notifier().changed.connect(self.update_view)
         self.update_view()
-
-    def _toggle_password(self, shown: bool) -> None:
-        self.password.setEchoMode(
-            QLineEdit.EchoMode.Normal if shown else QLineEdit.EchoMode.Password
-        )
-        self.show_password.set_text_key("action.hide_password" if shown else "action.show_password")
 
     def _submit(self) -> None:
         if self.c.login_phase is LoginPhase.FORM:
@@ -192,22 +162,9 @@ class LoginView(QWidget):
         c = self.c
         self.language.sync(c.language())
         self.station.setText(t("login.station", station=c.settings.station.station_id))
-        self.code.setPlaceholderText(t("login.operator_id_hint"))
         self.code.setAccessibleName(t("login.operator_id"))
-        self.password.setPlaceholderText(t("login.password_hint"))
         self.password.setAccessibleName(t("login.password"))
-        startup = c.startup
-        if c.startup_error is not None:
-            self.notice.show_error(c.startup_error)
-        elif startup is not None and startup.recovery.abandoned_device_ids:
-            self.notice.show_text(
-                t("notice.abandoned_title"),
-                t("notice.abandoned_body", n=len(startup.recovery.abandoned_device_ids)),
-            )
-        elif startup is not None and startup.recovery.recovered:
-            self.notice.show_text(t("notice.recovered_title"), "")
-        else:
-            self.notice.setVisible(False)
+        self._render_notice()
         phase = c.login_phase
         in_form = phase in (LoginPhase.FORM, LoginPhase.CHECKING)
         self.form.setVisible(in_form)
@@ -216,80 +173,129 @@ class LoginView(QWidget):
         self.code.setEnabled(not checking)
         self.password.setEnabled(not checking)
         self.login_button.setEnabled(not checking)
+        self.login_button.set_loading(checking)
         self.login_button.set_text_key("login.checking" if checking else "action.login")
         error = c.login_error
         if error is None:
             self.error.setVisible(False)
         else:
-            self.error.show_error(error)
+            _show_error(self.error, error)
             if error.code is not ErrorCode.AUTH_LOCKED:
                 self.password.clear()
         if phase is LoginPhase.AMBIENT:
+            self.ambient_badge.set_icon("device_thermostat", "info")
             self.ambient_text.setText(t("login.measuring_ambient"))
         elif phase is LoginPhase.AMBIENT_DONE and c.ambient_c is not None:
+            self.ambient_badge.set_icon("check_circle", "success")
             self.ambient_text.setText(t("login.ambient_result", value=f"{c.ambient_c:.1f}"))
-        mock = ""
+        footer = t("app.version", version=__version__)
         if c.ctx.using_mocks:
-            mock = t("mock.badge", scenario=getattr(c.ctx.hardware, "scenario", ""))
-        self.footer.setText(f"{t('app.version', version=__version__)}   {mock}".strip())
+            scenario = str(getattr(c.ctx.hardware, "scenario", ""))
+            footer = f"{footer}  ·  {t('sim.chip')}  ·  {scenario}"
+        self.footer.setText(footer)
+        self.band.setVisible(c.ctx.using_mocks)
+
+    def _render_notice(self) -> None:
+        c = self.c
+        startup = c.startup
+        if c.startup_error is not None:
+            self.notice.set_tone("error")
+            _show_error(self.notice, c.startup_error)
+        elif startup is not None and startup.recovery.abandoned_device_ids:
+            self.notice.set_tone("warning")
+            self.notice.set_texts(
+                t("notice.abandoned_title"),
+                t("notice.abandoned_body", n=len(startup.recovery.abandoned_device_ids)),
+            )
+            self.notice.setVisible(True)
+        elif startup is not None and startup.recovery.recovered:
+            self.notice.set_tone("info")
+            self.notice.set_texts(t("notice.recovered_title"))
+            self.notice.setVisible(True)
+        else:
+            self.notice.setVisible(False)
 
 
 class SessionEndView(QWidget):
+    """Session summary dashboard (M1): KPI tiles, rejects by stage, uploads, report status."""
+
+    TILES = (
+        ("end.devices", "memory", COLORS.text_2),
+        ("end.complete", "task_alt", COLORS.success),
+        ("end.rejected", "block", COLORS.danger),
+        ("end.yield", "monitoring", COLORS.primary),
+    )
+    UPLOADS = ("end.uploads_ok", "end.uploads_fail", "end.failures_adjusted", "end.abandoned")
+
     def __init__(self, controller: StationController) -> None:
         super().__init__()
         self.c = controller
         self.setObjectName("Page")
-        panel, layout = card()
-        layout.addWidget(TrLabel("end.title", role="h1"))
-        self.subtitle = QLabel()
-        self.subtitle.setProperty("role", "muted")
+        panel = QWidget()
+        layout = QVBoxLayout(panel)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(SPACE.l)
+        layout.addWidget(TrText("end.title", "headline"))
+        self.subtitle = Text("", "body", "secondary")
         layout.addWidget(self.subtitle)
-        self.grid = QGridLayout()
-        self.grid.setHorizontalSpacing(SIZES.space_xl)
-        self.grid.setVerticalSpacing(SIZES.space_s)
-        layout.addLayout(self.grid)
-        self._values: dict[str, QLabel] = {}
-        rows = [
-            "end.devices",
-            "end.complete",
-            "end.rejected",
-            *[f"end.rejected_{stage.letter}" for stage in PRODUCTION_STAGES],
-            "end.abandoned",
-            "end.uploads_ok",
-            "end.uploads_fail",
-            "end.failures_adjusted",
-            "end.yield",
-        ]
-        for index, key in enumerate(rows):
-            column = (index // 6) * 2
-            label = QLabel()
-            label.setProperty("i18n_key", key)
-            value = QLabel("-")
-            value.setFont(font(SIZES.font_h2, bold=True))
-            self.grid.addWidget(label, index % 6, column)
-            self.grid.addWidget(value, index % 6, column + 1)
+        self._values: dict[str, Text] = {}
+        tiles = QHBoxLayout()
+        tiles.setSpacing(SPACE.l)
+        for key, icon, color in self.TILES:
+            tile = KpiTile(key, icon, color)
+            tiles.addWidget(tile, 1)
+            self._values[key] = tile.value
+        layout.addLayout(tiles)
+        details = QHBoxLayout()
+        details.setSpacing(SPACE.l)
+        rejects = Card("end.rejected_by_stage", compact=True)
+        self.rejects_bar = StackedBar()
+        rejects.body.addWidget(self.rejects_bar)
+        rejects.body.addStretch(1)
+        details.addWidget(rejects, 1)
+        uploads = Card("end.uploads_title", compact=True)
+        grid = QGridLayout()
+        grid.setHorizontalSpacing(SPACE.xl)
+        grid.setVerticalSpacing(SPACE.s)
+        right = Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
+        for row, key in enumerate(self.UPLOADS):
+            grid.addWidget(TrText(key, "body", "secondary"), row, 0)
+            value = Text("-", "body_lg_strong", align=right)
+            grid.addWidget(value, row, 1)
             self._values[key] = value
-            self._values[f"{key}__label"] = label
-        send_row = QHBoxLayout()
-        self.send_pill = StatusPill()
-        self.send_text = QLabel()
-        self.send_text.setWordWrap(True)
-        self.send_text.setFont(font(SIZES.font_h2))
-        send_row.addWidget(self.send_pill)
-        send_row.addWidget(self.send_text, 1)
-        layout.addLayout(send_row)
-        self.report_path = QLabel()
-        self.report_path.setProperty("role", "small")
-        self.report_path.setWordWrap(True)
-        self.report_path.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
-        layout.addWidget(self.report_path)
-        self.logout = BigButton("action.logout", variant="primary", hint_key="key.enter")
+        uploads.body.addLayout(grid)
+        details.addWidget(uploads, 1)
+        layout.addLayout(details)
+        self.send = Banner("info")
+        self.send_text = self.send.title
+        self.report_path = Text("", "mono_label", "secondary")
+        self.send.text_column.addWidget(self.report_path)
+        report_buttons = QHBoxLayout()
+        report_buttons.setSpacing(SPACE.s)
+        self.open_folder = AppButton(
+            "end.open_folder", variant="outlined", size="compact", icon="folder_open"
+        )
+        self.copy_path = AppButton(
+            "end.copy_path", variant="text", size="compact", icon="content_copy"
+        )
+        self.open_folder.clicked.connect(self._open_folder)
+        self.copy_path.clicked.connect(self._copy_path)
+        report_buttons.addWidget(self.open_folder)
+        report_buttons.addWidget(self.copy_path)
+        report_buttons.addStretch(1)
+        self.send.text_column.addLayout(report_buttons)
+        layout.addWidget(self.send)
+        footer = QHBoxLayout()
+        footer.addStretch(1)
+        self.logout = AppButton(
+            "action.logout", variant="filled", hint_key="key.enter", icon="logout"
+        )
         self.logout.clicked.connect(self._logout)
-        layout.addWidget(self.logout, 0, Qt.AlignmentFlag.AlignRight)
-        page = _centered(panel, 980)
+        footer.addWidget(self.logout)
+        layout.addLayout(footer)
         outer = QVBoxLayout(self)
         outer.setContentsMargins(0, 0, 0, 0)
-        outer.addWidget(page)
+        outer.addWidget(_centered(panel, SUMMARY_WIDTH))
         for qt_key in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
             shortcut = QShortcut(QKeySequence(qt_key), self)
             shortcut.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
@@ -302,16 +308,22 @@ class SessionEndView(QWidget):
         if self.logout.isEnabled():
             self.c.finish_logout()
 
+    def _paths(self) -> list[Path]:
+        result = self.c.logout_result
+        return [Path(p) for p in result.queued.report_paths] if result and result.queued else []
+
+    def _open_folder(self) -> None:
+        paths = self._paths()
+        if paths:
+            QDesktopServices.openUrl(QUrl.fromLocalFile(str(paths[0].parent)))
+
+    def _copy_path(self) -> None:
+        paths = self._paths()
+        if paths:
+            QGuiApplication.clipboard().setText("\n".join(str(p) for p in paths))
+            self.copy_path.set_text_key("end.copied")
+
     def update_view(self, *_args: object) -> None:
-        for key, label in self._values.items():
-            if key.endswith("__label"):
-                base = key.removesuffix("__label")
-                if base.startswith("end.rejected_"):
-                    letter = base[-1]
-                    stage = next(s for s in PRODUCTION_STAGES if s.letter == letter)
-                    label.setText(t("end.rejected_stage", letter=letter, stage=t(stage.label_key)))
-                else:
-                    label.setText(t(base))
         summary = self.c.summary
         if summary is not None:
             fpy = summary.first_pass_yield
@@ -327,10 +339,19 @@ class SessionEndView(QWidget):
                 if fpy is not None
                 else t("end.yield_none"),
             }
-            for stage in PRODUCTION_STAGES:
-                values[f"end.rejected_{stage.letter}"] = summary.rejected_by_stage.get(stage, 0)
             for key, value in values.items():
                 self._values[key].setText(str(value))
+            colors = (COLORS.reject_a, COLORS.reject_b, COLORS.reject_c, COLORS.reject_d)
+            self.rejects_bar.set_segments(
+                [
+                    (
+                        f"{stage.letter} · {t(stage.label_key)}",
+                        summary.rejected_by_stage.get(stage, 0),
+                        color,
+                    )
+                    for stage, color in zip(PRODUCTION_STAGES, colors, strict=True)
+                ]
+            )
             self.subtitle.setText(
                 t(
                     "end.subtitle",
@@ -340,31 +361,33 @@ class SessionEndView(QWidget):
                 )
             )
         state = self.c.send_state
-        pill, text_key = (
-            {
-                SendState.CLOSING: ("working", "end.closing"),
-                SendState.SENDING: ("working", "end.sending"),
-                SendState.SENT: ("pass", "end.sent"),
-                SendState.SAVED: ("warn", "end.saved_retry"),
-                SendState.DISABLED: ("info", "end.saved_local"),
-                SendState.REPORT_ERROR: ("fail", "end.report_error"),
-            }.get(state, ("pending", "end.closing"))
-            if state
-            else ("pending", "end.closing")
+        tones = {
+            SendState.CLOSING: ("info", "end.closing"),
+            SendState.SENDING: ("info", "end.sending"),
+            SendState.SENT: ("success", "end.sent"),
+            SendState.SAVED: ("warning", "end.saved_retry"),
+            SendState.DISABLED: ("info", "end.saved_local"),
+            SendState.REPORT_ERROR: ("error", "end.report_error"),
+        }
+        tone, text_key = (
+            tones.get(state, ("info", "end.closing")) if state else ("info", "end.closing")
         )
-        self.send_pill.set_state(pill)
-        self.send_text.setText(t(text_key))
-        result = self.c.logout_result
-        paths = result.queued.report_paths if result and result.queued else []
+        self.send.set_tone(tone)
+        self.send.set_texts(t(text_key))
+        paths = self._paths()
         self.report_path.setText(
-            t("end.report_files", files=", ".join(str(p) for p in paths)) if paths else ""
+            t("end.report_files", files=", ".join(p.name for p in paths)) if paths else ""
         )
+        self.report_path.setToolTip("\n".join(str(p) for p in paths))
+        for widget in (self.report_path, self.open_folder, self.copy_path):
+            widget.setVisible(bool(paths))
+        self.copy_path.set_text_key("end.copy_path")
         self.logout.setEnabled(state not in (None, SendState.CLOSING))
 
 
 class FatalView(QWidget):
-    """Shown instead of the station when it cannot start (invalid settings - naming the exact
-    keys - or another instance already running)."""
+    """Shown instead of the station when it cannot start: invalid settings (human field name
+    first, the key small and monospace - E1) or another instance already running."""
 
     def __init__(self, error: ParkomateError, location: str) -> None:
         super().__init__()
@@ -372,39 +395,47 @@ class FatalView(QWidget):
 
         self.setObjectName("Page")
         self.setWindowTitle(t("app.brand"))
-        panel, layout = card()
-        header = QHBoxLayout()
-        header.addWidget(Icon("warn", 48, COLORS.fail_fg))
-        title = QLabel(error_title(error))
-        title.setFont(font(SIZES.font_h1, bold=True))
-        title.setWordWrap(True)
-        header.addWidget(title, 1)
-        layout.addLayout(header)
-        cause = QLabel(error_cause(error))
-        cause.setWordWrap(True)
-        layout.addWidget(cause)
-        place = QLabel(t("fatal.location", path=location))
-        place.setProperty("role", "muted")
-        place.setWordWrap(True)
-        place.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
-        layout.addWidget(place)
+        panel = Card()
+        layout = panel.body
+        banner = Banner("error")
+        banner.set_texts(error_title(error), error_cause(error))
+        layout.addWidget(banner)
         if isinstance(error, SettingsError):
+            issues = QVBoxLayout()
+            issues.setSpacing(SPACE.m)
             if error.issues:
-                lines = [f"•  {i.key}: {settings_issue_text(i)}" for i in error.issues]
+                rows = [(issue.key, settings_issue_text(issue)) for issue in error.issues]
             else:
-                lines = [f"•  {key}: {problem}" for key, problem in error.problems]
-            listing = QLabel("\n".join(lines))
-            listing.setWordWrap(True)
-            listing.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
-            listing.setFont(font(SIZES.font_h2, bold=True))
-            listing.setProperty("status", "fail")
-            layout.addWidget(listing)
-        steps = QLabel("\n".join(f"{n}.  {s}" for n, s in enumerate(error_steps(error), start=1)))
-        steps.setWordWrap(True)
-        steps.setFont(font(SIZES.font_h2))
-        layout.addWidget(steps)
-        self.close_button = BigButton("action.close_app", variant="primary")
+                rows = list(error.problems)
+            for key, problem in rows:
+                issues.addLayout(self._issue_row(key, problem))
+            layout.addLayout(issues)
+            layout.addWidget(Divider())
+        steps = error_steps(error)
+        numbered = "\n".join(f"{n}.  {s}" for n, s in enumerate(steps, start=1))
+        layout.addWidget(Text(numbered, "body_lg", wrap=True))
+        layout.addWidget(SelectableText(t("fatal.location", path=location), "caption", "secondary"))
+        footer = QHBoxLayout()
+        footer.addStretch(1)
+        self.close_button = AppButton("action.close_app", variant="filled")
         self.close_button.clicked.connect(self.close)
-        layout.addWidget(self.close_button, 0, Qt.AlignmentFlag.AlignRight)
+        footer.addWidget(self.close_button)
+        layout.addLayout(footer)
         outer = QVBoxLayout(self)
-        outer.addWidget(_centered(panel, 900))
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.addWidget(_centered(panel, SUMMARY_WIDTH))
+
+    @staticmethod
+    def _issue_row(key: str, problem: str) -> QVBoxLayout:
+        row = QVBoxLayout()
+        row.setSpacing(0)
+        label_key = f"settings.f.{key}"
+        name = t(label_key) if translator().has(label_key, "en") else key
+        line = QHBoxLayout()
+        line.setSpacing(SPACE.s)
+        line.addWidget(Text(name, "body_lg_strong"))
+        line.addWidget(Text(key, "mono_label", "tertiary"))
+        line.addStretch(1)
+        row.addLayout(line)
+        row.addWidget(Text(problem, "body", "danger", wrap=True))
+        return row
