@@ -10,7 +10,8 @@ For supervisors / administrators. Operators use the [operator guide](OPERATOR_GU
    python -m parkomate admin create
    ```
    (asks for operator ID, full name, password twice). Refused if an admin already exists.
-3. Start the station, log in with that admin, open **Admin** (top right) and add operators.
+3. Start the station, log in with that admin, open **Admin** (click your initials, top right)
+   and add operators.
 
 Data folder: `C:\ProgramData\Parkomate`
 
@@ -27,8 +28,13 @@ Windows users of the bench PC need **modify** rights on this folder (the install
 
 ## 2. Admin area
 
-Open **Admin** (top right). It is only available to supervisors and only when no board is in
-progress. **Back to production** (or **Esc**) returns.
+Click your initials (top right) → **Admin**. It is only shown to supervisors and only enabled
+when no board is in progress (the menu says why otherwise). **Back to production** (or
+**Esc**) returns.
+
+Settings: the list on the left jumps to a section; changed fields get a blue dot and the bar at
+the bottom counts the unsaved changes; **Undo changes** reloads, **Save settings** checks every
+value first (a wrong value turns red and says why; nothing is saved until all are valid).
 
 ![Admin settings](screenshots/en_21_admin_settings.png)
 
@@ -57,8 +63,9 @@ progress. **Back to production** (or **Esc**) returns.
 ### Reports & e-mail
 ![Reports](screenshots/en_23_admin_reports.png)
 
-* Select sessions → **Export Excel** / **Export CSV**, or a date range → **Export date range**.
-* Type a device ID or MAC → **Export device report** (one board, every check).
+* **Export** card: choose *What to export* (selected sessions / a date range from the calendar /
+  a single device by ID or MAC) and the *File format* (Excel / CSV / Excel + CSV), then press
+  **Export**.
 * Sheets: **Summary** (one column per session), **Devices** (one row per board, every check
   value + PASS/FAIL + limits), **Checks** (every single result, including each upload
   attempt), **Rejections** (stage, box, check, value, limits, reason).
@@ -76,8 +83,9 @@ In *Report e-mail*: switch on, recipients (comma separated), sender, SMTP server
 * Internal relay without sign-in: security `none` (the password is then never sent).
 
 ### Counters
-Live counters of the current session. **Reset counters** restarts them from zero after a
-confirmation; the history and the session report still contain everything. Audited.
+Live counters of the current session as tiles. **Reset counters** (only here, no longer on the
+Programming screen) restarts them from zero after an inline confirmation; the history and the
+session report still contain everything. Audited.
 
 ### Error log
 Last 200 errors, newest first, filter by error code, click a row for details (no passwords
@@ -90,5 +98,8 @@ or firmware are ever logged).
 * **Crash / power cut**: at the next start the unfinished board is marked *abandoned*, the
   session is closed and its report queued; the login screen tells the operator.
 * **Only one station window** can run per PC.
-* **Simulated bench**: the top-left shows `SIMULATED · <scenario>` while mock hardware is in
-  use (`dev.use_mock_hardware`). Never use it for real production.
+* **Simulated bench**: an amber band across the top and an amber **Simulation mode** chip (the
+  scenario is in its tooltip) while mock hardware is in use (`dev.use_mock_hardware`). Never use
+  it for real production.
+* **Reduce motion**: *Screen → Reduce motion* switches the animations off (they are also off
+  when Windows has animations switched off).

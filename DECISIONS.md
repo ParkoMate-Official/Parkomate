@@ -134,6 +134,25 @@ Relative to the interface list in the build prompt:
 | U15 | Settings saved from the admin screen are rewritten by `tomli-w`: comments are lost; a header points to `config/settings.example.toml`, which documents every key | TOML writers do not keep comments |
 | U16 | Operator-marked failures and manual rejects ask for an inline confirmation in the bottom bar | gloved accidental taps; never an OS dialog |
 
+## UI redesign (October 2026)
+
+See `docs/design/DESIGN_SYSTEM.md` and `docs/design/CHANGES.md` for the full list.
+
+| # | Decision | Why |
+|---|---|---|
+| R1 | The app always runs on **Fusion with the token palette** and asks Qt for the light colour scheme | Windows 11 in dark mode handed Qt a dark palette: the near-black Admin Settings area (A1) and white placeholder text |
+| R2 | **Fixed line boxes, identical for English and Marathi**; translated labels reserve the width / line count of the longest translation | switching language moved the layout (reported on the bench); supersedes "Marathi line-height +4 px" from the redesign brief |
+| R3 | Token colours adjusted where the brief failed its own AA rule: `text_3` `#636E7F`; status text uses `on_<status>_cont` | AA for every text pair (tested); U10 (AAA status text) is replaced by AA + icons |
+| R4 | One focus style (1 px primary + 3 px halo), drawn by an overlay **only after keyboard navigation** | the amber ring appeared on controls nobody touched (G2); supersedes U10's amber ring |
+| R5 | Session / Admin / Log out moved into an **account menu**; Admin hidden for operators | T4; "Log out" runs the same End-session confirmation |
+| R6 | **Reset counters only in Admin → Counters**; the Programming counter card is gone; one counter group in the context bar | T5 |
+| R7 | The disabled reason is a caption **inside** the primary button | B1; the 88 px action bar stays centred |
+| R8 | `StatusLine.progress` (UI view-model type) shows "x of y checks done" in Testing, from `WorkflowService.required_checks` / `missing_checks` | S3; no contract change |
+| R9 | New setting `[ui] reduce_motion` (default false); animations are also off when Windows reports animations switched off | redesign brief, accessibility |
+| R10 | Export: one card (scope + format + Export); the "Excel + CSV" format of the date-range export is kept as a third option | A3 without removing a feature |
+| R11 | All list settings are typed comma-separated and saved as lists | saving failed since `workflow.retriable_checks` was added |
+| R12 | Material Symbols Rounded (Apache 2.0) as SVG, tinted at runtime; no text glyphs | G7; see `docs/THIRD_PARTY.md` |
+
 ## Mocks
 
 | # | Decision | Why |

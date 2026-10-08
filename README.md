@@ -28,7 +28,12 @@ uv run python -m parkomate admin create      # first administrator (asks for ID,
 uv run python -m parkomate --mock            # station on the simulated bench
 uv run python -m parkomate --mock --kiosk    # full screen, no window frame
 uv run python -m parkomate --mock --scenario v_c_out_of_range
+uv run python -m parkomate --gallery         # every UI component in every state (design review)
 ```
+
+The UI follows a small design system - tokens, type scale, components, do / don't:
+[`docs/design/DESIGN_SYSTEM.md`](docs/design/DESIGN_SYSTEM.md); what changed in the redesign,
+with before / after screenshots: [`docs/design/CHANGES.md`](docs/design/CHANGES.md).
 
 Data folder: `%PROGRAMDATA%\Parkomate` (Windows) or `~/.parkomate`. It holds `settings.toml`,
 `parkomate.db`, `logs/`, `reports/`, `outbox/`, `backups/`. Use

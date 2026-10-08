@@ -29,7 +29,7 @@ Contracts: `src/parkomate/core/interfaces.py` + `CONTRACTS.md`. Decisions: `DECI
 (contract changes are listed at its top - keep doing that).
 
 ## Stack
-Python 3.12 · uv · PySide6 (Widgets, QSS) · SQLite (WAL, FK on, numbered SQL migrations) ·
+Python 3.12 · uv · PySide6 (Widgets, Fusion, painted components, generated QSS) · SQLite (WAL, FK on, numbered SQL migrations) ·
 pydantic v2 · TOML settings (tomllib / tomli-w) · argon2-cffi · keyring · openpyxl ·
 smtplib (+ XOAUTH2) · pytest / pytest-qt · ruff · mypy --strict.
 
@@ -43,7 +43,10 @@ uv run pytest                                 # all tests (unit, integration, ui
 uv run pytest --cov=parkomate                 # with coverage
 uv run ruff check src tests && uv run ruff format --check src tests
 uv run mypy                                   # strict, whole package
-uv run python -m parkomate.ui.screenshots --out docs/screenshots   # EN + MR PNGs
+uv run python -m parkomate.ui.screenshots --out docs/screenshots   # EN + MR PNGs (guides)
+uv run python -m parkomate.ui.screenshots --design --out docs/design/after  # every state, 2 sizes
+uv run python -m parkomate --gallery          # every UI component in every state (EN / MR)
+uv run python -m parkomate.ui.gallery --out docs/design   # gallery_en.png + gallery_mr.png
 ```
 Use `PARKOMATE_DATA_DIR=<temp dir>` to keep experiments out of the real data folder.
 
@@ -64,6 +67,12 @@ Use `PARKOMATE_DATA_DIR=<temp dir>` to keep experiments out of the real data fol
 7. Errors are `ParkomateError(code=ErrorCode.X)`; the UI shows `error.<x>.title/cause/action`.
 8. One primary button per screen, bottom-right; Esc never destroys work; no OS dialogs in the
    normal flow.
+9. **UI design system** (`docs/design/DESIGN_SYSTEM.md`): every colour / size / radius / duration
+   comes from `ui/theme/tokens.py` - no hex colour, no `px` string and no literal size in a
+   layout call outside `ui/theme` (a test scans for them). Screens use only `ui/components/`
+   (`Text`/`TrText` for text, `AppButton`, `Card`, ...). Translated texts must reserve the room of
+   their longest translation (`set_key`, `reserve`) - switching language must move nothing
+   (tested at 1366x768 and 1920x1080). Status = icon + word + colour. Material Symbols icons only.
 
 ## Build phases
 * **P1 backend (Yugant)** - foundation, DB, records, counters, reports, e-mail, logs, auth,
