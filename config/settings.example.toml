@@ -181,6 +181,8 @@ kiosk = false
 sound = true
 # Seconds the green "Device complete" banner stays visible.
 success_toast_s = 2.0
+# No animations (also on automatically when Windows has animations switched off).
+reduce_motion = false
 
 [logging]
 # app.log level: "DEBUG", "INFO", "WARNING" or "ERROR". errors.jsonl always gets ERROR+.

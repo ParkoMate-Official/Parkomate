@@ -288,6 +288,8 @@ class UiSettings(_Section):
     sound: bool = True
     """Short sound on reject / complete."""
     success_toast_s: PositiveFloat = 2.0
+    reduce_motion: bool = False
+    """No animations (also on automatically when Windows has animations switched off)."""
 
 
 class LoggingSettings(_Section):

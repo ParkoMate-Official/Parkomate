@@ -1,56 +1,121 @@
-"""Admin area (role-gated): settings, operators, reports + e-mail outbox, counters, error log."""
+"""Admin area (role-gated): settings, operators, reports + e-mail outbox, counters, error log.
+
+Page header (back button + 'Admin'), Material tabs, each tab built from cards on the page
+background (A1-A7).
+"""
 
 from __future__ import annotations
 
 import json
 import logging
-from collections.abc import Sequence
-from datetime import UTC, date, datetime, time, timedelta
-from typing import Any, Literal, cast, get_args, get_origin
+from collections.abc import Callable, Sequence
+from datetime import UTC, datetime, time, timedelta
+from typing import Any, ClassVar, Literal, cast, get_args, get_origin
 
 from pydantic import BaseModel
-from PySide6.QtCore import QDate, Qt, QUrl
-from PySide6.QtGui import QDesktopServices
+from PySide6.QtCore import QDate, QEvent, QRectF, QSize, Qt, QUrl
+from PySide6.QtGui import QColor, QDesktopServices, QEnterEvent, QPainter, QPaintEvent, QResizeEvent
 from PySide6.QtWidgets import (
-    QAbstractItemView,
-    QAbstractSpinBox,
+    QAbstractButton,
     QCheckBox,
     QComboBox,
-    QDateEdit,
     QDoubleSpinBox,
-    QFormLayout,
-    QFrame,
     QGridLayout,
-    QGroupBox,
     QHBoxLayout,
-    QHeaderView,
-    QLabel,
     QLineEdit,
     QPlainTextEdit,
-    QScrollArea,
+    QSizePolicy,
     QSpinBox,
-    QTableWidget,
-    QTableWidgetItem,
-    QTabWidget,
+    QStackedWidget,
     QVBoxLayout,
     QWidget,
 )
 
 from parkomate.config.settings import Settings
-from parkomate.core.enums import Role
+from parkomate.core.enums import OutboxStatus, Role
 from parkomate.core.errors import ErrorCode, ParkomateError, SettingsError
 from parkomate.core.models import Operator
 from parkomate.i18n import LANGUAGES, t, translator
 from parkomate.logging_setup import read_error_log
-from parkomate.ui.components.widgets import BigButton, InlineConfirm, TrLabel, card, set_prop
-from parkomate.ui.qt_i18n import error_cause, error_title, language_notifier
-from parkomate.ui.theme.legacy import font
-from parkomate.ui.theme.legacy import SIZES
+from parkomate.ui.components.base import draw_line, fill_rounded, qcolor, set_prop
+from parkomate.ui.components.buttons import AppButton
+from parkomate.ui.components.cards import Card, InlineConfirm, InlineMessage, KpiTile
+from parkomate.ui.components.data import ChipDelegate, DataTable
+from parkomate.ui.components.inputs import (
+    DateRangePicker,
+    DecimalField,
+    FormField,
+    IntField,
+    PasswordField,
+    Select,
+    Switch,
+    TextField,
+)
+from parkomate.ui.components.layout import ScrollArea
+from parkomate.ui.components.segmented import SegmentedControl
+from parkomate.ui.components.tabs import Tabs
+from parkomate.ui.components.text import Text, TrText
+from parkomate.ui.qt_i18n import language_notifier
+from parkomate.ui.theme import motion
+from parkomate.ui.theme.fonts import font_for
+from parkomate.ui.theme.tokens import ALPHA, COLORS, RADIUS, SIZES, SPACE, TYPE
 from parkomate.ui.viewmodels.station import StationController
 
 log = logging.getLogger(__name__)
 
 Editor = QCheckBox | QSpinBox | QDoubleSpinBox | QComboBox | QLineEdit
+ExportFormat = Literal["xlsx", "csv", "both"]
+
+# Section order of the settings form (and of its section index).
+SECTION_ORDER = (
+    "general",
+    "station",
+    "limits",
+    "timeouts",
+    "server",
+    "measurement",
+    "camera",
+    "email",
+    "reports",
+    "programming",
+    "serial",
+    "workflow",
+    "auth",
+    "ui",
+    "logging",
+    "dev",
+)
+# Fields shown as one range row: "Point A voltage  [23.850 V] – [24.150 V]" (A2).
+RANGES = {
+    "limits.v_a_low": ("limits.v_a_high", "check.B3_V_A"),
+    "limits.v_b_low": ("limits.v_b_high", "check.B3_V_B"),
+    "limits.v_c_low": ("limits.v_c_high", "check.B3_V_C"),
+}
+RANGE_HIGHS = {high for high, _label in RANGES.values()}
+
+
+def unit_key(dotted: str) -> str | None:
+    """The unit suffix of a numeric setting."""
+    name = dotted.rsplit(".", 1)[-1]
+    if dotted.startswith("limits.v_"):
+        return "unit.v"
+    if name == "temp_margin_c":
+        return "unit.c"
+    if name.endswith("_days"):
+        return "unit.days"
+    if name.endswith("_minutes"):
+        return "unit.minutes"
+    if name.endswith("_s"):
+        return "unit.s"
+    if name in ("baud", "flash_baud"):
+        return "unit.baud"
+    if name == "fps":
+        return "unit.fps"
+    if dotted in ("camera.width", "camera.height"):
+        return "unit.px"
+    if name == "max_bytes":
+        return "unit.bytes"
+    return None
 
 
 def settings_issue_text(issue: Any) -> str:
@@ -62,143 +127,288 @@ def settings_issue_text(issue: Any) -> str:
     return t("settings.err.generic", detail=issue.message)
 
 
-def _table(headers: Sequence[str]) -> QTableWidget:
-    table = QTableWidget(0, len(headers))
-    table.setHorizontalHeaderLabels(list(headers))
-    table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
-    table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
-    table.verticalHeader().setVisible(False)
-    table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
-    table.horizontalHeader().setStretchLastSection(True)
-    return table
-
-
-def _set_headers(table: QTableWidget, keys: Sequence[str]) -> None:
-    table.setHorizontalHeaderLabels([t(k) for k in keys])
-
-
-def _fill(table: QTableWidget, rows: list[list[str]], data: list[Any] | None = None) -> None:
-    table.setRowCount(len(rows))
-    for r, row in enumerate(rows):
-        for c, value in enumerate(row):
-            item = QTableWidgetItem(value)
-            if c == 0 and data is not None:
-                item.setData(Qt.ItemDataRole.UserRole, data[r])
-            table.setItem(r, c, item)
-
-
-def _selected_data(table: QTableWidget) -> list[Any]:
-    rows = sorted({index.row() for index in table.selectionModel().selectedRows()})
-    values = []
-    for row in rows:
-        item = table.item(row, 0)
-        if item is not None:
-            values.append(item.data(Qt.ItemDataRole.UserRole))
-    return values
-
-
 def _local(value: datetime | None) -> str:
     return "" if value is None else value.astimezone().strftime("%Y-%m-%d %H:%M")
 
 
-class ResultLine(QLabel):
-    """One-line outcome message with tone (pass / fail / info)."""
+# Kept under its old name: a one-line outcome message with an icon.
+ResultLine = InlineMessage
 
-    def __init__(self) -> None:
-        super().__init__()
-        self.setWordWrap(True)
-        self.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
-        self.setFont(font(SIZES.font_base, bold=True))
 
-    def ok(self, text: str) -> None:
-        set_prop(self, "status", "pass")
-        self.setText(f"✓  {text}")
-
-    def fail(self, error: ParkomateError) -> None:
-        set_prop(self, "status", "fail")
-        self.setText(f"✕  {error_title(error)} - {error_cause(error)}")
-
-    def info(self, text: str) -> None:
-        set_prop(self, "status", "info")
-        self.setText(text)
+def _tab_scroll() -> tuple[ScrollArea, QVBoxLayout]:
+    scroll = ScrollArea()
+    layout = scroll.layout_
+    layout.setContentsMargins(0, SPACE.l, 0, SPACE.l)
+    return scroll, layout
 
 
 # =========================================================================== settings
+
+
+class _EditedDot(QWidget):
+    """Small primary dot next to a field that was changed but not saved yet (A2)."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.setFixedSize(SIZES.edited_dot, SIZES.edited_dot)
+        policy = self.sizePolicy()
+        policy.setRetainSizeWhenHidden(True)
+        self.setSizePolicy(policy)
+        self.setVisible(False)
+
+    def paintEvent(self, _event: QPaintEvent) -> None:
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(QColor(COLORS.primary))
+        painter.drawEllipse(QRectF(self.rect()))
+        painter.end()
+
+
+class _FieldRow(QWidget):
+    """Label (left) | editor(s) + edited dot | error below the editor."""
+
+    def __init__(
+        self,
+        label: Text,
+        editors: Sequence[QWidget],
+        dots: Sequence[_EditedDot],
+        errors: Sequence[Text],
+    ) -> None:
+        super().__init__()
+        grid = QGridLayout(self)
+        grid.setContentsMargins(0, 0, 0, 0)
+        grid.setHorizontalSpacing(SPACE.l)
+        grid.setVerticalSpacing(SPACE.xs)
+        label.setWordWrap(True)
+        label.setFixedWidth(SIZES.section_index)
+        grid.addWidget(label, 0, 0, Qt.AlignmentFlag.AlignVCenter)
+        row = QHBoxLayout()
+        row.setSpacing(SPACE.s)
+        for index, editor in enumerate(editors):
+            if index:
+                row.addWidget(Text("–", "body_lg", "secondary"))
+            row.addWidget(editor)
+            row.addWidget(dots[index])
+        row.addStretch(1)
+        grid.addLayout(row, 0, 1)
+        column = QVBoxLayout()
+        column.setSpacing(0)
+        for error in errors:
+            column.addWidget(error)
+        grid.addLayout(column, 1, 1)
+        grid.setColumnStretch(1, 1)
+
+
+class _IndexItem(QAbstractButton):
+    def __init__(self, key: str) -> None:
+        super().__init__()
+        self.key = key
+        self.setCheckable(True)
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        self.setProperty("ring_radius", RADIUS.pill)
+        self.setFixedHeight(SIZES.button_compact)
+        language_notifier().changed.connect(self.retranslate)
+        self.retranslate()
+
+    def retranslate(self, *_args: object) -> None:
+        self.setText(t(self.key))
+        self.update()
+
+    def sizeHint(self) -> QSize:
+        return QSize(SIZES.section_index, SIZES.button_compact)
+
+    def enterEvent(self, event: QEnterEvent) -> None:
+        self.update()
+        super().enterEvent(event)
+
+    def leaveEvent(self, event: QEvent) -> None:
+        self.update()
+        super().leaveEvent(event)
+
+    def paintEvent(self, _event: QPaintEvent) -> None:
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        rect = QRectF(self.rect())
+        if self.isChecked():
+            fill_rounded(painter, rect, RADIUS.pill, COLORS.primary_cont)
+        elif self.underMouse():
+            fill_rounded(painter, rect, RADIUS.pill, qcolor(COLORS.text, ALPHA.hover))
+        draw_line(
+            painter,
+            rect.adjusted(SPACE.l, 0, -SPACE.l, 0),
+            self.text(),
+            TYPE.body_strong if self.isChecked() else TYPE.body,
+            COLORS.on_primary_cont if self.isChecked() else COLORS.text_2,
+        )
+        painter.end()
+
+
+class _SectionIndex(QWidget):
+    """Left index of the settings sections; scrolls the form to a section (A2)."""
+
+    def __init__(self, sections: Sequence[str], on_select: Callable[[str], None]) -> None:
+        super().__init__()
+        self.setFixedWidth(SIZES.section_index)
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, SPACE.l, 0, SPACE.l)
+        layout.setSpacing(SPACE.xs)
+        self.items: dict[str, _IndexItem] = {}
+        for section in sections:
+            item = _IndexItem(f"settings.section.{section}")
+            item.clicked.connect(lambda _c=False, s=section: on_select(s))
+            self.items[section] = item
+            layout.addWidget(item)
+        layout.addStretch(1)
+
+    def set_current(self, section: str) -> None:
+        for name, item in self.items.items():
+            item.setChecked(name == section)
+
+
+class _SaveBar(QWidget):
+    def paintEvent(self, _event: QPaintEvent) -> None:
+        painter = QPainter(self)
+        rect = self.rect()
+        painter.fillRect(QRectF(0, 0, rect.width(), SIZES.hairline), QColor(COLORS.outline_soft))
+        painter.end()
 
 
 class SettingsTab(QWidget):
     def __init__(self, controller: StationController) -> None:
         super().__init__()
         self.c = controller
-        layout = QVBoxLayout(self)
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-        inner = QWidget()
-        self.form_layout = QVBoxLayout(inner)
-        self.form_layout.setSpacing(SIZES.space_l)
-        scroll.setWidget(inner)
-        layout.addWidget(scroll, 1)
         self.editors: dict[str, Editor] = {}
-        self.errors: dict[str, QLabel] = {}
-        self.labels: dict[str, QLabel] = {}
-        self.groups: dict[str, QGroupBox] = {}
+        self.errors: dict[str, Text] = {}
+        self.labels: dict[str, Text] = {}
+        self.dots: dict[str, _EditedDot] = {}
+        self.groups: dict[str, Card] = {}
+        self._rows: dict[str, list[_FieldRow]] = {}
+        self._grids: dict[str, QGridLayout] = {}
+        self._loaded: dict[str, Any] = {}
+        self._columns = 0
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(0)
+        body = QHBoxLayout()
+        body.setSpacing(SPACE.xl)
+        self.index = _SectionIndex([*SECTION_ORDER, "secrets"], self.scroll_to)
+        body.addWidget(self.index, 0, Qt.AlignmentFlag.AlignTop)
+        self.form_scroll, self.form_layout = _tab_scroll()
+        self.form_scroll.verticalScrollBar().valueChanged.connect(self._sync_index)
+        body.addWidget(self.form_scroll, 1)
+        outer.addLayout(body, 1)
         self._build()
         self._build_secrets()
-        buttons = QHBoxLayout()
-        self.result = ResultLine()
-        buttons.addWidget(self.result, 1)
-        self.reload = BigButton("action.reload_settings")
+        self.form_layout.addStretch(1)
+        # sticky save bar (A2)
+        bar = _SaveBar()
+        bar_layout = QHBoxLayout(bar)
+        bar_layout.setContentsMargins(0, SPACE.m, 0, 0)
+        bar_layout.setSpacing(SPACE.m)
+        self.result = InlineMessage()
+        bar_layout.addWidget(self.result, 1)
+        self.unsaved = Text("", "body_strong", "accent")
+        bar_layout.addWidget(self.unsaved)
+        self.reload = AppButton("action.reload_settings", variant="outlined", icon="restart_alt")
         self.reload.clicked.connect(self.load)
-        self.save = BigButton("action.save_settings", variant="primary")
+        self.save = AppButton("action.save_settings", variant="filled")
         self.save.clicked.connect(self.save_settings)
-        buttons.addWidget(self.reload)
-        buttons.addWidget(self.save)
-        layout.addLayout(buttons)
+        bar_layout.addWidget(self.reload)
+        bar_layout.addWidget(self.save)
+        outer.addWidget(bar)
         language_notifier().changed.connect(self.retranslate)
         self.retranslate()
         self.load()
 
     # ---------------------------------------------------------------- build
     def _build(self) -> None:
-        general = self._group("general")
-        self._add_field(general, "retention_days", Settings.model_fields["retention_days"])
+        fields: dict[str, list[tuple[str, Any]]] = {
+            "general": [("retention_days", Settings.model_fields["retention_days"])]
+        }
         for section, info in Settings.model_fields.items():
             model = info.annotation
-            if not (isinstance(model, type) and issubclass(model, BaseModel)):
+            if isinstance(model, type) and issubclass(model, BaseModel):
+                fields[section] = [
+                    (f"{section}.{key}", field) for key, field in model.model_fields.items()
+                ]
+        for section in SECTION_ORDER:
+            if section not in fields:
                 continue
-            form = self._group(section)
-            for key, field_info in model.model_fields.items():
-                self._add_field(form, f"{section}.{key}", field_info)
+            card = self._section_card(section)
+            infos = dict(fields[section])
+            rows: list[_FieldRow] = []
+            for dotted, info in fields[section]:
+                if dotted in RANGE_HIGHS:
+                    continue
+                if dotted in RANGES:
+                    high, label_key = RANGES[dotted]
+                    rows.append(self._range_row(dotted, info, high, infos[high], label_key))
+                else:
+                    rows.append(self._field_row(dotted, info))
+            self._rows[section] = rows
+            grid = QGridLayout()
+            grid.setHorizontalSpacing(SPACE.xxl)
+            grid.setVerticalSpacing(SPACE.l)
+            self._grids[section] = grid
+            card.body.addLayout(grid)
+        self._reflow(1)
 
-    def _group(self, section: str) -> QFormLayout:
-        box = QGroupBox()
-        box.setFont(font(SIZES.font_h2, bold=True))
-        form = QFormLayout(box)
-        form.setLabelAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-        form.setHorizontalSpacing(SIZES.space_l)
-        form.setVerticalSpacing(SIZES.space_s)
-        self.groups[section] = box
-        self.form_layout.addWidget(box)
-        return form
+    def _section_card(self, section: str) -> Card:
+        card = Card(f"settings.section.{section}", subtitle_key=f"settings.desc.{section}")
+        self.groups[section] = card
+        self.form_layout.addWidget(card)
+        return card
 
-    def _add_field(self, form: QFormLayout, dotted: str, info: Any) -> None:
-        editor = self._editor_for(info)
-        editor.setFont(font(SIZES.font_base))
-        label = QLabel()
-        label.setFont(font(SIZES.font_base))
-        label.setWordWrap(True)
-        error = QLabel()
-        error.setProperty("status", "fail")
-        error.setWordWrap(True)
+    def _field_parts(self, dotted: str, info: Any) -> tuple[Editor, _EditedDot, Text]:
+        editor = self._editor_for(dotted, info)
+        error = Text("", "caption", "danger", wrap=True)
         error.setVisible(False)
-        column = QVBoxLayout()
-        column.setSpacing(2)
-        column.addWidget(editor)
-        column.addWidget(error)
-        form.addRow(label, column)
+        dot = _EditedDot()
         self.editors[dotted] = editor
         self.errors[dotted] = error
+        self.dots[dotted] = dot
+        self._watch(editor)
+        return editor, dot, error
+
+    def _field_row(self, dotted: str, info: Any) -> _FieldRow:
+        editor, dot, error = self._field_parts(dotted, info)
+        label = Text("", "body")
         self.labels[dotted] = label
+        return _FieldRow(label, [editor], [dot], [error])
+
+    def _range_row(
+        self, low: str, low_info: Any, high: str, high_info: Any, label_key: str
+    ) -> _FieldRow:
+        low_editor, low_dot, low_error = self._field_parts(low, low_info)
+        high_editor, high_dot, high_error = self._field_parts(high, high_info)
+        label = TrText(label_key, "body")
+        self.labels[low] = label
+        self.labels[high] = label
+        return _FieldRow(
+            label, [low_editor, high_editor], [low_dot, high_dot], [low_error, high_error]
+        )
+
+    def _reflow(self, columns: int) -> None:
+        """One column, or two from 1600 px (A2)."""
+        if columns == self._columns:
+            return
+        self._columns = columns
+        for section, rows in self._rows.items():
+            grid = self._grids[section]
+            for row in rows:
+                grid.removeWidget(row)
+            for index, row in enumerate(rows):
+                grid.addWidget(row, index // columns, index % columns)
+            for column in range(2):
+                grid.setColumnStretch(column, 1 if column < columns else 0)
+
+    def resizeEvent(self, event: QResizeEvent) -> None:
+        super().resizeEvent(event)
+        window = self.window()
+        width = window.width() if window is not None else self.width()
+        self._reflow(2 if width >= SIZES.settings_two_column else 1)
 
     @staticmethod
     def _bounds(info: Any) -> tuple[float | None, float | None]:
@@ -212,23 +422,20 @@ class SettingsTab(QWidget):
                     high = getattr(meta, attr)
         return low, high
 
-    def _editor_for(self, info: Any) -> Editor:
+    def _editor_for(self, dotted: str, info: Any) -> Editor:
         annotation = info.annotation
         low, high = self._bounds(info)
         if annotation is bool:
-            return QCheckBox()
+            return Switch()
         if annotation is int:
-            spin = QSpinBox()
-            spin.setButtonSymbols(QAbstractSpinBox.ButtonSymbols.NoButtons)
+            spin = IntField(unit_key(dotted))
             spin.setRange(
                 int(low if low is not None else -1_000_000),
                 int(high if high is not None else 1_000_000_000),
             )
             return spin
         if annotation is float:
-            dspin = QDoubleSpinBox()
-            dspin.setButtonSymbols(QAbstractSpinBox.ButtonSymbols.NoButtons)
-            dspin.setDecimals(3)
+            dspin = DecimalField(unit_key(dotted))
             dspin.setSingleStep(0.01)
             dspin.setRange(
                 float(low if low is not None else -1_000_000.0),
@@ -236,45 +443,72 @@ class SettingsTab(QWidget):
             )
             return dspin
         if get_origin(annotation) is Literal:
-            combo = QComboBox()
+            combo = Select()
             for option in get_args(annotation):
                 label = t(f"language.{option}") if option in LANGUAGES else str(option)
                 combo.addItem(label, option)
+            combo.setFixedWidth(max(combo.sizeHint().width(), SIZES.number_field))
             return combo
-        return QLineEdit()
+        return TextField()
 
     def _build_secrets(self) -> None:
-        box = QGroupBox()
-        box.setFont(font(SIZES.font_h2, bold=True))
-        self.groups["secrets"] = box
-        grid = QGridLayout(box)
-        self.secret_help = QLabel()
-        self.secret_help.setWordWrap(True)
-        self.secret_help.setFont(font(SIZES.font_base))
-        grid.addWidget(self.secret_help, 0, 0, 1, 3)
-        self.secret_name = QComboBox()
-        self.secret_value = QLineEdit()
-        self.secret_value.setEchoMode(QLineEdit.EchoMode.Password)
-        self.secret_save = BigButton("action.store_secret")
+        card = self._section_card("secrets")
+        self.secret_help = Text("", "body", "secondary", wrap=True)
+        card.body.addWidget(self.secret_help)
+        row = QHBoxLayout()
+        row.setSpacing(SPACE.m)
+        self.secret_name = Select()
+        self.secret_name.setFixedWidth(SIZES.select_max * 2 // 3)
+        self.secret_value = PasswordField("settings.secret_value")
+        self.secret_save = AppButton("action.store_secret", variant="tonal", icon="key")
         self.secret_save.clicked.connect(self._store_secret)
-        grid.addWidget(self.secret_name, 1, 0)
-        grid.addWidget(self.secret_value, 1, 1)
-        grid.addWidget(self.secret_save, 1, 2)
-        self.secret_state = QLabel()
-        self.secret_state.setFont(font(SIZES.font_base))
-        grid.addWidget(self.secret_state, 2, 0, 1, 3)
-        self.form_layout.addWidget(box)
+        row.addWidget(self.secret_name)
+        row.addWidget(self.secret_value, 1)
+        row.addWidget(self.secret_save)
+        card.body.addLayout(row)
+        self.secret_state = Text("", "body", "secondary", wrap=True)
+        card.body.addWidget(self.secret_state)
+
+    # ---------------------------------------------------------------- navigation
+    def scroll_to(self, section: str) -> None:
+        card = self.groups.get(section)
+        if card is not None:
+            self.form_scroll.verticalScrollBar().setValue(card.y() - SPACE.l)
+            self.index.set_current(section)
+
+    def _sync_index(self, value: int) -> None:
+        current = SECTION_ORDER[0]
+        for section, card in self.groups.items():
+            if card.y() - SPACE.xl <= value:
+                current = section
+        self.index.set_current(current)
 
     # ---------------------------------------------------------------- data
+    def _watch(self, editor: Editor) -> None:
+        if isinstance(editor, QCheckBox):
+            editor.toggled.connect(self._update_dirty)
+        elif isinstance(editor, QSpinBox | QDoubleSpinBox):
+            editor.valueChanged.connect(self._update_dirty)
+        elif isinstance(editor, QComboBox):
+            editor.currentIndexChanged.connect(self._update_dirty)
+        else:
+            editor.textChanged.connect(self._update_dirty)
+
     def load(self) -> None:
         values = self.c.settings.model_dump(mode="json")
         for dotted, editor in self.editors.items():
             value: Any = values
             for part in dotted.split("."):
                 value = value[part]
+            editor.blockSignals(True)
             self._set_value(editor, value)
+            editor.blockSignals(False)
+            editor.update()
+        self._loaded = self._values()
         self._clear_errors()
         self._refresh_secrets()
+        self._update_dirty()
+        self.index.set_current(SECTION_ORDER[0])
 
     @staticmethod
     def _set_value(editor: Editor, value: Any) -> None:
@@ -291,19 +525,42 @@ class SettingsTab(QWidget):
         else:
             editor.setText(str(value))
 
+    @staticmethod
+    def _value(editor: Editor) -> Any:
+        if isinstance(editor, QCheckBox):
+            return editor.isChecked()
+        if isinstance(editor, QSpinBox | QDoubleSpinBox):
+            return editor.value()
+        if isinstance(editor, QComboBox):
+            return editor.currentData()
+        return editor.text().strip()
+
+    def _values(self) -> dict[str, Any]:
+        return {dotted: self._value(editor) for dotted, editor in self.editors.items()}
+
+    def _update_dirty(self, *_args: object) -> None:
+        changed = 0
+        for dotted, editor in self.editors.items():
+            edited = self._loaded.get(dotted) != self._value(editor)
+            self.dots[dotted].setVisible(edited)
+            changed += int(edited)
+        if changed:
+            self.unsaved.set_key("settings.unsaved", n=changed)
+        else:
+            self.unsaved.set_key(None)
+        self.unsaved.setVisible(bool(changed))
+
     def collect(self) -> dict[str, Any]:
+        current_values = self.c.settings.model_dump(mode="json")
         data: dict[str, Any] = {}
         for dotted, editor in self.editors.items():
-            if isinstance(editor, QCheckBox):
-                value: Any = editor.isChecked()
-            elif isinstance(editor, QSpinBox | QDoubleSpinBox):
-                value = editor.value()
-            elif isinstance(editor, QComboBox):
-                value = editor.currentData()
-            else:
-                value = editor.text().strip()
-                if dotted == "email.recipients":
-                    value = [part.strip() for part in value.split(",") if part.strip()]
+            value = self._value(editor)
+            current: Any = current_values
+            for part in dotted.split("."):
+                current = current[part]
+            if isinstance(current, list) and isinstance(value, str):
+                # every list setting (e-mail recipients, retried checks) is typed comma-separated
+                value = [part.strip() for part in value.split(",") if part.strip()]
             target = data
             parts = dotted.split(".")
             for part in parts[:-1]:
@@ -334,6 +591,7 @@ class SettingsTab(QWidget):
             self.result.ok(t("settings.saved", n=len(changes)))
         else:
             self.result.info(t("settings.no_changes"))
+        motion.configure(bool(self.c.settings.ui.reduce_motion))
         self.load()
 
     def _show_issues(self, exc: SettingsError) -> None:
@@ -350,6 +608,7 @@ class SettingsTab(QWidget):
                 first = first or self.editors[key]
         if first is not None:
             first.setFocus()
+            self.form_scroll.ensureWidgetVisible(first)
 
     def _secret_names(self) -> list[str]:
         settings = self.c.settings
@@ -369,13 +628,8 @@ class SettingsTab(QWidget):
         states = []
         for name in names:
             stored = self.c.ctx.secrets.get(name) is not None
-            states.append(
-                t(
-                    "settings.secret_state",
-                    name=name,
-                    state=t("settings.secret_stored" if stored else "settings.secret_missing"),
-                )
-            )
+            state = t("settings.secret_stored" if stored else "settings.secret_missing")
+            states.append(t("settings.secret_state", name=name, state=state))
         self.secret_state.setText("\n".join(states))
 
     def _store_secret(self) -> None:
@@ -399,16 +653,16 @@ class SettingsTab(QWidget):
         self._refresh_secrets()
 
     def retranslate(self, *_args: object) -> None:
-        for section, box in self.groups.items():
-            box.setTitle(t(f"settings.section.{section}"))
         for dotted, label in self.labels.items():
             text = t(f"settings.f.{dotted}")
-            label.setText(text)
+            if dotted not in RANGES and dotted not in RANGE_HIGHS:
+                label.setText(text)
             self.editors[dotted].setAccessibleName(text)
+            self.editors[dotted].setToolTip(f"{text}  ·  {dotted}")
         self.secret_help.setText(t("settings.secrets_help"))
-        self.secret_value.setPlaceholderText(t("settings.secret_value"))
         self.secret_value.setAccessibleName(t("settings.secret_value"))
         self._refresh_secrets()
+        self._update_dirty()
 
 
 # =========================================================================== operators
@@ -426,53 +680,80 @@ class OperatorsTab(QWidget):
     def __init__(self, controller: StationController) -> None:
         super().__init__()
         self.c = controller
-        layout = QHBoxLayout(self)
-        layout.setSpacing(SIZES.space_l)
+        scroll, content = _tab_scroll()
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.addWidget(scroll)
+        columns = QHBoxLayout()
+        columns.setSpacing(SPACE.l)
+        content.addLayout(columns)
         left = QVBoxLayout()
-        self.table = _table(self.COLUMNS)
+        left.setSpacing(SPACE.l)
+        list_card = Card("admin.tab.operators", icon="group")
+        self.table = DataTable(
+            self.COLUMNS, mono=(0,), empty=("group", "admin.op.empty_title", None)
+        )
+        for column in (3, 4):
+            self.table.setItemDelegateForColumn(column, ChipDelegate({}, self.table))
         self.table.itemSelectionChanged.connect(self._selection_changed)
-        left.addWidget(self.table, 1)
+        self.table.setMinimumHeight(SIZES.table_row * 5)
+        list_card.body.addWidget(self.table)
+        left.addWidget(list_card)
+        selected = Card("admin.op.selected_title", icon="manage_accounts")
         actions = QHBoxLayout()
-        self.toggle_active = BigButton("action.deactivate")
+        actions.setSpacing(SPACE.s)
+        self.toggle_active = AppButton("action.deactivate", variant="outlined", size="compact")
         self.toggle_active.clicked.connect(self._toggle_active)
-        self.unlock = BigButton("action.unlock")
+        self.unlock = AppButton(
+            "action.unlock", variant="outlined", size="compact", icon="lock_open"
+        )
         self.unlock.clicked.connect(self._unlock)
-        self.toggle_role = BigButton("action.make_admin")
+        self.toggle_role = AppButton("action.make_admin", variant="outlined", size="compact")
         self.toggle_role.clicked.connect(self._toggle_role)
         for button in (self.toggle_active, self.unlock, self.toggle_role):
             actions.addWidget(button)
-        left.addLayout(actions)
+        actions.addStretch(1)
+        selected.body.addLayout(actions)
         reset_row = QHBoxLayout()
-        self.reset_pw = QLineEdit()
-        self.reset_pw.setEchoMode(QLineEdit.EchoMode.Password)
-        self.reset_pw2 = QLineEdit()
-        self.reset_pw2.setEchoMode(QLineEdit.EchoMode.Password)
-        self.reset_button = BigButton("action.reset_password")
+        reset_row.setSpacing(SPACE.s)
+        self.reset_pw = PasswordField("admin.op.new_password")
+        self.reset_pw2 = PasswordField("admin.op.password_again")
+        self.reset_button = AppButton(
+            "action.reset_password", variant="tonal", size="compact", icon="key"
+        )
         self.reset_button.clicked.connect(self._reset_password)
-        reset_row.addWidget(self.reset_pw)
-        reset_row.addWidget(self.reset_pw2)
+        reset_row.addWidget(self.reset_pw, 1)
+        reset_row.addWidget(self.reset_pw2, 1)
         reset_row.addWidget(self.reset_button)
-        left.addLayout(reset_row)
-        self.result = ResultLine()
-        left.addWidget(self.result)
-        layout.addLayout(left, 3)
+        selected.body.addLayout(reset_row)
+        self.result = InlineMessage()
+        selected.body.addWidget(self.result)
+        left.addWidget(selected)
+        left.addStretch(1)
+        columns.addLayout(left, SIZES.grid_columns - SIZES.left_columns)
 
-        add_card, add = card()
-        add.addWidget(TrLabel("admin.op.add_title", role="h2"))
-        self.new_code = QLineEdit()
-        self.new_name = QLineEdit()
-        self.new_role = QComboBox()
-        self.new_pw = QLineEdit()
-        self.new_pw.setEchoMode(QLineEdit.EchoMode.Password)
-        self.new_pw2 = QLineEdit()
-        self.new_pw2.setEchoMode(QLineEdit.EchoMode.Password)
-        for widget in (self.new_code, self.new_name, self.new_role, self.new_pw, self.new_pw2):
-            add.addWidget(widget)
-        self.add_button = BigButton("action.add_operator", variant="primary")
+        add_card = Card("admin.op.add_title", icon="person_add")
+        self.new_code = TextField(max_width=None)
+        self.new_name = TextField(max_width=None)
+        self.new_role = Select(max_width=None)
+        self.new_pw = PasswordField()
+        self.new_pw2 = PasswordField()
+        for key, widget in (
+            ("admin.op.code", self.new_code),
+            ("admin.op.name", self.new_name),
+            ("admin.op.role", self.new_role),
+            ("admin.op.password", self.new_pw),
+            ("admin.op.password_again", self.new_pw2),
+        ):
+            add_card.body.addWidget(FormField(key, widget))
+        self.add_button = AppButton("action.add_operator", variant="filled", icon="person_add")
+        self.add_button.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         self.add_button.clicked.connect(self._add)
-        add.addWidget(self.add_button)
-        add.addStretch(1)
-        layout.addWidget(add_card, 2)
+        add_card.body.addWidget(self.add_button)
+        right = QVBoxLayout()
+        right.addWidget(add_card)
+        right.addStretch(1)
+        columns.addLayout(right, SIZES.left_columns)
         language_notifier().changed.connect(self.retranslate)
         self.retranslate()
 
@@ -490,11 +771,18 @@ class OperatorsTab(QWidget):
                     t("common.yes" if locked else "common.no"),
                 ]
             )
-        _fill(self.table, rows, [op.id for op in operators])
+        self.table.fill(rows, [op.id for op in operators])
         self._selection_changed()
 
+    def _chip_tones(self) -> None:
+        yes, no = t("common.yes").upper(), t("common.no").upper()
+        for column, yes_tone in ((3, "success"), (4, "warning")):
+            delegate = self.table.itemDelegateForColumn(column)
+            if isinstance(delegate, ChipDelegate):
+                delegate.tones = {yes: yes_tone, no: "neutral"}
+
     def _selected(self) -> Operator | None:
-        ids = _selected_data(self.table)
+        ids = self.table.selected_data()
         return self.c.ctx.repos.operators.get(ids[0]) if ids else None
 
     def _selection_changed(self) -> None:
@@ -586,18 +874,15 @@ class OperatorsTab(QWidget):
                 field.clear()
 
     def retranslate(self, *_args: object) -> None:
-        _set_headers(self.table, self.COLUMNS)
         self.table.setAccessibleName(t("admin.tab.operators"))
-        placeholders = [
+        for field, key in (
             (self.new_code, "admin.op.code"),
             (self.new_name, "admin.op.name"),
             (self.new_pw, "admin.op.password"),
             (self.new_pw2, "admin.op.password_again"),
             (self.reset_pw, "admin.op.new_password"),
             (self.reset_pw2, "admin.op.password_again"),
-        ]
-        for field, key in placeholders:
-            field.setPlaceholderText(t(key))
+        ):
             field.setAccessibleName(t(key))
         current = self.new_role.currentData()
         self.new_role.clear()
@@ -605,6 +890,7 @@ class OperatorsTab(QWidget):
             self.new_role.addItem(t(role.label_key), role)
         self.new_role.setCurrentIndex(max(0, self.new_role.findData(current)))
         self.new_role.setAccessibleName(t("admin.op.role"))
+        self._chip_tones()
 
 
 # =========================================================================== reports
@@ -626,69 +912,109 @@ class ReportsTab(QWidget):
         "admin.out.attempts",
         "admin.out.error",
     )
+    SCOPES = ("selected", "range", "device")
+    OUTBOX_TONES: ClassVar[dict[OutboxStatus, str]] = {
+        OutboxStatus.SENT: "success",
+        OutboxStatus.FAILED: "danger",
+        OutboxStatus.PENDING: "warning",
+    }
 
     def __init__(self, controller: StationController) -> None:
         super().__init__()
         self.c = controller
-        layout = QVBoxLayout(self)
+        scroll, content = _tab_scroll()
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.addWidget(scroll)
         top = QHBoxLayout()
-        sessions_box = QVBoxLayout()
-        self.sessions_title = TrLabel("admin.rep.sessions_title", role="h2")
-        sessions_box.addWidget(self.sessions_title)
-        self.sessions = _table(self.SESSION_COLUMNS)
-        sessions_box.addWidget(self.sessions, 1)
-        buttons = QHBoxLayout()
-        self.export_xlsx = BigButton("action.export_excel", variant="primary")
-        self.export_csv = BigButton("action.export_csv")
-        self.export_xlsx.clicked.connect(lambda: self._export_selected("xlsx"))
-        self.export_csv.clicked.connect(lambda: self._export_selected("csv"))
-        buttons.addWidget(self.export_xlsx)
-        buttons.addWidget(self.export_csv)
-        sessions_box.addLayout(buttons)
-        range_row = QHBoxLayout()
-        self.date_from = QDateEdit()
-        self.date_to = QDateEdit()
-        for edit in (self.date_from, self.date_to):
-            edit.setCalendarPopup(True)
-            edit.setDisplayFormat("yyyy-MM-dd")
-        today = QDate.currentDate()
-        self.date_from.setDate(today.addDays(-7))
-        self.date_to.setDate(today)
-        self.range_format = QComboBox()
-        self.export_range = BigButton("action.export_range")
-        self.export_range.clicked.connect(self._export_range)
-        range_row.addWidget(self.date_from)
-        range_row.addWidget(self.date_to)
-        range_row.addWidget(self.range_format)
-        range_row.addWidget(self.export_range)
-        sessions_box.addLayout(range_row)
-        device_row = QHBoxLayout()
-        self.device_search = QLineEdit()
-        self.device_export = BigButton("action.export_device")
-        self.device_export.clicked.connect(self._export_device)
-        device_row.addWidget(self.device_search, 1)
-        device_row.addWidget(self.device_export)
-        sessions_box.addLayout(device_row)
-        top.addLayout(sessions_box, 1)
-        layout.addLayout(top, 1)
-
-        layout.addWidget(TrLabel("admin.out.title", role="h2"))
-        self.outbox = _table(self.OUTBOX_COLUMNS)
-        layout.addWidget(self.outbox, 1)
-        outbox_buttons = QHBoxLayout()
-        self.result = ResultLine()
-        outbox_buttons.addWidget(self.result, 1)
-        self.open_folder = BigButton("action.open_reports_folder")
-        self.open_folder.clicked.connect(self._open_folder)
-        self.resend = BigButton("action.resend")
-        self.resend.clicked.connect(self._resend)
-        self.send_now = BigButton("action.send_pending")
-        self.send_now.clicked.connect(self._send_now)
-        for button in (self.open_folder, self.resend, self.send_now):
-            outbox_buttons.addWidget(button)
-        layout.addLayout(outbox_buttons)
+        top.setSpacing(SPACE.l)
+        sessions_card = Card("admin.rep.sessions_title", icon="history")
+        self.sessions = DataTable(
+            self.SESSION_COLUMNS,
+            numeric=(0, 4),
+            empty=("history", "admin.rep.empty_title", "admin.rep.empty_body"),
+        )
+        self.sessions.setMinimumHeight(SIZES.table_row * 6)
+        sessions_card.body.addWidget(self.sessions)
+        top.addWidget(sessions_card, SIZES.grid_columns - SIZES.left_columns)
+        top.addWidget(self._export_card(), SIZES.left_columns)
+        content.addLayout(top)
+        content.addWidget(self._outbox_card())
+        content.addStretch(1)
         language_notifier().changed.connect(self.retranslate)
         self.retranslate()
+
+    def _export_card(self) -> Card:
+        """ONE export card: scope · format · Export (A3)."""
+        card = Card("admin.rep.export_title", icon="download")
+        card.body.addWidget(TrText("admin.rep.scope", "label", "secondary"))
+        self.scope = SegmentedControl(
+            [
+                ("selected", "admin.rep.scope_selected"),
+                ("range", "admin.rep.scope_range"),
+                ("device", "admin.rep.scope_device"),
+            ]
+        )
+        self.scope.changed.connect(self._scope_changed)
+        card.body.addWidget(self.scope)
+        self.scope_stack = QStackedWidget()
+        self.scope_stack.addWidget(TrText("admin.rep.select_hint", "body", "secondary", wrap=True))
+        today = QDate.currentDate()
+        self.date_range = DateRangePicker(today.addDays(-7), today)
+        self.scope_stack.addWidget(self.date_range)
+        self.device_search = TextField("admin.rep.device_search", max_width=None)
+        self.scope_stack.addWidget(self.device_search)
+        self.scope_stack.setFixedHeight(SIZES.input)
+        card.body.addWidget(self.scope_stack)
+        card.body.addWidget(TrText("admin.rep.format", "label", "secondary"))
+        self.format = SegmentedControl(
+            [
+                ("xlsx", "admin.rep.format_xlsx"),
+                ("csv", "admin.rep.format_csv"),
+                ("both", "admin.rep.format_both"),
+            ]
+        )
+        card.body.addWidget(self.format)
+        self.export_button = AppButton("action.export", variant="filled", icon="download")
+        self.export_button.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        self.export_button.clicked.connect(self.export)
+        card.body.addWidget(self.export_button)
+        self.result = InlineMessage()
+        card.body.addWidget(self.result)
+        card.body.addStretch(1)
+        return card
+
+    def _outbox_card(self) -> Card:
+        card = Card("admin.out.title", icon="outbox")
+        self.outbox = DataTable(
+            self.OUTBOX_COLUMNS,
+            numeric=(0, 4),
+            empty=("inbox", "admin.out.empty_title", "admin.out.empty_body"),
+        )
+        self.outbox.setItemDelegateForColumn(3, ChipDelegate({}, self.outbox))
+        self.outbox.setMinimumHeight(SIZES.table_row * 5)
+        card.body.addWidget(self.outbox)
+        buttons = QHBoxLayout()
+        buttons.setSpacing(SPACE.s)
+        self.open_folder = AppButton(
+            "action.open_reports_folder", variant="text", size="compact", icon="folder_open"
+        )
+        self.open_folder.clicked.connect(self._open_folder)
+        self.resend = AppButton("action.resend", variant="outlined", size="compact", icon="send")
+        self.resend.clicked.connect(self._resend)
+        self.send_now = AppButton(
+            "action.send_pending", variant="outlined", size="compact", icon="mail"
+        )
+        self.send_now.clicked.connect(self._send_now)
+        buttons.addWidget(self.open_folder)
+        buttons.addStretch(1)
+        buttons.addWidget(self.resend)
+        buttons.addWidget(self.send_now)
+        card.body.addLayout(buttons)
+        return card
+
+    def _scope_changed(self, scope: object) -> None:
+        self.scope_stack.setCurrentIndex(self.SCOPES.index(str(scope)))
 
     def refresh(self) -> None:
         repos = self.c.ctx.repos
@@ -697,19 +1023,19 @@ class ReportsTab(QWidget):
         for session in sessions:
             operator = repos.operators.get(session.operator_id)
             count = len(repos.devices.list_for_session(session.id))
+            name = f"{operator.full_name} ({operator.operator_code})" if operator else ""
             rows.append(
                 [
                     str(session.id),
-                    operator.operator_code if operator else "",
+                    name,
                     _local(session.started_at),
                     _local(session.ended_at),
                     str(count),
                 ]
             )
-        _fill(self.sessions, rows, [s.id for s in sessions])
+        self.sessions.fill(rows, [s.id for s in sessions])
         items = self.c.ctx.outbox.list_items()
-        _fill(
-            self.outbox,
+        self.outbox.fill(
             [
                 [
                     str(i.id),
@@ -724,11 +1050,28 @@ class ReportsTab(QWidget):
             [i.id for i in items],
         )
 
+    def _status_tones(self) -> None:
+        delegate = self.outbox.itemDelegateForColumn(3)
+        if isinstance(delegate, ChipDelegate):
+            delegate.tones = {
+                t(status.label_key).upper(): self.OUTBOX_TONES.get(status, "neutral")
+                for status in OutboxStatus
+            }
+
+    def export(self) -> None:
+        scope = self.scope.value()
+        if scope == "range":
+            self._export_range()
+        elif scope == "device":
+            self._export_device()
+        else:
+            self._export_selected(str(self.format.value() or "xlsx"))
+
     def _done(self, paths: list[Any]) -> None:
         self.result.ok(t("admin.rep.written", files=", ".join(str(p) for p in paths)))
 
     def _export_selected(self, fmt: str) -> None:
-        ids = sorted(_selected_data(self.sessions))
+        ids = sorted(self.sessions.selected_data())
         if not ids:
             self.result.info(t("admin.rep.select_session"))
             return
@@ -742,11 +1085,11 @@ class ReportsTab(QWidget):
         )
 
     def _export_range(self) -> None:
-        start_day = cast(date, self.date_from.date().toPython())
-        end_day = cast(date, self.date_to.date().toPython())
+        start_day = self.date_range.start_date()
+        end_day = self.date_range.end_date()
         start = datetime.combine(start_day, time.min).astimezone()
         end = datetime.combine(end_day + timedelta(days=1), time.min).astimezone()
-        fmt = self.range_format.currentData()
+        fmt = cast(ExportFormat, self.format.value() or "xlsx")
         exporter = self.c.ctx.exporter
         self.result.info(t("admin.rep.working"))
         self.c.bg.submit(
@@ -775,7 +1118,7 @@ class ReportsTab(QWidget):
         QDesktopServices.openUrl(QUrl.fromLocalFile(str(self.c.ctx.exporter.reports_dir)))
 
     def _resend(self) -> None:
-        ids = _selected_data(self.outbox)
+        ids = self.outbox.selected_data()
         operator = self.c.operator
         if not ids or operator is None:
             self.result.info(t("admin.out.select_item"))
@@ -813,68 +1156,79 @@ class ReportsTab(QWidget):
         )
 
     def retranslate(self, *_args: object) -> None:
-        _set_headers(self.sessions, self.SESSION_COLUMNS)
-        _set_headers(self.outbox, self.OUTBOX_COLUMNS)
         self.sessions.setAccessibleName(t("admin.rep.sessions_title"))
         self.outbox.setAccessibleName(t("admin.out.title"))
-        self.device_search.setPlaceholderText(t("admin.rep.device_search"))
         self.device_search.setAccessibleName(t("admin.rep.device_search"))
-        self.date_from.setAccessibleName(t("admin.rep.from"))
-        self.date_to.setAccessibleName(t("admin.rep.to"))
-        current = self.range_format.currentData() or "xlsx"
-        self.range_format.clear()
-        for fmt in ("xlsx", "csv", "both"):
-            self.range_format.addItem(t(f"admin.rep.format_{fmt}"), fmt)
-        self.range_format.setCurrentIndex(max(0, self.range_format.findData(current)))
-        self.range_format.setAccessibleName(t("admin.rep.format"))
+        self.scope.setAccessibleName(t("admin.rep.scope"))
+        self.format.setAccessibleName(t("admin.rep.format"))
+        self._status_tones()
 
 
 # =========================================================================== counters
 
 
 class CountersTab(QWidget):
+    """KPI tiles of the live counters; Reset is tonal red with an inline confirm (A5)."""
+
     def __init__(self, controller: StationController) -> None:
         super().__init__()
         self.c = controller
-        layout = QVBoxLayout(self)
-        layout.addWidget(TrLabel("admin.cnt.title", role="h2"))
-        self.values = QLabel()
-        self.values.setFont(font(SIZES.font_h2, bold=True))
-        self.values.setWordWrap(True)
-        layout.addWidget(self.values)
-        layout.addWidget(TrLabel("admin.cnt.help", role="muted"))
+        scroll, content = _tab_scroll()
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.addWidget(scroll)
+        content.addWidget(TrText("admin.cnt.title", "title"))
+        self.since = Text("", "caption", "secondary")
+        content.addWidget(self.since)
+        tiles = QGridLayout()
+        tiles.setSpacing(SPACE.l)
+        self.tiles = {
+            "ok": KpiTile("counter.uploads_ok", "check_circle", COLORS.success),
+            "fail": KpiTile("counter.uploads_fail", "cancel", COLORS.danger),
+            "adjusted": KpiTile("counter.failures_adjusted", "restart_alt", COLORS.text_2),
+            "done": KpiTile("counter.completed", "task_alt", COLORS.primary),
+            "rejected": KpiTile("counter.rejected", "block", COLORS.danger),
+        }
+        for index, tile in enumerate(self.tiles.values()):
+            tiles.addWidget(tile, 0, index)
+        content.addLayout(tiles)
+        content.addWidget(TrText("admin.cnt.help", "body", "secondary", wrap=True))
         self.confirm = InlineConfirm()
         self.confirm.setVisible(False)
         self.confirm.answered.connect(self._answered)
-        layout.addWidget(self.confirm)
-        self.reset = BigButton("action.reset_counters", variant="danger")
+        content.addWidget(self.confirm)
+        row = QHBoxLayout()
+        self.reset = AppButton("action.reset_counters", variant="danger_tonal", icon="restart_alt")
         self.reset.clicked.connect(self._ask)
-        layout.addWidget(self.reset, 0, Qt.AlignmentFlag.AlignLeft)
-        self.result = ResultLine()
-        layout.addWidget(self.result)
-        layout.addStretch(1)
+        row.addWidget(self.reset)
+        row.addStretch(1)
+        content.addLayout(row)
+        self.result = InlineMessage()
+        content.addWidget(self.result)
+        content.addStretch(1)
         controller.counters_changed.connect(self.refresh)
         language_notifier().changed.connect(self.refresh)
 
     def refresh(self, *_args: object) -> None:
         counters = self.c.counters
         if counters is None:
-            self.values.setText(t("admin.cnt.no_session"))
+            self.since.set_key("admin.cnt.no_session")
+            for tile in self.tiles.values():
+                tile.set_value("-")
             self.reset.setEnabled(False)
             return
         self.reset.setEnabled(True)
         since = _local(counters.since) if counters.since else t("admin.cnt.since_start")
-        self.values.setText(
-            t(
-                "admin.cnt.values",
-                ok=counters.upload_success,
-                fail=counters.upload_failure,
-                adjusted=counters.failures_adjusted,
-                done=counters.completed,
-                rejected=counters.rejected,
-                since=since,
-            )
-        )
+        self.since.set_key("admin.cnt.since", since=since)
+        values = {
+            "ok": counters.upload_success,
+            "fail": counters.upload_failure,
+            "adjusted": counters.failures_adjusted,
+            "done": counters.completed,
+            "rejected": counters.rejected,
+        }
+        for name, value in values.items():
+            self.tiles[name].set_value(str(value))
 
     def _ask(self) -> None:
         self.confirm.show_confirm(
@@ -900,28 +1254,53 @@ class CountersTab(QWidget):
 
 class ErrorLogTab(QWidget):
     COLUMNS = ("admin.log.time", "admin.log.level", "admin.log.code", "admin.log.message")
+    LEVELS: ClassVar[dict[str, str]] = {
+        "CRITICAL": "danger",
+        "ERROR": "danger",
+        "WARNING": "warning",
+        "INFO": "info",
+    }
 
     def __init__(self, controller: StationController) -> None:
         super().__init__()
         self.c = controller
         self._entries: list[dict[str, Any]] = []
         layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, SPACE.l, 0, SPACE.l)
+        layout.setSpacing(SPACE.l)
         row = QHBoxLayout()
-        self.filter = QComboBox()
-        self.filter.currentIndexChanged.connect(lambda _i: self.refresh())
-        self.refresh_button = BigButton("action.refresh")
+        row.setSpacing(SPACE.m)
+        self.filter = Select()
+        self.filter.setFixedWidth(SIZES.select_max)
+        self.filter.currentIndexChanged.connect(self._filter_changed)
+        self.refresh_button = AppButton("action.refresh", variant="outlined", icon="refresh")
         self.refresh_button.clicked.connect(self.refresh)
-        row.addWidget(self.filter, 1)
+        row.addWidget(self.filter)
         row.addWidget(self.refresh_button)
+        row.addStretch(1)
         layout.addLayout(row)
-        self.table = _table(self.COLUMNS)
+        card = Card()
+        self.table = DataTable(
+            self.COLUMNS,
+            mono=(2,),
+            empty=("task_alt", "admin.log.empty_title", "admin.log.empty_body"),
+        )
+        self.table.setItemDelegateForColumn(1, ChipDelegate(self.LEVELS, self.table))
         self.table.itemSelectionChanged.connect(self._show_details)
-        layout.addWidget(self.table, 2)
+        card.body.addWidget(self.table)
+        layout.addWidget(card, 2)
+        self.details_card = Card("admin.log.details", icon="description", compact=True)
         self.details = QPlainTextEdit()
         self.details.setReadOnly(True)
-        layout.addWidget(self.details, 1)
+        self.details.setFont(font_for(TYPE.mono_label))
+        self.details_card.body.addWidget(self.details)
+        self.details_card.setVisible(False)  # only when a row is selected (A4)
+        layout.addWidget(self.details_card, 1)
         language_notifier().changed.connect(self.retranslate)
         self.retranslate()
+
+    def _filter_changed(self, _index: int) -> None:
+        self.refresh()
 
     def refresh(self) -> None:
         code = self.filter.currentData()
@@ -935,17 +1314,20 @@ class ErrorLogTab(QWidget):
             ]
             for e in self._entries
         ]
-        _fill(self.table, rows, list(range(len(rows))))
+        self.table.fill(rows, list(range(len(rows))))
         self.details.setPlainText("" if rows else t("admin.log.empty"))
+        self.details_card.setVisible(False)
 
     def _show_details(self) -> None:
-        selected = _selected_data(self.table)
+        selected = self.table.selected_data()
         if selected:
             entry = self._entries[int(selected[0])]
             self.details.setPlainText(json.dumps(entry, ensure_ascii=False, indent=2))
+            self.details_card.setVisible(True)
+        else:
+            self.details_card.setVisible(False)
 
     def retranslate(self, *_args: object) -> None:
-        _set_headers(self.table, self.COLUMNS)
         self.table.setAccessibleName(t("admin.tab.errors"))
         self.details.setAccessibleName(t("admin.log.details"))
         current = self.filter.currentData()
@@ -959,7 +1341,7 @@ class ErrorLogTab(QWidget):
         self.filter.blockSignals(False)
 
 
-# =========================================================================== shell
+# =========================================================================== page
 
 
 class AdminView(QWidget):
@@ -975,35 +1357,35 @@ class AdminView(QWidget):
         super().__init__()
         self.c = controller
         self.setObjectName("Page")
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(SIZES.space_l, SIZES.space_m, SIZES.space_l, SIZES.space_m)
+        self._layout = QVBoxLayout(self)
+        self._layout.setContentsMargins(SIZES.page_margin, SPACE.l, SIZES.page_margin, SPACE.l)
+        self._layout.setSpacing(SPACE.s)
         header = QHBoxLayout()
-        header.addWidget(TrLabel("admin.title", role="h1"), 1)
-        self.back = BigButton("action.back_to_production", variant="primary", hint_key="key.esc")
+        header.setSpacing(SPACE.l)
+        # tonal/outlined with a back arrow - primary colour is for each tab's main action (A7)
+        self.back = AppButton(
+            "action.back_to_production", variant="outlined", icon="arrow_back", hint_key="key.esc"
+        )
         self.back.clicked.connect(controller.close_admin)
         header.addWidget(self.back)
-        layout.addLayout(header)
-        frame = QFrame()
-        frame.setProperty("card", True)
-        frame_layout = QVBoxLayout(frame)
-        self.tabs = QTabWidget()
+        header.addWidget(TrText("admin.title", "headline"), 1)
+        self._layout.addLayout(header)
+        self.tabs = Tabs()
         self.settings_tab = SettingsTab(controller)
         self.operators_tab = OperatorsTab(controller)
         self.reports_tab = ReportsTab(controller)
         self.counters_tab = CountersTab(controller)
         self.errors_tab = ErrorLogTab(controller)
-        for tab in (
+        tabs = (
             self.settings_tab,
             self.operators_tab,
             self.reports_tab,
             self.counters_tab,
             self.errors_tab,
-        ):
-            self.tabs.addTab(tab, "")
-        frame_layout.addWidget(self.tabs)
-        layout.addWidget(frame, 1)
-        language_notifier().changed.connect(self.retranslate)
-        self.retranslate()
+        )
+        for tab, key in zip(tabs, self.TABS, strict=True):
+            self.tabs.add_tab(tab, key)
+        self._layout.addWidget(self.tabs, 1)
 
     def refresh(self) -> None:
         self.settings_tab.load()
@@ -1012,6 +1394,9 @@ class AdminView(QWidget):
         self.counters_tab.refresh()
         self.errors_tab.refresh()
 
-    def retranslate(self, *_args: object) -> None:
-        for index, key in enumerate(self.TABS):
-            self.tabs.setTabText(index, t(key).replace("&", "&&"))  # '&' is not a mnemonic
+    def resizeEvent(self, event: QResizeEvent) -> None:
+        super().resizeEvent(event)
+        width = self.width()
+        margin = SIZES.page_margin_wide if width >= SIZES.wide_breakpoint else SIZES.page_margin
+        margin = max(margin, (width - SIZES.content_max) // 2)
+        self._layout.setContentsMargins(margin, SPACE.l, margin, SPACE.l)

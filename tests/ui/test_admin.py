@@ -43,9 +43,10 @@ def test_admin_is_role_gated(make_driver: DriverFactory) -> None:
 def test_admin_blocked_while_device_in_progress(driver: StationDriver) -> None:
     d = driver
     d.connect()
-    assert d.window.shell.top.admin_button.isVisible()
-    assert not d.window.shell.top.admin_button.isEnabled()
-    assert d.window.shell.top.admin_button.toolTip().startswith("Finish or reject")
+    admin_item = d.window.shell.top.admin_item  # in the account menu (T4)
+    assert not admin_item.isHidden()
+    assert not admin_item.isEnabled()
+    assert admin_item.toolTip().startswith("Finish or reject")
     d.c.open_admin()
     assert d.c.page is Page.PRODUCTION
 
@@ -54,7 +55,8 @@ def test_settings_editor_validates_and_audits(driver: StationDriver) -> None:
     d = driver
     _open_admin(d)
     tab = d.window.admin.settings_tab
-    assert tab.labels["limits.v_c_low"].text() == "Point C minimum (V)"
+    assert tab.editors["limits.v_c_low"].accessibleName() == "Point C minimum (V)"
+    assert tab.labels["limits.v_c_low"].text() == "Point C voltage"  # one range row (A2)
     low = tab.editors["limits.v_c_low"]
     assert isinstance(low, QDoubleSpinBox)
     low.setValue(3.5)  # above v_c_high (3.35) -> invalid
@@ -69,7 +71,8 @@ def test_settings_editor_validates_and_audits(driver: StationDriver) -> None:
     assert isinstance(station, QLineEdit)
     station.setText("BENCH-2")
     tab.save_settings()
-    assert tab.result.text().startswith("✓  Saved - 2 change(s)")
+    assert tab.result.text().startswith("Saved - 2 change(s)")
+    assert tab.result.property("status") == "pass"
     assert d.ctx.settings.limits.v_c_low == 3.26
     assert d.ctx.records.station_id == "BENCH-2"
     audit = d.ctx.repos.audit.list_entries(action="settings.update")[0]
@@ -120,7 +123,7 @@ def test_operators_tab(driver: StationDriver) -> None:
     assert tab.result.text() == "The two passwords are different"
     tab.new_pw2.setText("pass-word-9")
     tab.add_button.click()
-    assert tab.result.text() == "✓  Operator OP99 added"
+    assert tab.result.text() == "Operator OP99 added"
     assert tab.table.rowCount() == 3 and tab.new_code.text() == ""
     created = d.ctx.repos.operators.get_by_code("OP99")
     assert created is not None and created.role is Role.OPERATOR
@@ -136,17 +139,18 @@ def test_operators_tab(driver: StationDriver) -> None:
     tab.reset_pw.setText("brand-new-1")
     tab.reset_pw2.setText("brand-new-1")
     tab.reset_button.click()
-    assert tab.result.text() == "✓  New password set for OP99"
+    assert tab.result.text() == "New password set for OP99"
     _select_row(tab.table, row)
     tab.unlock.click()
-    assert tab.result.text() == "✓  Operator OP99 unlocked"
+    assert tab.result.text() == "Operator OP99 unlocked"
     # the last admin cannot demote themselves
     admin_row = next(r for r in range(3) if tab.table.item(r, 0).text() == ADMIN[0])
     d.ctx.auth.set_role(d.c.operator, created.id, Role.OPERATOR)  # type: ignore[arg-type]
     tab.refresh()
     _select_row(tab.table, admin_row)
     tab.toggle_role.click()
-    assert tab.result.text().startswith("✕  Action not possible now")
+    assert tab.result.text().startswith("Action not possible now")
+    assert tab.result.property("status") == "fail"
 
 
 def test_reports_and_outbox_tab(driver: StationDriver) -> None:
@@ -159,18 +163,20 @@ def test_reports_and_outbox_tab(driver: StationDriver) -> None:
     tab._export_selected("xlsx")
     assert tab.result.text() == "Select one or more sessions first"
     _select_row(tab.sessions, 0)
-    tab.export_xlsx.click()
+    tab.export_button.click()  # ONE export button: scope "selected sessions", format Excel (A3)
     d.idle()
-    assert tab.result.text().startswith("✓  Written:") and ".xlsx" in tab.result.text()
-    tab.export_range.click()
+    assert tab.result.text().startswith("Written:") and ".xlsx" in tab.result.text()
+    tab.scope.button("range").click()
+    tab.export_button.click()
     d.idle()
-    assert tab.result.text().startswith("✓  Written:")
+    assert tab.result.text().startswith("Written:")
+    tab.scope.button("device").click()
     tab.device_search.setText("PKM-000519")
-    tab.device_export.click()
+    tab.export_button.click()
     d.idle()
     assert "device_" in tab.result.text()
     tab.device_search.setText("nothing-like-this")
-    tab.device_export.click()
+    tab.export_button.click()
     assert tab.result.text() == 'No device found for "nothing-like-this"'
 
     # outbox: a failed e-mail can be resent by the admin
@@ -202,7 +208,7 @@ def test_counters_tab_reset(driver: StationDriver) -> None:
     tab = d.window.admin.counters_tab
     d.window.admin.tabs.setCurrentWidget(tab)
     tab.refresh()
-    assert "Completed 1" in tab.values.text()
+    assert tab.tiles["done"].value.text() == "1"  # KPI tiles (A5)
     tab.reset.click()
     assert tab.confirm.isVisible()
     tab.confirm.no_button.click()
@@ -211,7 +217,7 @@ def test_counters_tab_reset(driver: StationDriver) -> None:
     tab.confirm.yes_button.click()
     d.process()
     assert d.c.counters.completed == 0
-    assert tab.result.text() == "✓  Counters reset"
+    assert tab.result.text() == "Counters reset"
     d.window.admin.back.click()
     assert d.c.page is Page.PRODUCTION
 
@@ -249,7 +255,7 @@ def test_admin_language_switch(driver: StationDriver) -> None:
     d.process()
     admin = d.window.admin
     assert admin.tabs.tabText(0) == "सेटिंग्ज"
-    assert admin.settings_tab.labels["limits.v_c_low"].text() == "पॉइंट C किमान (V)"
+    assert admin.settings_tab.editors["limits.v_c_low"].accessibleName() == "पॉइंट C किमान (V)"
     d.c.set_language("en")
 
 

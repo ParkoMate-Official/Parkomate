@@ -8,7 +8,8 @@ from PySide6.QtWidgets import QMainWindow, QStackedWidget, QWidget
 
 from parkomate.i18n import t
 from parkomate.ui.qt_i18n import language_notifier
-from parkomate.ui.theme.legacy import SIZES
+from parkomate.ui.theme import motion
+from parkomate.ui.theme.tokens import SIZES
 from parkomate.ui.viewmodels.station import Page, StationController
 from parkomate.ui.views.admin import AdminView
 from parkomate.ui.views.pages import LoginView, SessionEndView, StartingView
@@ -21,6 +22,7 @@ class MainWindow(QMainWindow):
         self.c = controller
         self.setObjectName("Root")
         self.setMinimumSize(SIZES.min_window_width, SIZES.min_window_height)
+        motion.configure(bool(controller.settings.ui.reduce_motion))
         self.stack = QStackedWidget()
         self.setCentralWidget(self.stack)
         self.starting = StartingView()
