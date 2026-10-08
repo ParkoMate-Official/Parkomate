@@ -10,7 +10,7 @@ from PySide6.QtWidgets import QSizePolicy, QWidget
 from parkomate.ui.components.base import draw_line, fill_rounded, qcolor
 from parkomate.ui.components.buttons import paint_spinner
 from parkomate.ui.theme.motion import FrameClock, Tween
-from parkomate.ui.theme.tokens import ALPHA, COLORS, MOTION, SIZES, TYPE
+from parkomate.ui.theme.tokens import ALPHA, COLORS, MOTION, SIZES, SPACE, TYPE
 
 STATE_COLORS = {
     "running": COLORS.primary,
@@ -49,7 +49,7 @@ class ProgressBar(QWidget):
     def state(self) -> str:
         return self._state
 
-    def paintEvent(self, _event: QPaintEvent) -> None:  # noqa: N802 - Qt API
+    def paintEvent(self, _event: QPaintEvent) -> None:
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         rect = QRectF(self.rect())
@@ -98,7 +98,7 @@ class ProgressRing(QWidget):
             clock.unsubscribe(self)
         self.update()
 
-    def paintEvent(self, _event: QPaintEvent) -> None:  # noqa: N802 - Qt API
+    def paintEvent(self, _event: QPaintEvent) -> None:
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         stroke = SIZES.ring_stroke
@@ -119,8 +119,14 @@ class ProgressRing(QWidget):
         span = -int(360 * 16 * self._shown.value / 100)
         if span:
             painter.drawArc(rect, 90 * 16, span)
-        draw_line(painter, QRectF(self.rect()), f"{round(self._shown.value)} %", TYPE.headline,
-                  COLORS.text, align=Qt.AlignmentFlag.AlignHCenter)
+        draw_line(
+            painter,
+            QRectF(self.rect()),
+            f"{round(self._shown.value)} %",
+            TYPE.headline,
+            COLORS.text,
+            align=Qt.AlignmentFlag.AlignHCenter,
+        )
         painter.end()
 
 
@@ -139,17 +145,57 @@ class Spinner(QWidget):
         self._color = color
         self.update()
 
-    def showEvent(self, event: object) -> None:  # noqa: N802 - Qt API
+    def showEvent(self, event: object) -> None:
         FrameClock.instance().subscribe(self, self.update)
         super().showEvent(event)  # type: ignore[arg-type]
 
-    def hideEvent(self, event: object) -> None:  # noqa: N802 - Qt API
+    def hideEvent(self, event: object) -> None:
         FrameClock.instance().unsubscribe(self)
         super().hideEvent(event)  # type: ignore[arg-type]
 
-    def paintEvent(self, _event: QPaintEvent) -> None:  # noqa: N802 - Qt API
+    def paintEvent(self, _event: QPaintEvent) -> None:
         painter = QPainter(self)
         paint_spinner(
-            painter, QRectF(self.rect()), self._color, FrameClock.instance().phase(MOTION.spin_period)
+            painter,
+            QRectF(self.rect()),
+            self._color,
+            FrameClock.instance().phase(MOTION.spin_period),
         )
+        painter.end()
+
+
+class AttemptDots(QWidget):
+    """Attempts as dots: ● failed (red) / ● passed (green) / ○ not used yet."""
+
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self._results: list[bool] = []
+        self._total = 3
+        self.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+
+    def set_attempts(self, results: list[bool], total: int) -> None:
+        self._results = list(results)
+        self._total = max(total, len(results))
+        self.updateGeometry()
+        self.update()
+
+    def sizeHint(self) -> QSize:
+        dot = SIZES.attempt_dot
+        return QSize(self._total * dot + (self._total - 1) * SPACE.s, dot)
+
+    def paintEvent(self, _event: QPaintEvent) -> None:
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        dot = SIZES.attempt_dot
+        for index in range(self._total):
+            rect = QRectF(index * (dot + SPACE.s), 0, dot, dot)
+            if index < len(self._results):
+                painter.setPen(Qt.PenStyle.NoPen)
+                painter.setBrush(QColor(COLORS.success if self._results[index] else COLORS.danger))
+                painter.drawEllipse(rect)
+            else:
+                inset = SIZES.active_outline / 2
+                painter.setPen(QPen(QColor(COLORS.outline_strong), SIZES.active_outline))
+                painter.setBrush(Qt.BrushStyle.NoBrush)
+                painter.drawEllipse(rect.adjusted(inset, inset, -inset, -inset))
         painter.end()

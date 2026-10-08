@@ -69,9 +69,7 @@ class FocusRing(QWidget):
             return
         top_left = target.mapTo(window, target.rect().topLeft())
         margin = self.margin()
-        self.setGeometry(
-            QRect(top_left, target.size()).adjusted(-margin, -margin, margin, margin)
-        )
+        self.setGeometry(QRect(top_left, target.size()).adjusted(-margin, -margin, margin, margin))
         self.show()
         self.raise_()
         self.update()
@@ -82,7 +80,7 @@ class FocusRing(QWidget):
         region = target.visibleRegion()
         return not region.isEmpty()
 
-    def paintEvent(self, _event: QPaintEvent) -> None:  # noqa: N802 - Qt API
+    def paintEvent(self, _event: QPaintEvent) -> None:
         target = self.target
         if target is None:
             return
@@ -140,7 +138,7 @@ class FocusRingManager(QObject):
         return None
 
     # ------------------------------------------------------------------ events
-    def eventFilter(self, watched: QObject, event: QEvent) -> bool:  # noqa: N802 - Qt API
+    def eventFilter(self, watched: QObject, event: QEvent) -> bool:
         kind = event.type()
         if kind == QEvent.Type.KeyPress:
             if event.key() in NAVIGATION_KEYS and not self.keyboard:  # type: ignore[attr-defined]
@@ -172,14 +170,20 @@ class FocusRingManager(QObject):
         self._hide_all()
         if widget is None or isinstance(widget, FocusRing) or widget.isWindow():
             return
-        if isinstance(widget.parentWidget(), QAbstractScrollArea) and widget.parentWidget().viewport() is widget:  # type: ignore[union-attr]
-            widget = widget.parentWidget()  # type: ignore[assignment]
+        parent = widget.parentWidget()
+        if isinstance(parent, QAbstractScrollArea) and parent.viewport() is widget:
+            widget = parent
         window = widget.window()
         ring = self._rings.get(id(window))
         if ring is None:
+            key = id(window)
             ring = FocusRing(window)
-            self._rings[id(window)] = ring
-            window.destroyed.connect(lambda *_a, k=id(window): self._rings.pop(k, None))
+            self._rings[key] = ring
+
+            def forget(*_args: object) -> None:
+                self._rings.pop(key, None)
+
+            window.destroyed.connect(forget)
         self._watch(widget)
         ring.follow(widget)
 

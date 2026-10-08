@@ -5,11 +5,27 @@ animated tick, illustrative icon, label, 'Done' word when ticked, F-key chip on 
 from __future__ import annotations
 
 from PySide6.QtCore import QPointF, QRectF, QSize, Qt
-from PySide6.QtGui import QFontMetricsF, QKeyEvent, QPainter, QPainterPath, QPaintEvent, QPen
+from PySide6.QtGui import (
+    QEnterEvent,
+    QFontMetricsF,
+    QKeyEvent,
+    QPainter,
+    QPainterPath,
+    QPaintEvent,
+    QPen,
+)
 from PySide6.QtWidgets import QAbstractButton, QSizePolicy, QWidget
 
 from parkomate.i18n import t
-from parkomate.ui.components.base import draw_line, fill_rounded, key_width, mix, on_language_change, qcolor, translations
+from parkomate.ui.components.base import (
+    draw_line,
+    fill_rounded,
+    key_width,
+    mix,
+    on_language_change,
+    qcolor,
+    translations,
+)
 from parkomate.ui.components.buttons import keycap_size, paint_keycap
 from parkomate.ui.components.icons import paint_icon
 from parkomate.ui.theme.fonts import font_for
@@ -37,19 +53,35 @@ class ChecklistRow(QAbstractButton):
         on_language_change(self, self.retranslate)
         self.retranslate()
 
-    def setChecked(self, checked: bool) -> None:  # noqa: N802 - Qt API
+    def setChecked(self, checked: bool) -> None:
         if checked != self.isChecked():
             super().setChecked(checked)  # animates via toggled
         elif abs(self._tick.value - (1.0 if checked else 0.0)) > 0.5:
             self._tick.jump(1.0 if checked else 0.0)
 
-    def sizeHint(self) -> QSize:  # noqa: N802 - Qt API
-        return QSize(self._fixed_width() + key_width(font_for(TYPE.body_lg), self._key), SIZES.list_row)
+    def sizeHint(self) -> QSize:
+        return QSize(
+            self._fixed_width() + key_width(font_for(TYPE.body_lg), self._key), SIZES.list_row
+        )
 
     def _fixed_width(self) -> int:
         done = key_width(font_for(TYPE.label), "status.word.done")
-        cap = max((keycap_size(x).width() for x in translations(self._hint_key)), default=0) if self._hint_key else 0
-        return 2 * SPACE.l + SIZES.checkbox + SPACE.l + SIZES.icon_m + SPACE.m + SPACE.l + done + SPACE.m + cap
+        cap = (
+            max((keycap_size(x).width() for x in translations(self._hint_key)), default=0)
+            if self._hint_key
+            else 0
+        )
+        return (
+            2 * SPACE.l
+            + SIZES.checkbox
+            + SPACE.l
+            + SIZES.icon_m
+            + SPACE.m
+            + SPACE.l
+            + done
+            + SPACE.m
+            + cap
+        )
 
     def label(self) -> str:
         return t(self._key)
@@ -59,21 +91,21 @@ class ChecklistRow(QAbstractButton):
         self.setAccessibleName(self.label())
         self.update()
 
-    def keyPressEvent(self, event: QKeyEvent) -> None:  # noqa: N802 - Qt API
+    def keyPressEvent(self, event: QKeyEvent) -> None:
         if event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
             event.ignore()  # Enter is the primary action, never a toggle
             return
         super().keyPressEvent(event)
 
-    def enterEvent(self, event: object) -> None:  # noqa: N802 - Qt API
+    def enterEvent(self, event: QEnterEvent) -> None:
         self._hover.to(1.0)
-        super().enterEvent(event)  # type: ignore[arg-type]
+        super().enterEvent(event)
 
-    def leaveEvent(self, event: object) -> None:  # noqa: N802 - Qt API
+    def leaveEvent(self, event: object) -> None:
         self._hover.to(0.0)
         super().leaveEvent(event)  # type: ignore[arg-type]
 
-    def paintEvent(self, _event: QPaintEvent) -> None:  # noqa: N802 - Qt API
+    def paintEvent(self, _event: QPaintEvent) -> None:
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         rect = QRectF(self.rect())
@@ -90,29 +122,52 @@ class ChecklistRow(QAbstractButton):
         box = QRectF(rect.left() + SPACE.l, rect.center().y() - side / 2, side, side)
         border = mix(COLORS.outline_strong, COLORS.on_success_cont, k)
         fill = mix(COLORS.surface, COLORS.on_success_cont, k)
-        fill_rounded(painter, box, RADIUS.chip, fill, border, SIZES.active_outline * (1 - k) + SIZES.hairline * k)
+        fill_rounded(
+            painter,
+            box,
+            RADIUS.chip,
+            fill,
+            border,
+            SIZES.active_outline * (1 - k) + SIZES.hairline * k,
+        )
         if k > 0:
             self._paint_tick(painter, box, k)
         # icon + label
-        icon = QRectF(box.right() + SPACE.l, rect.center().y() - SIZES.icon_m / 2, SIZES.icon_m, SIZES.icon_m)
+        icon = QRectF(
+            box.right() + SPACE.l, rect.center().y() - SIZES.icon_m / 2, SIZES.icon_m, SIZES.icon_m
+        )
         paint_icon(painter, self._icon, icon, COLORS.text_2)
         right = rect.right() - SPACE.l
         if self._hint_key:
             hint = t(self._hint_key)
             cap = keycap_size(hint)
-            cap_rect = QRectF(right - cap.width(), rect.center().y() - cap.height() / 2, cap.width(), cap.height())
+            cap_rect = QRectF(
+                right - cap.width(), rect.center().y() - cap.height() / 2, cap.width(), cap.height()
+            )
             paint_keycap(painter, cap_rect, hint, COLORS.text_2)
             right = cap_rect.left() - SPACE.m
         if k > 0.5:
             width = key_width(font_for(TYPE.label), "status.word.done")
-            draw_line(painter, QRectF(right - width, rect.top(), width, rect.height()),
-                      t("status.word.done"), TYPE.label, COLORS.on_success_cont,
-                      align=Qt.AlignmentFlag.AlignRight)
+            draw_line(
+                painter,
+                QRectF(right - width, rect.top(), width, rect.height()),
+                t("status.word.done"),
+                TYPE.label,
+                COLORS.on_success_cont,
+                align=Qt.AlignmentFlag.AlignRight,
+            )
         right -= key_width(font_for(TYPE.label), "status.word.done") + SPACE.l
         text_left = icon.right() + SPACE.m
-        draw_line(painter, QRectF(text_left, rect.top(), right - text_left, rect.height()),
-                  self.text(), TYPE.body_lg, COLORS.text)
-        too_long = QFontMetricsF(font_for(TYPE.body_lg)).horizontalAdvance(self.text()) > right - text_left
+        draw_line(
+            painter,
+            QRectF(text_left, rect.top(), right - text_left, rect.height()),
+            self.text(),
+            TYPE.body_lg,
+            COLORS.text,
+        )
+        too_long = (
+            QFontMetricsF(font_for(TYPE.body_lg)).horizontalAdvance(self.text()) > right - text_left
+        )
         self.setToolTip(self.text() if too_long else "")
         painter.end()
 
@@ -125,8 +180,8 @@ class ChecklistRow(QAbstractButton):
             QPointF(box.left() + s * 0.42, box.top() + s * 0.70),
             QPointF(box.left() + s * 0.76, box.top() + s * 0.32),
         ]
-        first = (points[1] - points[0])
-        second = (points[2] - points[1])
+        first = points[1] - points[0]
+        second = points[2] - points[1]
         len1 = (first.x() ** 2 + first.y() ** 2) ** 0.5
         len2 = (second.x() ** 2 + second.y() ** 2) ** 0.5
         drawn = (len1 + len2) * min(1.0, k)

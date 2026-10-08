@@ -98,6 +98,7 @@ class LabelingViewModel(ChecklistMixin):
         self.identity_state = StepState.PENDING
         self.identity: IdentityStatus | None = None
         self.board_id: str | None = None
+        self.board_id_before: str | None = None  # the board's old ID when it had to be rewritten
         self.manual_mode = False
         self.manual_error_key: str | None = None
         self.camera_open = False
@@ -223,6 +224,8 @@ class LabelingViewModel(ChecklistMixin):
         outcome = self.guard(
             lambda: self.c.ctx.workflow.reconcile_identity(qr, board_id, method=self.method)
         )
+        if outcome is not None and outcome.status is IdentityStatus.WRITE_REQUIRED:
+            self.board_id_before = board_id
         self._apply_identity(outcome)
         if outcome is not None and outcome.status is IdentityStatus.WRITE_REQUIRED:
             self.write_identity()
@@ -381,7 +384,11 @@ class PackagingViewModel(ChecklistMixin):
                 name="complete",
             )
         return Action(
-            "action.complete_device", self.c.advance, hint_key="key.enter", name="complete"
+            "action.complete_device",
+            self.c.advance,
+            hint_key="key.enter",
+            variant="success",  # the Complete button turns green when it can be pressed (K1)
+            name="complete",
         )
 
     def secondary(self) -> list[Action]:

@@ -175,6 +175,7 @@ class Sizes:
     button: int = 56
     button_compact: int = 44
     button_min_width: int = 120
+    primary_action: int = 320  # THE primary button of a screen is never narrower
     button_pad: int = 24
     button_pad_compact: int = 16
     icon_gap: int = 8
@@ -208,7 +209,7 @@ class Sizes:
     # components
     stepper_dot: int = 32
     stepper_line: int = 2
-    stepper_segment: int = 40  # connector length between two stage labels
+    stepper_segment: int = 24  # connector length between two stage labels
     step_dot: int = 28
     progress_bar: int = 8
     ring: int = 168
@@ -218,10 +219,10 @@ class Sizes:
     range_bar: int = 8
     range_marker: int = 18
     range_bar_width: int = 180
-    reading_slot: int = 104
+    reading_slot: int = 88
     kpi: int = 120
     stacked_bar: int = 16
-    camera_min_height: int = 190
+    camera_min_height: int = 160
     camera_corner: int = 28
     camera_stroke: int = 4
     toast: int = 96

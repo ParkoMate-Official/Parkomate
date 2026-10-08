@@ -10,7 +10,13 @@ from PySide6.QtGui import QPainter, QPaintEvent
 from PySide6.QtWidgets import QTabBar, QTabWidget, QWidget
 
 from parkomate.i18n import t
-from parkomate.ui.components.base import draw_line, fill_rounded, key_width, on_language_change, qcolor
+from parkomate.ui.components.base import (
+    draw_line,
+    fill_rounded,
+    key_width,
+    on_language_change,
+    qcolor,
+)
 from parkomate.ui.theme.fonts import font_for
 from parkomate.ui.theme.motion import Tween
 from parkomate.ui.theme.tokens import ALPHA, COLORS, MOTION, RADIUS, SIZES, SPACE, TYPE
@@ -30,36 +36,46 @@ class _TabBar(QTabBar):
         self.setProperty("ring_radius", RADIUS.chip)
         self.currentChanged.connect(lambda index: self._position.to(float(index)))
 
-    def tabSizeHint(self, index: int) -> QSize:  # noqa: N802 - Qt API
+    def tabSizeHint(self, index: int) -> QSize:
         key = self.tabs.key(index)
         width = key_width(font_for(TYPE.body_strong), key) + 2 * SPACE.xl
         return QSize(width, SIZES.tab)
 
-    def minimumTabSizeHint(self, index: int) -> QSize:  # noqa: N802 - Qt API
+    def minimumTabSizeHint(self, index: int) -> QSize:
         return self.tabSizeHint(index)
 
-    def mouseMoveEvent(self, event: object) -> None:  # noqa: N802 - Qt API
+    def mouseMoveEvent(self, event: object) -> None:
         self._hovered = self.tabAt(event.position().toPoint())  # type: ignore[attr-defined]
         self.update()
         super().mouseMoveEvent(event)  # type: ignore[arg-type]
 
-    def leaveEvent(self, event: QEvent) -> None:  # noqa: N802 - Qt API
+    def leaveEvent(self, event: QEvent) -> None:
         self._hovered = -1
         self.update()
         super().leaveEvent(event)
 
-    def paintEvent(self, _event: QPaintEvent) -> None:  # noqa: N802 - Qt API
+    def paintEvent(self, _event: QPaintEvent) -> None:
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         current = self.currentIndex()
         for index in range(self.count()):
             rect = QRectF(self.tabRect(index))
             if index == self._hovered and index != current:
-                fill_rounded(painter, rect.adjusted(0, SPACE.xs, 0, -SPACE.xs), RADIUS.chip,
-                             qcolor(COLORS.text, ALPHA.hover))
+                fill_rounded(
+                    painter,
+                    rect.adjusted(0, SPACE.xs, 0, -SPACE.xs),
+                    RADIUS.chip,
+                    qcolor(COLORS.text, ALPHA.hover),
+                )
             selected = index == current
-            draw_line(painter, rect, self.tabText(index), TYPE.body_strong if selected else TYPE.body,
-                      COLORS.primary if selected else COLORS.text_2, align=Qt.AlignmentFlag.AlignHCenter)
+            draw_line(
+                painter,
+                rect,
+                self.tabText(index).replace("&&", "&"),
+                TYPE.body_strong if selected else TYPE.body,
+                COLORS.primary if selected else COLORS.text_2,
+                align=Qt.AlignmentFlag.AlignHCenter,
+            )
         if self.count():
             position = max(0.0, min(self._position.value, self.count() - 1))
             low = math.floor(position)
@@ -70,8 +86,12 @@ class _TabBar(QTabBar):
             left = a.left() + (b.left() - a.left()) * k + inset
             right = a.right() + (b.right() - a.right()) * k - inset
             bar = SIZES.tab_indicator
-            fill_rounded(painter, QRectF(left, self.height() - bar, right - left, bar), bar / 2,
-                         COLORS.primary)
+            fill_rounded(
+                painter,
+                QRectF(left, self.height() - bar, right - left, bar),
+                bar / 2,
+                COLORS.primary,
+            )
         painter.end()
 
 

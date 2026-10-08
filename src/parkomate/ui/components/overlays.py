@@ -62,7 +62,7 @@ class ErrorBanner(Banner):
         self.details_link.clicked.connect(self._toggle_details)
         self.add_action(self.retry_button)
         self.add_action(self.details_link)
-        self.actions.addStretch(1)
+        self.action_box.addStretch(1)
         self.setVisible(False)
         on_language_change(self, self.retranslate)
 
@@ -104,7 +104,7 @@ class _OverlayMixin(QFrame):
         super().__init__(parent)
         parent.installEventFilter(self)
 
-    def eventFilter(self, watched: QObject, event: QEvent) -> bool:  # noqa: N802 - Qt API
+    def eventFilter(self, watched: QObject, event: QEvent) -> bool:
         if watched is self.parent() and event.type() == QEvent.Type.Resize:
             self.reposition()
         return False
@@ -143,14 +143,22 @@ class _BoxTile(QWidget):
         self._animation.setDuration(MOTION.pulse)
         self._animation.start()
 
-    def paintEvent(self, _event: QPaintEvent) -> None:  # noqa: N802 - Qt API
+    def paintEvent(self, _event: QPaintEvent) -> None:
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         rect = QRectF(self.rect())
-        fill_rounded(painter, rect, RADIUS.hero, qcolor(COLORS.on_status, ALPHA.track),
-                     COLORS.on_status, SIZES.camera_stroke)
+        fill_rounded(
+            painter,
+            rect,
+            RADIUS.hero,
+            qcolor(COLORS.on_status, ALPHA.track),
+            COLORS.on_status,
+            SIZES.camera_stroke,
+        )
         if self._pulse > 0:
-            fill_rounded(painter, rect, RADIUS.hero, qcolor(COLORS.on_status, ALPHA.track * self._pulse * 2))
+            fill_rounded(
+                painter, rect, RADIUS.hero, qcolor(COLORS.on_status, ALPHA.track * self._pulse * 2)
+            )
         painter.end()
 
 
@@ -180,7 +188,7 @@ class RejectTakeover(_OverlayMixin):
         self.place = Text("", "headline", "on_status", wrap=True, align=center)
         layout.addWidget(self.place)
         layout.addSpacing(SPACE.s)
-        self.box_caption = TrText("reject.box_caption", "label", "on_status", align=center)
+        self.box_caption = TrText("reject.box_caption", "title", "on_status", align=center)
         layout.addWidget(self.box_caption)
         self.tile = _BoxTile()
         self.box = self.tile.letter
@@ -226,7 +234,7 @@ class RejectTakeover(_OverlayMixin):
         self._instruction = None
         self.setVisible(False)
 
-    def keyPressEvent(self, event: QKeyEvent) -> None:  # noqa: N802 - Qt API
+    def keyPressEvent(self, event: QKeyEvent) -> None:
         if event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
             self.confirmed.emit()
             return
@@ -234,7 +242,7 @@ class RejectTakeover(_OverlayMixin):
             return  # Esc never dismisses a reject
         super().keyPressEvent(event)
 
-    def paintEvent(self, _event: QPaintEvent) -> None:  # noqa: N802 - Qt API
+    def paintEvent(self, _event: QPaintEvent) -> None:
         painter = QPainter(self)
         rect = QRectF(self.rect())
         gradient = QRadialGradient(rect.center(), max(rect.width(), rect.height()) * 0.6)
@@ -265,15 +273,19 @@ class _ReasonCard(QWidget):
         layout = QHBoxLayout(self)
         layout.setContentsMargins(SPACE.xl, SPACE.l, SPACE.xl, SPACE.l)
         layout.setSpacing(SPACE.m)
-        layout.addWidget(Icon("error", SIZES.icon_m, COLORS.on_status), 0, Qt.AlignmentFlag.AlignTop)
+        layout.addWidget(
+            Icon("error", SIZES.icon_m, COLORS.on_status), 0, Qt.AlignmentFlag.AlignTop
+        )
         self.text = Text("", "title", "on_status", wrap=True)
         layout.addWidget(self.text, 1)
         self.setMaximumWidth(SIZES.content_max // 2)
         self.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
 
-    def paintEvent(self, _event: QPaintEvent) -> None:  # noqa: N802 - Qt API
+    def paintEvent(self, _event: QPaintEvent) -> None:
         painter = QPainter(self)
-        fill_rounded(painter, QRectF(self.rect()), RADIUS.card, qcolor(COLORS.on_status, ALPHA.track))
+        fill_rounded(
+            painter, QRectF(self.rect()), RADIUS.card, qcolor(COLORS.on_status, ALPHA.track)
+        )
         painter.end()
 
 
@@ -361,7 +373,7 @@ class Toast(QFrame):
         self.label.setText(t("toast.device_complete", device=self._device))
         self.setAccessibleName(self.label.text())
 
-    def paintEvent(self, _event: QPaintEvent) -> None:  # noqa: N802 - Qt API
+    def paintEvent(self, _event: QPaintEvent) -> None:
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         rect = QRectF(self.rect())

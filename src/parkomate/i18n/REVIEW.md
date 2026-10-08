@@ -937,6 +937,8 @@ Changed values only lost a status glyph (✓ ✕); the UI now shows an icon inst
 | `admin.out.sent` | E-mail sent | ई-मेल पाठवला |
 | `settings.secret_stored` | stored | जतन |
 | `reject.box_caption` | Reject box | नाकार बॉक्स |
+| `action.show_password` | Show password | पासवर्ड दाखवा |
+| `action.hide_password` | Hide password | पासवर्ड लपवा |
 | `sim.chip` | Simulation mode | सिम्युलेशन मोड |
 | `sim.tooltip` | Simulated bench - scenario: {scenario}. No real board, server or camera is used. | सिम्युलेटेड बेंच - परिस्थिती: {scenario}. खरा बोर्ड, सर्व्हर किंवा कॅमेरा वापरला जात नाही. |
 | `counter.tip.uploads_ok` | Uploads OK: {n} | यशस्वी अपलोड: {n} |
@@ -968,4 +970,69 @@ Changed values only lost a status glyph (✓ ✕); the UI now shows an icon inst
 | `admin.log.empty_body` | Problems the station records appear here. | स्टेशनने नोंदवलेल्या अडचणी येथे दिसतात. |
 | `menu.session` | Session details | सत्राचा तपशील |
 | `menu.account` | Account and session | खाते आणि सत्र |
+| `status.checks_done` | {done} of {total} checks done | {total} पैकी {done} तपासण्या झाल्या |
+| `status.next.comm` | Next: communication test | पुढे: संवाद चाचणी |
+| `status.next.reading` | Next: take reading {n} | पुढे: वाचन {n} घ्या |
+| `status.next.mark_sensor` | Next: mark the sensor readings | पुढे: सेन्सर वाचने चिन्हांकित करा |
+| `status.next.mark_indicator` | Next: mark the indicator light | पुढे: इंडिकेटर लाइट चिन्हांकित करा |
+| `status.next.measure` | Next: electrical measurement | पुढे: विद्युत मोजमाप |
+| `drawer.adjusted_note` | Failures removed this session: {n} | या सत्रात कमी केलेले अपयश: {n} |
+| `prog.connect_failed` | Could not connect | जोडता आले नाही |
+| `prog.hero.idle` | Connect a board to start | सुरू करण्यासाठी बोर्ड जोडा |
+| `prog.hero.no_port` | Plug the USB cable into the board | बोर्डला USB केबल लावा |
+| `prog.hero.choose_port` | Choose the board's port on the left | डावीकडे बोर्डचा पोर्ट निवडा |
+| `prog.hero.port_hint` | Board found on {port} ({chip}) | {port} वर बोर्ड सापडला ({chip}) |
+| `prog.hero.connecting` | Connecting to the board… | बोर्डशी जोडत आहे… |
+| `prog.hero.checking` | Checking the device with the server… | सर्व्हरकडे डिव्हाइस तपासत आहे… |
+| `prog.hero.preparing` | Preparing the upload | अपलोडची तयारी |
+| `prog.hero.ready` | Ready to upload | अपलोडसाठी तयार |
+| `prog.hero.ready_text` | Firmware {version} will be written to {mac} | फर्मवेअर {version} {mac} मध्ये लिहिले जाईल |
+| `prog.hero.uploading` | Uploading firmware {version} | फर्मवेअर {version} अपलोड होत आहे |
+| `prog.hero.pass` | Firmware {version} written | फर्मवेअर {version} लिहिले |
+| `prog.hero.fail` | Upload failed | अपलोड अयशस्वी |
+| `prog.hero.fail_hint` | Keep the board connected, then press Retry upload. | बोर्ड जोडलेलाच ठेवा, मग पुन्हा अपलोड करा दाबा. |
+| `label.qr_read` | QR code read | वाचलेला QR कोड |
+| `label.before` | Before | आधी |
+| `label.now` | Now | आता |
+| `pack.summary_title` | This device so far | या डिव्हाइसचे आतापर्यंत |
+| `pack.detail.programming` | Firmware {version} written | फर्मवेअर {version} लिहिले |
+| `pack.detail.testing` | All {n} checks passed | सर्व {n} तपासण्या पास |
+| `pack.detail.labeling` | ID {id} confirmed | ID {id} निश्चित |
+| `pack.detail.packaging` | {n} of {total} items packed | {total} पैकी {n} वस्तू पॅक |
+| `end.rejected_by_stage` | Rejected by stage | टप्प्यानुसार नाकारलेले |
+| `end.uploads_title` | Uploads | अपलोड |
+| `end.open_folder` | Open folder | फोल्डर उघडा |
+| `end.copy_path` | Copy path | पाथ कॉपी करा |
+| `end.copied` | Path copied | पाथ कॉपी झाला |
+| `settings.f.ui.reduce_motion` | Reduce motion (no animations) | हालचाल कमी करा (ॲनिमेशन नाही) |
+| `settings.unsaved` | {n} unsaved change(s) | {n} न जतन केलेले बदल |
+| `settings.desc.general` | How long sent report e-mails are kept. | पाठवलेले अहवाल ई-मेल किती दिवस ठेवायचे. |
+| `settings.desc.station` | Name of this bench and its default language. | या बेंचचे नाव आणि मूळ भाषा. |
+| `settings.desc.limits` | Pass ranges of the electrical test and the sensor readings. | विद्युत चाचणी आणि सेन्सर वाचनांच्या पास मर्यादा. |
+| `settings.desc.timeouts` | How long the station waits for each answer. | प्रत्येक उत्तरासाठी स्टेशन किती वेळ थांबते. |
+| `settings.desc.server` | Where the whitelist and the firmware come from. | व्हाइटलिस्ट आणि फर्मवेअर कुठून येतात. |
+| `settings.desc.measurement` | The measuring device on the bench network. | बेंच नेटवर्कवरील मोजमाप उपकरण. |
+| `settings.desc.camera` | The USB camera that reads the QR sticker. | QR स्टिकर वाचणारा USB कॅमेरा. |
+| `settings.desc.email` | Who receives the end-of-session report. | सत्र संपल्यावर अहवाल कोणाला जातो. |
+| `settings.desc.reports` | File format and language of the reports. | अहवालांचा फाइल प्रकार आणि भाषा. |
+| `settings.desc.programming` | How firmware is written to the board. | बोर्डवर फर्मवेअर कसे लिहिले जाते. |
+| `settings.desc.serial` | The USB serial link to the board. | बोर्डशी USB सीरियल जोडणी. |
+| `settings.desc.workflow` | Which checks may be tried again, and how often. | कोणत्या तपासण्या पुन्हा करता येतात, आणि किती वेळा. |
+| `settings.desc.auth` | Password rules and account lock. | पासवर्ड नियम आणि खाते लॉक. |
+| `settings.desc.ui` | Screen, sound and animations. | स्क्रीन, आवाज आणि ॲनिमेशन. |
+| `settings.desc.logging` | Log files for support. | सपोर्टसाठी लॉग फाइल्स. |
+| `settings.desc.dev` | Simulated bench - for development only. | सिम्युलेटेड बेंच - फक्त विकासासाठी. |
+| `settings.desc.secrets` | Stored in the Windows Credential Manager. | Windows Credential Manager मध्ये जतन. |
+| `admin.op.selected_title` | Selected operator | निवडलेला ऑपरेटर |
+| `admin.op.empty_title` | No operators yet | अजून ऑपरेटर नाहीत |
+| `admin.rep.export_title` | Export | निर्यात |
+| `admin.rep.scope` | What to export | काय निर्यात करायचे |
+| `admin.rep.scope_selected` | Selected sessions | निवडलेली सत्रे |
+| `admin.rep.scope_range` | Date range | तारखांची श्रेणी |
+| `admin.rep.scope_device` | Single device | एक डिव्हाइस |
+| `admin.rep.select_hint` | Select one or more sessions in the table. | तक्त्यात एक किंवा अधिक सत्रे निवडा. |
+| `admin.rep.empty_title` | No sessions yet | अजून सत्रे नाहीत |
+| `admin.rep.empty_body` | Each finished shift appears here. | प्रत्येक संपलेली शिफ्ट येथे दिसते. |
+| `admin.cnt.since` | Counting since {since} | {since} पासून मोजणी |
+| `action.export` | Export | निर्यात करा |
 | `cli.help.gallery` | show every UI component in every state (design review) | प्रत्येक UI घटक प्रत्येक स्थितीत दाखवा (डिझाइन तपासणी) |

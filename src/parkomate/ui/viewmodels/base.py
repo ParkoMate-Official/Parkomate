@@ -67,6 +67,8 @@ class StatusLine:
     key: str
     params: dict[str, Any] = field(default_factory=dict)
     tone: str = "info"  # info | pass | fail | warn | pending
+    progress: tuple[int, int] | None = None
+    """(checks done, checks required) - shown as a small chip next to the message."""
 
 
 class StageViewModel(QObject):

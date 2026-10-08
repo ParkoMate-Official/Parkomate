@@ -75,7 +75,7 @@ class RangeBar(QWidget):
             return None
         return (band.low is None or value >= band.low) and (band.high is None or value <= band.high)
 
-    def paintEvent(self, _event: QPaintEvent) -> None:  # noqa: N802 - Qt API
+    def paintEvent(self, _event: QPaintEvent) -> None:
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         width = self.width()
@@ -89,7 +89,12 @@ class RangeBar(QWidget):
         if band is not None:
             start = self._position(band.low) if band.low is not None else 0.0
             end = self._position(band.high) if band.high is not None else 1.0
-            zone = QRectF(track.left() + track.width() * start, track.top(), track.width() * (end - start), bar)
+            zone = QRectF(
+                track.left() + track.width() * start,
+                track.top(),
+                track.width() * (end - start),
+                bar,
+            )
             fill_rounded(painter, zone, bar / 2, qcolor(COLORS.success, ALPHA.glow))
             painter.setPen(QPen(QColor(COLORS.on_success_cont), SIZES.hairline))
             for edge in (band.low, band.high):
@@ -106,8 +111,14 @@ class RangeBar(QWidget):
             painter.setPen(QPen(QColor(COLORS.surface), SIZES.active_outline))
             painter.setBrush(QColor(color))
             painter.drawEllipse(QRectF(x - marker / 2 + 1, 1, marker - 2, marker - 2))
-        draw_line(painter, QRectF(0, marker + SPACE.xs, width, line_box(TYPE.caption).height),
-                  self._caption, TYPE.caption, COLORS.text_2, align=Qt.AlignmentFlag.AlignHCenter)
+        draw_line(
+            painter,
+            QRectF(0, marker + SPACE.xs, width, line_box(TYPE.caption).height),
+            self._caption,
+            TYPE.caption,
+            COLORS.text_2,
+            align=Qt.AlignmentFlag.AlignHCenter,
+        )
         painter.end()
 
 
@@ -119,26 +130,33 @@ class ValueRow:
 
     def __init__(self, grid: QGridLayout, row: int, name_key: str, icon: str) -> None:
         name_box = QWidget()
+        self.name_box = name_box
         box = QHBoxLayout(name_box)
         box.setContentsMargins(0, 0, 0, 0)
         box.setSpacing(SPACE.s)
         box.addWidget(Icon(icon, SIZES.icon, COLORS.text_2))
         self.name = TrText(name_key, "body")
         box.addWidget(self.name, 1)
-        self.measured = Text("-", "headline", align=Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        self.measured = Text(
+            "-", "headline", align=Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
+        )
         metrics = QFontMetricsF(font_for(TYPE.headline))
         # room for the widest value ('000.00 °C'), so the columns never shift
         self.measured.reserve_width(
-            int(metrics.horizontalAdvance("000.00 °C") - metrics.horizontalAdvance("-"))
+            int(metrics.horizontalAdvance("00.00 °C") - metrics.horizontalAdvance("-"))
         )
         self.bar = RangeBar()
         self.allowed = self.bar  # compatibility: the allowed range is the bar's caption
         self.pill = StatusChip(compact=True)
-        self.pill.reserve("status.word.pass", "status.word.fail", "status.word.working", "status.word.pending")
+        self.pill.reserve(
+            "status.word.pass", "status.word.fail", "status.word.working", "status.word.pending"
+        )
         grid.addWidget(name_box, row, 0)
         grid.addWidget(self.measured, row, 1)
         grid.addWidget(self.bar, row, 2)
-        grid.addWidget(self.pill, row, 3, Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        grid.addWidget(
+            self.pill, row, 3, Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
+        )
 
     def set_value(
         self, measured: str | None, value: float | None, band: Band | None, caption: str, state: str
@@ -161,7 +179,7 @@ class _Slot(QWidget):
         self.setMinimumHeight(SIZES.reading_slot)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
 
-    def sizeHint(self) -> QSize:  # noqa: N802 - Qt API
+    def sizeHint(self) -> QSize:
         return QSize(SIZES.reading_slot, SIZES.reading_slot)
 
     def set_reading(self, value: str, unit: str, time: str) -> None:
@@ -172,7 +190,7 @@ class _Slot(QWidget):
             self._enter.to(1.0)
         self.update()
 
-    def paintEvent(self, _event: QPaintEvent) -> None:  # noqa: N802 - Qt API
+    def paintEvent(self, _event: QPaintEvent) -> None:
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         rect = QRectF(self.rect())
@@ -184,22 +202,39 @@ class _Slot(QWidget):
             painter.setPen(pen)
             painter.setBrush(Qt.BrushStyle.NoBrush)
             inset = SIZES.hairline
-            painter.drawRoundedRect(rect.adjusted(inset, inset, -inset, -inset), RADIUS.control, RADIUS.control)
+            painter.drawRoundedRect(
+                rect.adjusted(inset, inset, -inset, -inset), RADIUS.control, RADIUS.control
+            )
         pad = SPACE.m
         caption = line_box(TYPE.caption).height
         inner = rect.width() - 2 * pad
-        draw_line(painter, QRectF(rect.left() + pad, rect.top() + SPACE.s, inner, caption),
-                  str(self.index), TYPE.caption, COLORS.text_3)
+        draw_line(
+            painter,
+            QRectF(rect.left() + pad, rect.top() + SPACE.s, inner, caption),
+            str(self.index),
+            TYPE.caption,
+            COLORS.text_3,
+        )
         k = self._enter.value if filled else 1.0
         painter.setOpacity(k)
         shift = (1 - k) * SPACE.s
         value_box = line_box(TYPE.title).height
         y = rect.top() + SPACE.s + caption + shift
-        draw_line(painter, QRectF(rect.left() + pad, y, inner, value_box), self.value or "—",
-                  TYPE.title, COLORS.text if filled else COLORS.text_3)
+        draw_line(
+            painter,
+            QRectF(rect.left() + pad, y, inner, value_box),
+            self.value or "—",
+            TYPE.title,
+            COLORS.text if filled else COLORS.text_3,
+        )
         if filled:
-            draw_line(painter, QRectF(rect.left() + pad, y + value_box, inner, caption),
-                      f"{self.unit} · {self.time}", TYPE.caption, COLORS.text_2)
+            draw_line(
+                painter,
+                QRectF(rect.left() + pad, y + value_box, inner, caption),
+                self.time,
+                TYPE.caption,
+                COLORS.text_2,
+            )
         painter.end()
 
 

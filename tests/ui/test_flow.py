@@ -29,7 +29,8 @@ def primary_enabled(d: StationDriver) -> bool:
 
 
 def reason_text(d: StationDriver) -> str:
-    return d.window.shell.bottom.reason.text()
+    """The disabled reason is a caption inside the primary button (B1)."""
+    return d.window.shell.bottom.primary.caption()
 
 
 # ------------------------------------------------------------------ login
@@ -47,7 +48,7 @@ def test_login_success(make_driver: DriverFactory) -> None:
     assert d.window.stack.currentWidget() is d.window.shell
     assert d.c.operator is not None and d.c.operator.operator_code == "OP12"
     assert d.c.ambient_c is not None  # measured right after login
-    assert not d.window.shell.top.admin_button.isVisible()  # operators have no admin area
+    assert d.window.shell.top.admin_item.isHidden()  # operators have no admin area (T4)
 
 
 def test_login_wrong_password(make_driver: DriverFactory) -> None:
@@ -433,7 +434,7 @@ def test_language_switch_rerenders_everything(driver: StationDriver) -> None:
     after = _visible_texts(d.window)
     leftovers = [text for text in after if text in english_only]
     assert leftovers == []
-    assert d.window.shell.top.stepper.label_for(Stage.PROGRAMMING).text().endswith("प्रोग्रामिंग")
+    assert d.window.shell.top.stepper.label(0).text().endswith("प्रोग्रामिंग")
     assert d.window.shell.bottom.primary.text().startswith("फर्मवेअर अपलोड करा")
     # remembered per operator
     assert d.ctx.repos.operators.get_by_code(ADMIN[0]).language == "mr"  # type: ignore[union-attr]

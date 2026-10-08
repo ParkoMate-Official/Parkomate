@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from PySide6.QtCore import QEvent, QRectF, QSize, Qt
-from PySide6.QtGui import QColor, QFontMetricsF, QPainter, QPaintEvent, QPen
+from PySide6.QtGui import QColor, QEnterEvent, QFontMetricsF, QPainter, QPaintEvent, QPen
 from PySide6.QtWidgets import QAbstractButton, QPushButton, QSizePolicy, QWidget
 
 from parkomate.i18n import t
@@ -26,7 +26,7 @@ from parkomate.ui.components.base import (
     qcolor,
 )
 from parkomate.ui.components.icons import paint_icon
-from parkomate.ui.theme.fonts import font_for
+from parkomate.ui.theme.fonts import font_for, line_box
 from parkomate.ui.theme.motion import FrameClock, Tween
 from parkomate.ui.theme.tokens import ALPHA, COLORS, MOTION, RADIUS, SIZES, SPACE, TYPE
 
@@ -65,12 +65,14 @@ def button_colors(variant: str, enabled: bool) -> ButtonColors:
     c = COLORS
     if not enabled:
         if variant in ("outlined", "text"):
-            return ButtonColors(None, c.text_3, c.outline_soft if variant == "outlined" else None, c.text)
+            return ButtonColors(
+                None, c.text_3, c.outline_soft if variant == "outlined" else None, c.text
+            )
         return ButtonColors(c.surface_3, c.text_3, None, c.text)
     return {
         "filled": ButtonColors(c.primary, c.on_primary, None, c.on_primary, c.primary_pressed),
         "tonal": ButtonColors(c.primary_cont, c.on_primary_cont, None, c.on_primary_cont),
-        "outlined": ButtonColors(None, c.text, c.outline_strong, c.text),
+        "outlined": ButtonColors(c.surface, c.text, c.outline_strong, c.text),
         "text": ButtonColors(None, c.primary, None, c.primary),
         "danger_filled": ButtonColors(c.danger, c.on_status, None, c.on_status, c.danger_hov),
         "danger_tonal": ButtonColors(c.danger_cont, c.on_danger_cont, None, c.on_danger_cont),
@@ -140,11 +142,14 @@ class AppButton(QPushButton):
         self._compact = size == "compact"
         self._icon = icon
         self._loading = False
+        self._caption_key: str | None = None
+        self._caption_params: dict[str, Any] = {}
         self._hover = Tween(self, lambda _v: self.update(), ms=MOTION.fast)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         self.setAutoDefault(False)
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+        self.setFixedHeight(self._height())
         self.setProperty("ring_radius", RADIUS.control)
         on_language_change(self, self.retranslate)
         self.retranslate()
@@ -191,6 +196,17 @@ class AppButton(QPushButton):
     def is_loading(self) -> bool:
         return self._loading
 
+    def set_caption(self, key: str | None, **params: Any) -> None:
+        """A small second line inside the button - used for the disabled reason (B1)."""
+        if (key, params) != (self._caption_key, self._caption_params):
+            self._caption_key = key
+            self._caption_params = params
+            self.updateGeometry()
+            self.update()
+
+    def caption(self) -> str:
+        return t(self._caption_key, **self._caption_params) if self._caption_key else ""
+
     def label(self) -> str:
         return t(self._key, **self._params) if self._key else ""
 
@@ -215,19 +231,22 @@ class AppButton(QPushButton):
     def _pad(self) -> int:
         return SIZES.button_pad_compact if self._compact else SIZES.button_pad
 
-    def sizeHint(self) -> QSize:  # noqa: N802 - Qt API
+    def sizeHint(self) -> QSize:
         font = font_for(self._style)
         width = 2 * self._pad()
         label_width = key_width(font, self._key, **self._params) if self._key else 0
         width += label_width
         if self._icon or self._loading:
             width += SIZES.icon + (SIZES.icon_gap if label_width else 0)
+        if self._caption_key:
+            caption = key_width(font_for(TYPE.caption), self._caption_key, **self._caption_params)
+            width = max(width, 2 * self._pad() + caption)
         if self._hint_key:
             width += SPACE.m + max(keycap_size(text).width() for text in self._hint_texts())
         minimum = SIZES.button_min_width if label_width else self._height()
         return QSize(max(width, minimum), self._height())
 
-    def minimumSizeHint(self) -> QSize:  # noqa: N802 - Qt API
+    def minimumSizeHint(self) -> QSize:
         return self.sizeHint()
 
     def _hint_texts(self) -> list[str]:
@@ -236,18 +255,18 @@ class AppButton(QPushButton):
         return translations(self._hint_key) if self._hint_key else []
 
     # ------------------------------------------------------------------ painting
-    def enterEvent(self, event: QEvent) -> None:  # noqa: N802 - Qt API
+    def enterEvent(self, event: QEnterEvent) -> None:
         self._hover.to(1.0)
         super().enterEvent(event)
 
-    def leaveEvent(self, event: QEvent) -> None:  # noqa: N802 - Qt API
+    def leaveEvent(self, event: QEvent) -> None:
         self._hover.to(0.0)
         super().leaveEvent(event)
 
     def _colors(self) -> ButtonColors:
         return button_colors(self._variant, self.isEnabled())
 
-    def paintEvent(self, _event: QPaintEvent) -> None:  # noqa: N802 - Qt API
+    def paintEvent(self, _event: QPaintEvent) -> None:
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         rect = QRectF(self.rect())
@@ -308,9 +327,30 @@ class AppButton(QPushButton):
             else:
                 paint_icon(painter, icon_name, icon_rect, content)
             x += SIZES.icon + (SIZES.icon_gap if label else 0)
+        caption = self.caption()
+        if caption:
+            label_box = line_box(self._style).height
+            caption_box = line_box(TYPE.caption).height
+            top = rect.center().y() - (label_box + caption_box) / 2
+            label_rect = QRectF(x, top, inner.right() - x + 1, label_box)
+            draw_line(painter, label_rect, label, self._style, content)
+            draw_line(
+                painter,
+                QRectF(inner.left(), top + label_box, inner.width(), caption_box),
+                caption,
+                TYPE.caption,
+                content,
+                align=Qt.AlignmentFlag.AlignHCenter,
+            )
+            return
         if label:
-            draw_line(painter, QRectF(x, rect.top(), inner.right() - x + 1, rect.height()),
-                      label, self._style, content)
+            draw_line(
+                painter,
+                QRectF(x, rect.top(), inner.right() - x + 1, rect.height()),
+                label,
+                self._style,
+                content,
+            )
 
 
 class IconButton(QAbstractButton):
@@ -356,18 +396,18 @@ class IconButton(QAbstractButton):
         self.setToolTip(text)
         self.setAccessibleName(text)
 
-    def sizeHint(self) -> QSize:  # noqa: N802 - Qt API
+    def sizeHint(self) -> QSize:
         return QSize(self._size, self._size)
 
-    def enterEvent(self, event: QEvent) -> None:  # noqa: N802 - Qt API
+    def enterEvent(self, event: QEnterEvent) -> None:
         self._hover.to(1.0)
         super().enterEvent(event)
 
-    def leaveEvent(self, event: QEvent) -> None:  # noqa: N802 - Qt API
+    def leaveEvent(self, event: QEvent) -> None:
         self._hover.to(0.0)
         super().leaveEvent(event)
 
-    def paintEvent(self, _event: QPaintEvent) -> None:  # noqa: N802 - Qt API
+    def paintEvent(self, _event: QPaintEvent) -> None:
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         rect = QRectF(self.rect())

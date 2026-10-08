@@ -35,6 +35,7 @@ from parkomate.hardware.mocks import MockHardwareService, MockScenario
 from parkomate.i18n import set_language
 from parkomate.ui.main import create_application
 from parkomate.ui.main_window import MainWindow
+from parkomate.ui.theme import motion
 from parkomate.ui.viewmodels.station import LoginPhase, Page, StationController
 
 ADMIN = ("ADM1", "Asha Patil", "secret-pass-1")
@@ -75,6 +76,7 @@ class StationDriver:
         delay_scale: float = 0.0,
     ) -> None:
         self.app = create_application()
+        motion.force(False)  # deterministic screenshots and tests: every animation at its end
         self.data_dir = data_dir or Path(tempfile.mkdtemp(prefix="parkomate-ui-"))
         paths = AppPaths(self.data_dir).ensure()
         if settings:

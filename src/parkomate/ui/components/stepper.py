@@ -70,19 +70,29 @@ def _paint_dot(
         painter.setPen(Qt.PenStyle.NoPen)
         painter.setBrush(QColor(COLORS.primary_cont))
         painter.drawEllipse(rect)
-        paint_spinner(painter, rect, COLORS.primary, FrameClock.instance().phase(MOTION.spin_period))
+        paint_spinner(
+            painter, rect, COLORS.primary, FrameClock.instance().phase(MOTION.spin_period)
+        )
     elif state == "active":
         painter.setPen(Qt.PenStyle.NoPen)
         painter.setBrush(QColor(COLORS.primary))
         painter.drawEllipse(rect)
-        draw_line(painter, rect, number, style, COLORS.on_primary, align=Qt.AlignmentFlag.AlignHCenter)
+        draw_line(
+            painter, rect, number, style, COLORS.on_primary, align=Qt.AlignmentFlag.AlignHCenter
+        )
     else:  # upcoming / pending
         inset = SIZES.hairline
         painter.setPen(QPen(QColor(COLORS.outline_strong if not small else COLORS.outline), inset))
         painter.setBrush(QColor(COLORS.surface))
         painter.drawEllipse(rect.adjusted(inset / 2, inset / 2, -inset / 2, -inset / 2))
-        draw_line(painter, rect, number, style, COLORS.text_2 if not small else COLORS.text_3,
-                  align=Qt.AlignmentFlag.AlignHCenter)
+        draw_line(
+            painter,
+            rect,
+            number,
+            style,
+            COLORS.text_2 if not small else COLORS.text_3,
+            align=Qt.AlignmentFlag.AlignHCenter,
+        )
     painter.restore()
 
 
@@ -100,7 +110,7 @@ class _StageDot(QWidget):
             self._halo.to(1.0 if state == "active" else 0.0)
             self.update()
 
-    def paintEvent(self, _event: QPaintEvent) -> None:  # noqa: N802 - Qt API
+    def paintEvent(self, _event: QPaintEvent) -> None:
         painter = QPainter(self)
         side = SIZES.stepper_dot
         rect = QRectF(SPACE.xs, SPACE.xs, side, side)
@@ -117,7 +127,7 @@ class _Connector(QWidget):
     def set_filled(self, filled: bool) -> None:
         self._fill.to(1.0 if filled else 0.0)
 
-    def paintEvent(self, _event: QPaintEvent) -> None:  # noqa: N802 - Qt API
+    def paintEvent(self, _event: QPaintEvent) -> None:
         painter = QPainter(self)
         y = self.height() / 2
         line = SIZES.stepper_line
@@ -216,6 +226,7 @@ class StepItem(QWidget):
         header = QHBoxLayout()
         header.setSpacing(SPACE.s)
         self.title = TrText(title_key, "body_lg_strong", "secondary")
+        self.title.setMinimumHeight(SIZES.step_dot)
         header.addWidget(self.title, 1)
         self.caption = Text("", "caption", "tertiary")
         self.caption.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
@@ -250,19 +261,22 @@ class StepItem(QWidget):
             clock.unsubscribe(self)
         self.update()
 
-    def paintEvent(self, _event: QPaintEvent) -> None:  # noqa: N802 - Qt API
+    def paintEvent(self, _event: QPaintEvent) -> None:
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         side = SIZES.step_dot
-        title_height = self.title.height() or side
-        top = max(0.0, (title_height - side) / 2)
+        top = max(0.0, self.title.geometry().center().y() - side / 2)
         dot = QRectF(0, top, side, side)
         if not self.last:
             line = SIZES.stepper_line
             color = COLORS.on_success_cont if self.state == "pass" else COLORS.outline
             painter.fillRect(
-                QRectF(dot.center().x() - line / 2, dot.bottom() + SPACE.xs, line,
-                       self.height() - dot.bottom() - 2 * SPACE.xs),
+                QRectF(
+                    dot.center().x() - line / 2,
+                    dot.bottom() + SPACE.xs,
+                    line,
+                    self.height() - dot.bottom() - 2 * SPACE.xs,
+                ),
                 QColor(color),
             )
         _paint_dot(painter, dot, self.state, str(self.number), small=True)

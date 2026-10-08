@@ -11,9 +11,19 @@ from __future__ import annotations
 from datetime import date
 from typing import Any
 
-from PySide6.QtCore import QDate, QEvent, QModelIndex, QPersistentModelIndex, QRectF, QSize, Qt, Signal
+from PySide6.QtCore import (
+    QDate,
+    QEvent,
+    QModelIndex,
+    QPersistentModelIndex,
+    QRectF,
+    QSize,
+    Qt,
+    Signal,
+)
 from PySide6.QtGui import (
     QColor,
+    QEnterEvent,
     QFontMetricsF,
     QKeyEvent,
     QPainter,
@@ -40,7 +50,14 @@ from PySide6.QtWidgets import (
 )
 
 from parkomate.i18n import t
-from parkomate.ui.components.base import draw_line, fill_rounded, mix, on_language_change, qcolor, set_prop
+from parkomate.ui.components.base import (
+    draw_line,
+    fill_rounded,
+    mix,
+    on_language_change,
+    qcolor,
+    set_prop,
+)
 from parkomate.ui.components.buttons import AppButton, IconButton
 from parkomate.ui.components.icons import paint_icon
 from parkomate.ui.components.popup import Popup
@@ -114,7 +131,7 @@ class PasswordField(TextField):
         self.eye.set_icon("visibility_off" if shown else "visibility")
         self.eye.set_tip_key("action.hide_password" if shown else "action.show_password")
 
-    def resizeEvent(self, event: QResizeEvent) -> None:  # noqa: N802 - Qt API
+    def resizeEvent(self, event: QResizeEvent) -> None:
         super().resizeEvent(event)
         side = self.eye.width()
         self.eye.move(self.width() - side - SPACE.xs, (self.height() - side) // 2)
@@ -125,7 +142,7 @@ class _NumberMixin:
 
     def _setup(self, widget: QWidget, unit_key: str | None) -> None:
         self._unit_key = unit_key
-        widget.setFont(font_for(TYPE.body_lg))  # type: ignore[attr-defined]
+        widget.setFont(font_for(TYPE.body_lg))
         widget.setFixedHeight(SIZES.input)
         widget.setFixedWidth(SIZES.number_field)
         widget.setProperty("ring_radius", RADIUS.control)
@@ -145,7 +162,7 @@ class IntField(_NumberMixin, QSpinBox):
         super().__init__(parent)
         self._setup(self, unit_key)
 
-    def wheelEvent(self, event: QWheelEvent) -> None:  # noqa: N802 - Qt API
+    def wheelEvent(self, event: QWheelEvent) -> None:
         if self.hasFocus():
             super().wheelEvent(event)
         else:
@@ -160,7 +177,7 @@ class DecimalField(_NumberMixin, QDoubleSpinBox):
         self.setDecimals(decimals)
         self._setup(self, unit_key)
 
-    def wheelEvent(self, event: QWheelEvent) -> None:  # noqa: N802 - Qt API
+    def wheelEvent(self, event: QWheelEvent) -> None:
         if self.hasFocus():
             super().wheelEvent(event)
         else:
@@ -174,12 +191,19 @@ class _ItemDelegate(QStyledItemDelegate):
         super().__init__(select)
         self.select = select
 
-    def sizeHint(self, option: QStyleOptionViewItem, index: QModelIndex | QPersistentModelIndex) -> QSize:  # noqa: N802
+    def sizeHint(
+        self, option: QStyleOptionViewItem, index: QModelIndex | QPersistentModelIndex
+    ) -> QSize:
         two = bool(index.data(ROLE_SECONDARY))
-        return QSize(option.rect.width(), SIZES.list_row if two else SIZES.button_compact + SPACE.xs)
+        return QSize(
+            option.rect.width(), SIZES.list_row if two else SIZES.button_compact + SPACE.xs
+        )
 
     def paint(
-        self, painter: QPainter, option: QStyleOptionViewItem, index: QModelIndex | QPersistentModelIndex
+        self,
+        painter: QPainter,
+        option: QStyleOptionViewItem,
+        index: QModelIndex | QPersistentModelIndex,
     ) -> None:
         painter.save()
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
@@ -200,12 +224,21 @@ class _ItemDelegate(QStyledItemDelegate):
         sub = line_box(TYPE.caption)
         total = main.height + (sub.height if secondary else 0)
         top = rect.center().y() - total / 2
-        draw_line(painter, QRectF(x, top, width, main.height), primary,
-                  TYPE.body_strong if secondary else TYPE.body,
-                  COLORS.on_primary_cont if selected else COLORS.text)
+        draw_line(
+            painter,
+            QRectF(x, top, width, main.height),
+            primary,
+            TYPE.body_strong if secondary else TYPE.body,
+            COLORS.on_primary_cont if selected else COLORS.text,
+        )
         if secondary:
-            draw_line(painter, QRectF(x, top + main.height, width, sub.height), secondary,
-                      TYPE.caption, COLORS.text_2)
+            draw_line(
+                painter,
+                QRectF(x, top + main.height, width, sub.height),
+                secondary,
+                TYPE.caption,
+                COLORS.text_2,
+            )
         if selected:
             side = SIZES.icon
             paint_icon(
@@ -260,7 +293,7 @@ class Select(QComboBox):
         short = self.itemData(index, ROLE_SHORT)
         return str(short) if short else self.itemText(index)
 
-    def sizeHint(self) -> QSize:  # noqa: N802 - Qt API
+    def sizeHint(self) -> QSize:
         metrics = QFontMetricsF(self.font())
         widest = 0.0
         for index in range(self.count()):
@@ -269,11 +302,11 @@ class Select(QComboBox):
         width = int(widest) + 2 * SPACE.l + SIZES.icon_m + SPACE.s
         return QSize(max(width, SIZES.button_min_width), self.height())
 
-    def minimumSizeHint(self) -> QSize:  # noqa: N802 - Qt API
+    def minimumSizeHint(self) -> QSize:
         return QSize(SIZES.button_min_width, self.height())
 
     # ------------------------------------------------------------------ popup
-    def showPopup(self) -> None:  # noqa: N802 - Qt API
+    def showPopup(self) -> None:
         if self.count() == 0 or not self.isEnabled():
             return
         popup = Popup(self)
@@ -314,7 +347,7 @@ class Select(QComboBox):
             popup.deleteLater()
         self.update()
 
-    def hidePopup(self) -> None:  # noqa: N802 - Qt API
+    def hidePopup(self) -> None:
         if self._popup is not None:
             self._popup.close()
 
@@ -322,15 +355,15 @@ class Select(QComboBox):
         return self._popup is not None
 
     # ------------------------------------------------------------------ painting
-    def enterEvent(self, event: QEvent) -> None:  # noqa: N802 - Qt API
+    def enterEvent(self, event: QEnterEvent) -> None:
         self.update()
         super().enterEvent(event)
 
-    def leaveEvent(self, event: QEvent) -> None:  # noqa: N802 - Qt API
+    def leaveEvent(self, event: QEvent) -> None:
         self.update()
         super().leaveEvent(event)
 
-    def paintEvent(self, _event: QPaintEvent) -> None:  # noqa: N802 - Qt API
+    def paintEvent(self, _event: QPaintEvent) -> None:
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         rect = QRectF(self.rect())
@@ -345,9 +378,19 @@ class Select(QComboBox):
             COLORS.text_2 if self.isEnabled() else COLORS.text_3,
         )
         placeholder = self.currentIndex() < 0
-        area = QRectF(rect.left() + SPACE.l, rect.top(), chevron.left() - SPACE.s - rect.left() - SPACE.l, rect.height())
-        draw_line(painter, area, self.closed_text(), TYPE.body,
-                  COLORS.text_3 if placeholder or not self.isEnabled() else COLORS.text)
+        area = QRectF(
+            rect.left() + SPACE.l,
+            rect.top(),
+            chevron.left() - SPACE.s - rect.left() - SPACE.l,
+            rect.height(),
+        )
+        draw_line(
+            painter,
+            area,
+            self.closed_text(),
+            TYPE.body,
+            COLORS.text_3 if placeholder or not self.isEnabled() else COLORS.text,
+        )
         painter.end()
 
     def set_invalid(self, invalid: bool) -> None:
@@ -366,17 +409,17 @@ class Switch(QCheckBox):
         self.setProperty("ring_radius", RADIUS.pill)
         self.toggled.connect(lambda on: self._pos.to(1.0 if on else 0.0))
 
-    def setChecked(self, checked: bool) -> None:  # noqa: N802 - Qt API
+    def setChecked(self, checked: bool) -> None:
         super().setChecked(checked)
         self._pos.jump(1.0 if checked else 0.0)
 
-    def hitButton(self, _pos: Any) -> bool:  # noqa: N802 - Qt API
+    def hitButton(self, _pos: Any) -> bool:
         return True
 
-    def sizeHint(self) -> QSize:  # noqa: N802 - Qt API
+    def sizeHint(self) -> QSize:
         return QSize(SIZES.switch_w, SIZES.switch_h)
 
-    def paintEvent(self, _event: QPaintEvent) -> None:  # noqa: N802 - Qt API
+    def paintEvent(self, _event: QPaintEvent) -> None:
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         rect = QRectF(self.rect())
@@ -385,7 +428,11 @@ class Switch(QCheckBox):
         off_track = COLORS.surface_3
         track = mix(off_track, on_track, k)
         fill_rounded(
-            painter, rect, RADIUS.pill, track, COLORS.outline_strong if k < 0.5 else None,
+            painter,
+            rect,
+            RADIUS.pill,
+            track,
+            COLORS.outline_strong if k < 0.5 else None,
             SIZES.hairline if k < 0.5 else 0,
         )
         pad = SPACE.xs
@@ -434,10 +481,14 @@ class DateRangePicker(QWidget):
         return self._end
 
     def start_date(self) -> date:
-        return self._start.toPython()  # type: ignore[no-any-return]
+        value = self._start.toPython()
+        assert isinstance(value, date)
+        return value
 
     def end_date(self) -> date:
-        return self._end.toPython()  # type: ignore[no-any-return]
+        value = self._end.toPython()
+        assert isinstance(value, date)
+        return value
 
     def set_range(self, start: QDate, end: QDate) -> None:
         if end < start:
@@ -458,18 +509,18 @@ class DateRangePicker(QWidget):
         self.setAccessibleDescription(self.text())
         self.update()
 
-    def sizeHint(self) -> QSize:  # noqa: N802 - Qt API
+    def sizeHint(self) -> QSize:
         metrics = QFontMetricsF(font_for(TYPE.body))
         width = metrics.horizontalAdvance(self.text()) + 3 * SPACE.l + SIZES.icon_m
         return QSize(int(width) + SPACE.s, SIZES.input)
 
-    def keyPressEvent(self, event: QKeyEvent) -> None:  # noqa: N802 - Qt API
+    def keyPressEvent(self, event: QKeyEvent) -> None:
         if event.key() in (Qt.Key.Key_Space, Qt.Key.Key_Return, Qt.Key.Key_Enter, Qt.Key.Key_F4):
             self.open_popup()
             return
         super().keyPressEvent(event)
 
-    def mousePressEvent(self, event: Any) -> None:  # noqa: N802 - Qt API
+    def mousePressEvent(self, event: Any) -> None:
         if event.button() == Qt.MouseButton.LeftButton:
             self.open_popup()
             return
@@ -543,7 +594,7 @@ class DateRangePicker(QWidget):
             popup.deleteLater()
         self.update()
 
-    def paintEvent(self, _event: QPaintEvent) -> None:  # noqa: N802 - Qt API
+    def paintEvent(self, _event: QPaintEvent) -> None:
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         rect = QRectF(self.rect())
@@ -552,8 +603,18 @@ class DateRangePicker(QWidget):
         side = SIZES.icon_m
         icon = QRectF(rect.left() + SPACE.l, rect.center().y() - side / 2, side, side)
         paint_icon(painter, "calendar_month", icon, COLORS.text_2)
-        draw_line(painter, QRectF(icon.right() + SPACE.m, rect.top(), rect.right() - icon.right() - SPACE.xl, rect.height()),
-                  self.text(), TYPE.body, COLORS.text)
+        draw_line(
+            painter,
+            QRectF(
+                icon.right() + SPACE.m,
+                rect.top(),
+                rect.right() - icon.right() - SPACE.xl,
+                rect.height(),
+            ),
+            self.text(),
+            TYPE.body,
+            COLORS.text,
+        )
         painter.end()
 
 

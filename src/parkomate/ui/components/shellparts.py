@@ -4,7 +4,7 @@ ContextBar (device · operator · session timer | counters)."""
 from __future__ import annotations
 
 from PySide6.QtCore import QRectF, QSize, Qt, Signal
-from PySide6.QtGui import QColor, QFontMetricsF, QPainter, QPaintEvent
+from PySide6.QtGui import QColor, QEnterEvent, QFontMetricsF, QPainter, QPaintEvent
 from PySide6.QtWidgets import QAbstractButton, QHBoxLayout, QSizePolicy, QWidget
 
 from parkomate.ui.components.base import Divider, draw_line, fill_rounded, key_width, qcolor
@@ -22,7 +22,7 @@ class ProductMark(QWidget):
         super().__init__(parent)
         self.setFixedSize(size, size)
 
-    def paintEvent(self, _event: QPaintEvent) -> None:  # noqa: N802 - Qt API
+    def paintEvent(self, _event: QPaintEvent) -> None:
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         rect = QRectF(self.rect())
@@ -31,7 +31,15 @@ class ProductMark(QWidget):
         style = TYPE.headline if self.width() > SIZES.mark else TYPE.title
         font = font_for(style)
         font.setWeight(font.Weight.Bold)
-        draw_line(painter, rect, "P", style, COLORS.on_primary, align=Qt.AlignmentFlag.AlignHCenter, font=font)
+        draw_line(
+            painter,
+            rect,
+            "P",
+            style,
+            COLORS.on_primary,
+            align=Qt.AlignmentFlag.AlignHCenter,
+            font=font,
+        )
         painter.end()
 
 
@@ -43,7 +51,7 @@ class SimulationBand(QWidget):
         self.setFixedHeight(SIZES.sim_band)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
 
-    def paintEvent(self, _event: QPaintEvent) -> None:  # noqa: N802 - Qt API
+    def paintEvent(self, _event: QPaintEvent) -> None:
         painter = QPainter(self)
         painter.fillRect(self.rect(), QColor(COLORS.warning))
         painter.end()
@@ -90,40 +98,63 @@ class AccountButton(QAbstractButton):
         self._open = is_open
         self.update()
 
-    def sizeHint(self) -> QSize:  # noqa: N802 - Qt API
+    def sizeHint(self) -> QSize:
         width = SIZES.avatar + SPACE.xs + SIZES.icon + SPACE.s
         if not self._compact and self._name:
-            width += SPACE.s + int(QFontMetricsF(font_for(TYPE.body)).horizontalAdvance(self._name)) + 1
+            width += (
+                SPACE.s + int(QFontMetricsF(font_for(TYPE.body)).horizontalAdvance(self._name)) + 1
+            )
         return QSize(width + SPACE.xs, SIZES.avatar + SPACE.xs)
 
-    def enterEvent(self, event: object) -> None:  # noqa: N802 - Qt API
+    def enterEvent(self, event: QEnterEvent) -> None:
         self.update()
-        super().enterEvent(event)  # type: ignore[arg-type]
+        super().enterEvent(event)
 
-    def leaveEvent(self, event: object) -> None:  # noqa: N802 - Qt API
+    def leaveEvent(self, event: object) -> None:
         self.update()
         super().leaveEvent(event)  # type: ignore[arg-type]
 
-    def paintEvent(self, _event: QPaintEvent) -> None:  # noqa: N802 - Qt API
+    def paintEvent(self, _event: QPaintEvent) -> None:
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         rect = QRectF(self.rect())
         if self.underMouse() or self._open:
             fill_rounded(painter, rect, RADIUS.pill, qcolor(COLORS.text, ALPHA.hover))
-        avatar = QRectF(rect.left() + SPACE.xs / 2, rect.center().y() - SIZES.avatar / 2, SIZES.avatar, SIZES.avatar)
+        avatar = QRectF(
+            rect.left() + SPACE.xs / 2,
+            rect.center().y() - SIZES.avatar / 2,
+            SIZES.avatar,
+            SIZES.avatar,
+        )
         painter.setPen(Qt.PenStyle.NoPen)
         painter.setBrush(QColor(COLORS.primary_cont))
         painter.drawEllipse(avatar)
-        draw_line(painter, avatar, initials(self._name), TYPE.label, COLORS.on_primary_cont,
-                  align=Qt.AlignmentFlag.AlignHCenter)
+        draw_line(
+            painter,
+            avatar,
+            initials(self._name),
+            TYPE.label,
+            COLORS.on_primary_cont,
+            align=Qt.AlignmentFlag.AlignHCenter,
+        )
         x = avatar.right() + SPACE.s
         if not self._compact and self._name:
-            width = draw_line(painter, QRectF(x, rect.top(), rect.width(), rect.height()),
-                              self._name, TYPE.body, COLORS.text, elide=False)
+            width = draw_line(
+                painter,
+                QRectF(x, rect.top(), rect.width(), rect.height()),
+                self._name,
+                TYPE.body,
+                COLORS.text,
+                elide=False,
+            )
             x += width + SPACE.xs
         side = SIZES.icon
-        paint_icon(painter, "expand_less" if self._open else "expand_more",
-                   QRectF(x, rect.center().y() - side / 2, side, side), COLORS.text_2)
+        paint_icon(
+            painter,
+            "expand_less" if self._open else "expand_more",
+            QRectF(x, rect.center().y() - side / 2, side, side),
+            COLORS.text_2,
+        )
         painter.end()
 
 
@@ -205,10 +236,12 @@ class ContextBar(QWidget):
     def set_elapsed(self, text: str) -> None:
         self.timer.setText(text)
 
-    def paintEvent(self, _event: QPaintEvent) -> None:  # noqa: N802 - Qt API
+    def paintEvent(self, _event: QPaintEvent) -> None:
         painter = QPainter(self)
         rect = self.rect()
         painter.fillRect(rect, QColor(COLORS.surface_2))
-        painter.fillRect(QRectF(0, rect.height() - SIZES.hairline, rect.width(), SIZES.hairline),
-                         QColor(COLORS.outline_soft))
+        painter.fillRect(
+            QRectF(0, rect.height() - SIZES.hairline, rect.width(), SIZES.hairline),
+            QColor(COLORS.outline_soft),
+        )
         painter.end()

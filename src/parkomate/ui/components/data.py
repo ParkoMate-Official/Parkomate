@@ -11,6 +11,7 @@ from PySide6.QtGui import QFontMetricsF, QPainter, QPaintEvent, QResizeEvent
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QFrame,
+    QGridLayout,
     QHBoxLayout,
     QHeaderView,
     QSizePolicy,
@@ -40,7 +41,10 @@ class ChipDelegate(QStyledItemDelegate):
         self.tones = tones
 
     def paint(
-        self, painter: QPainter, option: QStyleOptionViewItem, index: QModelIndex | QPersistentModelIndex
+        self,
+        painter: QPainter,
+        option: QStyleOptionViewItem,
+        index: QModelIndex | QPersistentModelIndex,
     ) -> None:
         super().paint(painter, option, QModelIndex())  # background (hover / selection) only
         text = str(index.data(Qt.ItemDataRole.DisplayRole) or "")
@@ -62,11 +66,19 @@ class ChipDelegate(QStyledItemDelegate):
         fill_rounded(painter, rect, RADIUS.chip, container)
         side = SIZES.icon_s
         paint_icon(
-            painter, icon, QRectF(rect.left() + SPACE.s, rect.center().y() - side / 2, side, side),
-            graphic, filled=True,
+            painter,
+            icon,
+            QRectF(rect.left() + SPACE.s, rect.center().y() - side / 2, side, side),
+            graphic,
+            filled=True,
         )
-        draw_line(painter, QRectF(rect.left() + SPACE.s * 2 + side, rect.top(), width, rect.height()),
-                  text, TYPE.caption, on_container)
+        draw_line(
+            painter,
+            QRectF(rect.left() + SPACE.s * 2 + side, rect.top(), width, rect.height()),
+            text,
+            TYPE.caption,
+            on_container,
+        )
         painter.restore()
 
 
@@ -124,9 +136,13 @@ class DataTable(QTableWidget):
             for c, value in enumerate(row):
                 item = QTableWidgetItem(value)
                 if c in self._numeric:
-                    item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+                    item.setTextAlignment(
+                        Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
+                    )
                 else:
-                    item.setTextAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+                    item.setTextAlignment(
+                        Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter
+                    )
                 if c in self._mono:
                     item.setFont(mono)
                 if c == 0 and data is not None:
@@ -170,11 +186,11 @@ class DataTable(QTableWidget):
         self._empty.setVisible(self.rowCount() == 0)
         self._empty.setGeometry(self.viewport().rect())
 
-    def resizeEvent(self, event: QResizeEvent) -> None:  # noqa: N802 - Qt API
+    def resizeEvent(self, event: QResizeEvent) -> None:
         super().resizeEvent(event)
         self._update_empty()
 
-    def eventFilter(self, watched: QObject, event: QEvent) -> bool:  # noqa: N802 - Qt API
+    def eventFilter(self, watched: QObject, event: QEvent) -> bool:
         if watched is self.viewport() and event.type() in (QEvent.Type.Resize, QEvent.Type.Show):
             self._update_empty()
         return super().eventFilter(watched, event)
@@ -182,7 +198,7 @@ class DataTable(QTableWidget):
     def empty_state(self) -> EmptyState | None:
         return self._empty
 
-    def sizeHint(self) -> QSize:  # noqa: N802 - Qt API
+    def sizeHint(self) -> QSize:
         return QSize(super().sizeHint().width(), SIZES.table_row * 6)
 
 
@@ -197,9 +213,9 @@ class StackedBar(QWidget):
         layout.setSpacing(SPACE.m)
         self._bar = _Bar(self)
         layout.addWidget(self._bar)
-        self._legend = QHBoxLayout()
-        self._legend.setSpacing(SPACE.l)
-        self._legend.addStretch(1)
+        self._legend = QGridLayout()
+        self._legend.setHorizontalSpacing(SPACE.xl)
+        self._legend.setVerticalSpacing(SPACE.s)
         layout.addLayout(self._legend)
         self._legend_items: list[tuple[_Swatch, Text]] = []
 
@@ -211,8 +227,9 @@ class StackedBar(QWidget):
             swatch = _Swatch()
             label = Text("", "caption", "secondary")
             row.addWidget(swatch)
-            row.addWidget(label)
-            self._legend.insertLayout(len(self._legend_items), row)
+            row.addWidget(label, 1)
+            index = len(self._legend_items)
+            self._legend.addLayout(row, index // 2, index % 2)
             self._legend_items.append((swatch, label))
         for index, (swatch, label) in enumerate(self._legend_items):
             if index < len(segments):
@@ -235,7 +252,7 @@ class _Swatch(QWidget):
         self.color = COLORS.outline
         self.setFixedSize(SPACE.m, SPACE.m)
 
-    def paintEvent(self, _event: QPaintEvent) -> None:  # noqa: N802 - Qt API
+    def paintEvent(self, _event: QPaintEvent) -> None:
         painter = QPainter(self)
         fill_rounded(painter, QRectF(self.rect()), RADIUS.keycap, self.color)
         painter.end()
@@ -248,7 +265,7 @@ class _Bar(QWidget):
         self.setFixedHeight(SIZES.stacked_bar)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
 
-    def paintEvent(self, _event: QPaintEvent) -> None:  # noqa: N802 - Qt API
+    def paintEvent(self, _event: QPaintEvent) -> None:
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         rect = QRectF(self.rect())
@@ -264,6 +281,8 @@ class _Bar(QWidget):
         x = rect.left()
         for _label, value, color in segments:
             width = usable * value / total
-            fill_rounded(painter, QRectF(x, rect.top(), width, rect.height()), min(radius, width / 2), color)
+            fill_rounded(
+                painter, QRectF(x, rect.top(), width, rect.height()), min(radius, width / 2), color
+            )
             x += width + gap
         painter.end()

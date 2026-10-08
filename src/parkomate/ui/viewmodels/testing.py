@@ -252,19 +252,26 @@ class TestingViewModel(StageViewModel):
         return actions
 
     def status(self) -> StatusLine | None:
-        missing = self.c.ctx.workflow.missing_checks()
+        """'4 of 12 checks done' + the next thing to do (S3)."""
+        workflow = self.c.ctx.workflow
+        missing = workflow.missing_checks()
+        required = workflow.required_checks(Stage.TESTING)
+        progress = (max(0, len(required) - len(missing)), len(required))
         if not missing:
-            return StatusLine("status.all_checks_done", tone="pass")
+            return StatusLine("status.all_checks_done", tone="pass", progress=progress)
         if self.measure_state is StepState.WORKING:
-            return StatusLine("status.test.waiting", {"s": self.seconds_left}, tone="pending")
-        items: list[str | tuple[str, dict[str, int]]] = []
-        if any(code.reading_index is not None for code in missing):
-            items.append(
-                ("status.item.readings", {"n": len(self.readings), "total": self.total_readings})
+            return StatusLine(
+                "status.test.waiting", {"s": self.seconds_left}, tone="pending", progress=progress
             )
-        items.extend(code.label_key for code in missing if code.reading_index is None)
-        return StatusLine(
-            "status.still_needed",
-            {"items_keys": items[:2], "more": max(0, len(items) - 2)},
-            tone="warn",
-        )
+        first = missing[0]
+        if first is CheckCode.B1_COMM:
+            key, params = "status.next.comm", {}
+        elif first.reading_index is not None:
+            key, params = "status.next.reading", {"n": first.reading_index}
+        elif first is CheckCode.B2_SENSOR_OK:
+            key, params = "status.next.mark_sensor", {}
+        elif first is CheckCode.B2_INDICATOR_OK:
+            key, params = "status.next.mark_indicator", {}
+        else:
+            key, params = "status.next.measure", {}
+        return StatusLine(key, params, tone="info", progress=progress)

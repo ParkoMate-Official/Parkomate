@@ -15,7 +15,13 @@ from PySide6.QtGui import QFontMetricsF, QPainter, QPaintEvent
 from PySide6.QtWidgets import QHBoxLayout, QSizePolicy, QWidget
 
 from parkomate.i18n import t
-from parkomate.ui.components.base import draw_line, fill_rounded, key_width, on_language_change, translations
+from parkomate.ui.components.base import (
+    draw_line,
+    fill_rounded,
+    key_width,
+    on_language_change,
+    translations,
+)
 from parkomate.ui.components.buttons import keycap_size, paint_keycap, paint_spinner
 from parkomate.ui.components.icons import paint_icon
 from parkomate.ui.theme.fonts import font_for
@@ -112,17 +118,17 @@ class StatusChip(QWidget):
     def _pad(self) -> int:
         return SPACE.s if self._compact else SPACE.m
 
-    def sizeHint(self) -> QSize:  # noqa: N802 - Qt API
+    def sizeHint(self) -> QSize:
         font = font_for(self._style)
         keys = [self.word_key(), *self._reserve_keys]
         word = max(key_width(font, k, **self._params) for k in keys)
         return QSize(2 * self._pad() + self._icon() + SPACE.s + word, self._height())
 
-    def minimumSizeHint(self) -> QSize:  # noqa: N802 - Qt API
+    def minimumSizeHint(self) -> QSize:
         return self.sizeHint()
 
     # ------------------------------------------------------------------ painting
-    def paintEvent(self, _event: QPaintEvent) -> None:  # noqa: N802 - Qt API
+    def paintEvent(self, _event: QPaintEvent) -> None:
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         tone, icon, _ = CHIP_STATES[self._state]
@@ -136,12 +142,21 @@ class StatusChip(QWidget):
         x = rect.left() + (0 if quiet else self._pad())
         icon_rect = QRectF(x, rect.center().y() - side / 2, side, side)
         if self._state == "working":
-            paint_spinner(painter, icon_rect, graphic, FrameClock.instance().phase(MOTION.spin_period))
+            paint_spinner(
+                painter, icon_rect, graphic, FrameClock.instance().phase(MOTION.spin_period)
+            )
         else:
-            paint_icon(painter, icon, icon_rect, COLORS.text_3 if quiet else graphic, filled=not quiet)
+            paint_icon(
+                painter, icon, icon_rect, COLORS.text_3 if quiet else graphic, filled=not quiet
+            )
         text_x = icon_rect.right() + SPACE.s
-        draw_line(painter, QRectF(text_x, rect.top(), rect.right() - text_x, rect.height()),
-                  self.text(), self._style, text_color)
+        draw_line(
+            painter,
+            QRectF(text_x, rect.top(), rect.right() - text_x, rect.height()),
+            self.text(),
+            self._style,
+            text_color,
+        )
         painter.end()
 
 
@@ -159,10 +174,10 @@ class KeyCap(QWidget):
     def _refresh(self, *_args: object) -> None:
         self.update()
 
-    def sizeHint(self) -> QSize:  # noqa: N802 - Qt API
+    def sizeHint(self) -> QSize:
         return QSize(max(keycap_size(x).width() for x in translations(self._key)), SIZES.keycap)
 
-    def paintEvent(self, _event: QPaintEvent) -> None:  # noqa: N802 - Qt API
+    def paintEvent(self, _event: QPaintEvent) -> None:
         painter = QPainter(self)
         paint_keycap(painter, QRectF(self.rect()), t(self._key), self._color)
         painter.end()
@@ -185,18 +200,25 @@ class SimulationChip(StatusChip):
         self.setToolTip(tip)
         self.setAccessibleDescription(tip)
 
-    def paintEvent(self, _event: QPaintEvent) -> None:  # noqa: N802 - Qt API
+    def paintEvent(self, _event: QPaintEvent) -> None:
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         rect = QRectF(self.rect())
         inset = SIZES.hairline / 2
-        fill_rounded(painter, rect, RADIUS.chip, COLORS.warning_cont, COLORS.warning, SIZES.hairline)
+        fill_rounded(
+            painter, rect, RADIUS.chip, COLORS.warning_cont, COLORS.warning, SIZES.hairline
+        )
         side = self._icon()
         icon_rect = QRectF(rect.left() + self._pad(), rect.center().y() - side / 2, side, side)
         paint_icon(painter, "warning", icon_rect, COLORS.warning, filled=True)
         text_x = icon_rect.right() + SPACE.s
-        draw_line(painter, QRectF(text_x, rect.top() + inset, rect.right() - text_x, rect.height() - 2 * inset),
-                  self.text(), TYPE.label, COLORS.on_warning_cont)
+        draw_line(
+            painter,
+            QRectF(text_x, rect.top() + inset, rect.right() - text_x, rect.height() - 2 * inset),
+            self.text(),
+            TYPE.label,
+            COLORS.on_warning_cont,
+        )
         painter.end()
 
 
@@ -235,31 +257,40 @@ class CounterChip(QWidget):
         self.updateGeometry()
         self.update()
 
-    def sizeHint(self) -> QSize:  # noqa: N802 - Qt API
+    def sizeHint(self) -> QSize:
         number = math.ceil(QFontMetricsF(font_for(TYPE.body_strong)).horizontalAdvance("000"))
-        word = (
-            key_width(font_for(TYPE.label), self._word_key) + SPACE.s
-            if self._word_key
-            else 0
-        )
+        word = key_width(font_for(TYPE.label), self._word_key) + SPACE.s if self._word_key else 0
         return QSize(2 * SPACE.m + SIZES.icon + SPACE.s + word + number, SIZES.chip)
 
-    def paintEvent(self, _event: QPaintEvent) -> None:  # noqa: N802 - Qt API
+    def paintEvent(self, _event: QPaintEvent) -> None:
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         rect = QRectF(self.rect())
-        fill_rounded(painter, rect, RADIUS.chip, COLORS.surface, COLORS.outline_soft, SIZES.hairline)
+        fill_rounded(
+            painter, rect, RADIUS.chip, COLORS.surface, COLORS.outline_soft, SIZES.hairline
+        )
         side = SIZES.icon
         icon_rect = QRectF(rect.left() + SPACE.m, rect.center().y() - side / 2, side, side)
         paint_icon(painter, self._icon, icon_rect, self._icon_color, filled=True)
         x = icon_rect.right() + SPACE.s
         if self._word_key:
             word = t(self._word_key)
-            width = draw_line(painter, QRectF(x, rect.top(), rect.right() - x, rect.height()),
-                              word, TYPE.label, COLORS.text_2, elide=False)
+            width = draw_line(
+                painter,
+                QRectF(x, rect.top(), rect.right() - x, rect.height()),
+                word,
+                TYPE.label,
+                COLORS.text_2,
+                elide=False,
+            )
             x += width + SPACE.s
-        draw_line(painter, QRectF(x, rect.top(), rect.right() - x, rect.height()),
-                  self._value, TYPE.body_strong, COLORS.text)
+        draw_line(
+            painter,
+            QRectF(x, rect.top(), rect.right() - x, rect.height()),
+            self._value,
+            TYPE.body_strong,
+            COLORS.text,
+        )
         painter.end()
 
 

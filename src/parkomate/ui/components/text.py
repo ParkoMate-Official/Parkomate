@@ -16,11 +16,19 @@ import math
 from typing import Any
 
 from PySide6.QtCore import QPointF, QRectF, QSize, Qt
-from PySide6.QtGui import QColor, QFont, QFontMetricsF, QPainter, QPaintEvent, QTextLayout, QTextOption
+from PySide6.QtGui import (
+    QColor,
+    QFont,
+    QFontMetricsF,
+    QPainter,
+    QPaintEvent,
+    QTextLayout,
+    QTextOption,
+)
 from PySide6.QtWidgets import QLabel, QSizePolicy, QWidget
 
 from parkomate.i18n import t
-from parkomate.ui.components.base import key_width, on_language_change
+from parkomate.ui.components.base import key_width, on_language_change, translations
 from parkomate.ui.theme.fonts import font_for, line_box
 from parkomate.ui.theme.tokens import COLORS, TYPE
 
@@ -36,7 +44,7 @@ TONES = {
     "on_status": COLORS.on_status,
     "on_primary": COLORS.on_primary,
 }
-_LEGACY_TONES = {"pass": "success", "fail": "danger", "warn": "warning", "pending": "tertiary"}
+_STATUS_TONES = {"pass": "success", "fail": "danger", "warn": "warning", "pending": "tertiary"}
 
 
 class Text(QLabel):
@@ -101,7 +109,7 @@ class Text(QLabel):
         return self._style_name
 
     def set_tone(self, tone: str) -> None:
-        tone = _LEGACY_TONES.get(tone, tone)
+        tone = _STATUS_TONES.get(tone, tone)
         self.set_color(TONES.get(tone, tone if tone.startswith("#") else COLORS.text))
 
     def set_color(self, color: str) -> None:
@@ -128,7 +136,7 @@ class Text(QLabel):
         self._reserve = width
         self.updateGeometry()
 
-    def setWordWrap(self, on: bool) -> None:  # noqa: N802 - Qt API
+    def setWordWrap(self, on: bool) -> None:
         super().setWordWrap(on)
         self._apply_policy()
 
@@ -156,7 +164,7 @@ class Text(QLabel):
         margins = self.contentsMargins()
         return math.ceil(width) + self._reserve + margins.left() + margins.right() + 1
 
-    def _layouts(self, width: float) -> list[QTextLayout]:
+    def _layouts(self, width: float, text: str | None = None) -> list[QTextLayout]:
         option = QTextOption()
         option.setWrapMode(
             QTextOption.WrapMode.WrapAtWordBoundaryOrAnywhere
@@ -164,7 +172,8 @@ class Text(QLabel):
             else QTextOption.WrapMode.NoWrap
         )
         layouts = []
-        for paragraph in self._paragraphs():
+        paragraphs = self._paragraphs() if text is None else text.split("\n")
+        for paragraph in paragraphs:
             layout = QTextLayout(paragraph, self.font())
             layout.setTextOption(option)
             layout.beginLayout()
@@ -178,22 +187,28 @@ class Text(QLabel):
         return layouts
 
     def _line_count(self, width: float) -> int:
+        """Lines needed at ``width`` - for a translated text, the most any translation needs,
+        so a wrapped text is as tall in English as in Marathi."""
         if not self.wordWrap():
             return len(self._paragraphs())
-        return max(1, sum(layout.lineCount() for layout in self._layouts(width)))
+        texts = translations(self._key, **self._params) if self._key else [self.text()]
+        return max(
+            1,
+            *(sum(layout.lineCount() for layout in self._layouts(width, text)) for text in texts),
+        )
 
     def _content_height(self, lines: int) -> int:
         margins = self.contentsMargins()
         return max(lines, self._min_lines) * self.line_height + margins.top() + margins.bottom()
 
-    def sizeHint(self) -> QSize:  # noqa: N802 - Qt API
+    def sizeHint(self) -> QSize:
         natural = self._natural_width()
         if self.wordWrap():
             width = min(natural, max(self.maximumWidth(), 1))
             return QSize(width, self._content_height(self._line_count(width)))
         return QSize(natural, self._content_height(len(self._paragraphs())))
 
-    def minimumSizeHint(self) -> QSize:  # noqa: N802 - Qt API
+    def minimumSizeHint(self) -> QSize:
         if self.wordWrap():
             return QSize(self.line_height * 2, self._content_height(1))
         ellipsis = QFontMetricsF(self.font()).horizontalAdvance("…")
@@ -202,16 +217,16 @@ class Text(QLabel):
             self._content_height(len(self._paragraphs())),
         )
 
-    def hasHeightForWidth(self) -> bool:  # noqa: N802 - Qt API
+    def hasHeightForWidth(self) -> bool:
         return self.wordWrap()
 
-    def heightForWidth(self, width: int) -> int:  # noqa: N802 - Qt API
+    def heightForWidth(self, width: int) -> int:
         margins = self.contentsMargins()
         inner = width - margins.left() - margins.right()
         return self._content_height(self._line_count(inner))
 
     # ------------------------------------------------------------------ painting
-    def paintEvent(self, _event: QPaintEvent) -> None:  # noqa: N802 - Qt API
+    def paintEvent(self, _event: QPaintEvent) -> None:
         rect = QRectF(self.contentsRect())
         if rect.width() <= 0:
             return
@@ -234,9 +249,7 @@ class Text(QLabel):
             for paragraph in self._paragraphs():
                 shown = paragraph
                 if metrics.horizontalAdvance(paragraph) > rect.width() + 0.5:
-                    shown = metrics.elidedText(
-                        paragraph, Qt.TextElideMode.ElideRight, rect.width()
-                    )
+                    shown = metrics.elidedText(paragraph, Qt.TextElideMode.ElideRight, rect.width())
                     elided_any = True
                 layout = QTextLayout(shown, self.font())
                 option = QTextOption()
@@ -306,7 +319,11 @@ class SelectableText(QLabel):
     """
 
     def __init__(
-        self, text: str = "", style: str = "body", tone: str = "secondary", parent: QWidget | None = None
+        self,
+        text: str = "",
+        style: str = "body",
+        tone: str = "secondary",
+        parent: QWidget | None = None,
     ) -> None:
         super().__init__(text, parent)
         style_ = TYPE.style(style)

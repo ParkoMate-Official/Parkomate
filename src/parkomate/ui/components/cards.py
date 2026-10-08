@@ -10,7 +10,7 @@ from typing import Any
 
 from PySide6.QtCore import QRectF, Qt, Signal
 from PySide6.QtGui import QPainter, QPaintEvent
-from PySide6.QtWidgets import QFrame, QHBoxLayout, QSizePolicy, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QBoxLayout, QFrame, QHBoxLayout, QSizePolicy, QVBoxLayout, QWidget
 
 from parkomate.core.errors import ParkomateError
 from parkomate.ui.components.base import fill_rounded, mix, set_prop
@@ -53,8 +53,8 @@ class Card(QFrame):
             self.header.addWidget(self.icon, 0, Qt.AlignmentFlag.AlignTop)
         titles = QVBoxLayout()
         titles.setSpacing(SPACE.xs)
-        self.title = TrText(title_key or "", "title")
-        self.subtitle = TrText(subtitle_key or "", "body", "secondary", wrap=True)
+        self.title: Text = TrText(title_key or "", "title")
+        self.subtitle: Text = TrText(subtitle_key or "", "body", "secondary", wrap=True)
         titles.addWidget(self.title)
         titles.addWidget(self.subtitle)
         self.title.setVisible(bool(title_key))
@@ -93,7 +93,7 @@ class Card(QFrame):
     def variant(self) -> str:
         return self._variant
 
-    def paintEvent(self, _event: QPaintEvent) -> None:  # noqa: N802 - Qt API
+    def paintEvent(self, _event: QPaintEvent) -> None:
         painter = QPainter(self)
         rect = QRectF(self.rect())
         variant = self._variant
@@ -128,10 +128,13 @@ BANNER_TONES = {
 class Banner(QFrame):
     """Tinted message: icon, title, body, optional numbered steps and actions."""
 
-    def __init__(self, tone: str = "info", parent: QWidget | None = None) -> None:
+    def __init__(
+        self, tone: str = "info", parent: QWidget | None = None, *, actions_below: bool = False
+    ) -> None:
         super().__init__(parent)
         self._tone = "info"
         outer = QHBoxLayout(self)
+        self.outer = outer
         outer.setContentsMargins(SPACE.xl, SPACE.l, SPACE.xl, SPACE.l)
         outer.setSpacing(SPACE.l)
         self.icon_widget = Icon("info", SIZES.icon_l, COLORS.info, filled=True)
@@ -146,9 +149,17 @@ class Banner(QFrame):
         self.text_column.addWidget(self.steps)
         self.steps.setVisible(False)
         outer.addLayout(self.text_column, 1)
-        self.actions = QVBoxLayout()
-        self.actions.setSpacing(SPACE.s)
-        outer.addLayout(self.actions)
+        self.action_box: QBoxLayout
+        if actions_below:
+            self.action_box = QHBoxLayout()
+            self.action_box.setSpacing(SPACE.s)
+            self.action_box.addStretch(1)
+            self.text_column.addSpacing(SPACE.s)
+            self.text_column.addLayout(self.action_box)
+        else:
+            self.action_box = QVBoxLayout()
+            self.action_box.setSpacing(SPACE.s)
+            outer.addLayout(self.action_box)
         self.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum)
         self.set_tone(tone)
 
@@ -173,9 +184,9 @@ class Banner(QFrame):
         self.setAccessibleName(f"{title}. {body}".strip())
 
     def add_action(self, button: QWidget) -> None:
-        self.actions.addWidget(button, 0, Qt.AlignmentFlag.AlignRight)
+        self.action_box.addWidget(button, 0, Qt.AlignmentFlag.AlignRight)
 
-    def paintEvent(self, _event: QPaintEvent) -> None:  # noqa: N802 - Qt API
+    def paintEvent(self, _event: QPaintEvent) -> None:
         status, _icon = BANNER_TONES.get(self._tone, BANNER_TONES["info"])
         _graphic, container, _on = COLORS.status(status)
         painter = QPainter(self)
@@ -223,7 +234,7 @@ class _IconBadge(QWidget):
         side = SIZES.icon_hero
         self.setFixedSize(side, side)
 
-    def paintEvent(self, _event: QPaintEvent) -> None:  # noqa: N802 - Qt API
+    def paintEvent(self, _event: QPaintEvent) -> None:
         from parkomate.ui.components.icons import paint_icon
 
         painter = QPainter(self)
@@ -251,6 +262,8 @@ class KpiTile(Card):
         icon: str,
         icon_color: str = COLORS.text_2,
         parent: QWidget | None = None,
+        *,
+        compact: bool = False,
     ) -> None:
         super().__init__(compact=True, parent=parent)
         self.layout_.setSpacing(SPACE.xs)
@@ -266,7 +279,9 @@ class KpiTile(Card):
         self.body.addWidget(self.value)
         self.caption = Text("", "caption", "tertiary")
         self.body.addWidget(self.caption)
-        self.setMinimumHeight(SIZES.kpi)
+        self.caption.setVisible(not compact)
+        if not compact:
+            self.setMinimumHeight(SIZES.kpi)
 
     def set_value(self, value: str) -> None:
         self.value.setText(value)
@@ -336,8 +351,8 @@ class InlineConfirm(Banner):
         self.yes_button.clicked.connect(lambda: self.answered.emit(True))
         buttons.addWidget(self.no_button)
         buttons.addWidget(self.yes_button)
-        self.actions.addLayout(buttons)
-        self.layout().setAlignment(self.actions, Qt.AlignmentFlag.AlignVCenter)
+        self.action_box.addLayout(buttons)
+        self.outer.setAlignment(self.action_box, Qt.AlignmentFlag.AlignVCenter)
 
     def show_confirm(self, message: str, yes_key: str, no_key: str, danger: bool) -> None:
         self.message.setText(message)
@@ -350,3 +365,51 @@ class InlineConfirm(Banner):
 
 def mark_invalid(widget: QWidget, invalid: bool) -> None:
     set_prop(widget, "invalid", invalid)
+
+
+class IconBadge(QWidget):
+    """A big icon in a soft circle, tinted by tone (hero results, empty states)."""
+
+    def __init__(
+        self,
+        icon: str = "info",
+        tone: str = "neutral",
+        *,
+        size: int = SIZES.icon_hero,
+        parent: QWidget | None = None,
+    ) -> None:
+        super().__init__(parent)
+        self._icon = icon
+        self._tone = tone
+        self.setFixedSize(size, size)
+
+    def set_icon(self, icon: str, tone: str) -> None:
+        self._icon = icon
+        self._tone = tone
+        self.update()
+
+    def icon(self) -> str:
+        return self._icon
+
+    def tone(self) -> str:
+        return self._tone
+
+    def paintEvent(self, _event: QPaintEvent) -> None:
+        from parkomate.ui.components.icons import paint_icon
+
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        rect = QRectF(self.rect())
+        graphic, container, _on = COLORS.status(self._tone)
+        if self._tone == "neutral":
+            graphic, container = COLORS.text_3, COLORS.surface_2
+        fill_rounded(painter, rect, RADIUS.pill, container)
+        side = rect.width() * 0.5
+        paint_icon(
+            painter,
+            self._icon,
+            QRectF(rect.center().x() - side / 2, rect.center().y() - side / 2, side, side),
+            graphic,
+            filled=self._tone != "neutral",
+        )
+        painter.end()

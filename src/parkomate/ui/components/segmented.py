@@ -10,11 +10,17 @@ from collections.abc import Sequence
 from typing import Any
 
 from PySide6.QtCore import QRectF, QSize, Qt, Signal
-from PySide6.QtGui import QColor, QFontMetricsF, QPainter, QPainterPath, QPaintEvent
+from PySide6.QtGui import QColor, QEnterEvent, QFontMetricsF, QPainter, QPainterPath, QPaintEvent
 from PySide6.QtWidgets import QAbstractButton, QButtonGroup, QHBoxLayout, QSizePolicy, QWidget
 
 from parkomate.i18n import t
-from parkomate.ui.components.base import draw_line, fill_rounded, key_width, on_language_change, qcolor
+from parkomate.ui.components.base import (
+    draw_line,
+    fill_rounded,
+    key_width,
+    on_language_change,
+    qcolor,
+)
 from parkomate.ui.components.icons import Icon, paint_icon
 from parkomate.ui.theme.fonts import font_for
 from parkomate.ui.theme.motion import Tween
@@ -34,17 +40,23 @@ class _Segment(QAbstractButton):
         self.setProperty("ring_radius", RADIUS.pill)
         self.setText(t(key))
 
-    def sizeHint(self) -> QSize:  # noqa: N802 - Qt API
+    def sizeHint(self) -> QSize:
         return QSize(self.control.segment_width(), self.control.height_px)
 
-    def paintEvent(self, _event: QPaintEvent) -> None:  # noqa: N802 - Qt API
+    def paintEvent(self, _event: QPaintEvent) -> None:
         painter = QPainter(self)
         style = TYPE.body_strong if self.isChecked() and not self.control.small else TYPE.body
         color = COLORS.on_primary_cont if self.isChecked() else COLORS.text_2
         if not self.isEnabled():
             color = COLORS.text_3
-        draw_line(painter, QRectF(self.rect()), self.text(), style, color,
-                  align=Qt.AlignmentFlag.AlignHCenter)
+        draw_line(
+            painter,
+            QRectF(self.rect()),
+            self.text(),
+            style,
+            color,
+            align=Qt.AlignmentFlag.AlignHCenter,
+        )
         painter.end()
 
 
@@ -89,7 +101,7 @@ class SegmentedControl(QWidget):
         widest = max(key_width(font, key) for _value, key in self._options)
         return widest + 2 * SPACE.l
 
-    def sizeHint(self) -> QSize:  # noqa: N802 - Qt API
+    def sizeHint(self) -> QSize:
         margins = self.contentsMargins()
         return QSize(
             self.segment_width() * len(self._options) + margins.left() + margins.right(),
@@ -125,7 +137,7 @@ class SegmentedControl(QWidget):
             segment.setText(t(segment.key))
             segment.update()
 
-    def paintEvent(self, _event: QPaintEvent) -> None:  # noqa: N802 - Qt API
+    def paintEvent(self, _event: QPaintEvent) -> None:
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         rect = QRectF(self.rect())
@@ -160,15 +172,13 @@ class LanguageSwitch(SegmentedControl):
 
     def _sync_names(self) -> None:
         for code, segment in self._segments.items():
-            segment.setAccessibleName(
-                t("a11y.language_switch", language=t(f"language.{code}"))
-            )
+            segment.setAccessibleName(t("a11y.language_switch", language=t(f"language.{code}")))
 
 
 class _ToggleHalf(QAbstractButton):
-    def __init__(self, toggle: PassFailToggle, positive: bool, key: str) -> None:
-        super().__init__(toggle)
-        self.toggle = toggle
+    def __init__(self, owner: PassFailToggle, positive: bool, key: str) -> None:
+        super().__init__(owner)
+        self.owner = owner
         self.positive = positive
         self.key = key
         self.setCheckable(True)
@@ -177,10 +187,10 @@ class _ToggleHalf(QAbstractButton):
         self.setProperty("ring_radius", RADIUS.control)
         self.setText(t(key))
 
-    def sizeHint(self) -> QSize:  # noqa: N802 - Qt API
-        return QSize(self.toggle.half_width(), SIZES.button_compact)
+    def sizeHint(self) -> QSize:
+        return QSize(self.owner.half_width(), SIZES.button_compact)
 
-    def paintEvent(self, _event: QPaintEvent) -> None:  # noqa: N802 - Qt API
+    def paintEvent(self, _event: QPaintEvent) -> None:
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         rect = QRectF(self.rect())
@@ -205,7 +215,9 @@ class _ToggleHalf(QAbstractButton):
             painter.setBrush(Qt.BrushStyle.NoBrush)
             inset = SIZES.hairline / 2
             painter.drawPath(
-                _half_path(rect.adjusted(inset, inset, -inset, -inset), RADIUS.control, left=self.positive)
+                _half_path(
+                    rect.adjusted(inset, inset, -inset, -inset), RADIUS.control, left=self.positive
+                )
             )
         if self.underMouse() and self.isEnabled() and not selected:
             painter.setPen(Qt.PenStyle.NoPen)
@@ -218,17 +230,26 @@ class _ToggleHalf(QAbstractButton):
         group = SIZES.icon + SPACE.s + label_w
         x = rect.left() + (rect.width() - group) / 2
         paint_icon(
-            painter, icon, QRectF(x, rect.center().y() - SIZES.icon / 2, SIZES.icon, SIZES.icon), content
+            painter,
+            icon,
+            QRectF(x, rect.center().y() - SIZES.icon / 2, SIZES.icon, SIZES.icon),
+            content,
         )
-        draw_line(painter, QRectF(x + SIZES.icon + SPACE.s, rect.top(), label_w + 1, rect.height()),
-                  self.text(), TYPE.button_sm, content, elide=False)
+        draw_line(
+            painter,
+            QRectF(x + SIZES.icon + SPACE.s, rect.top(), label_w + 1, rect.height()),
+            self.text(),
+            TYPE.button_sm,
+            content,
+            elide=False,
+        )
         painter.end()
 
-    def enterEvent(self, event: Any) -> None:  # noqa: N802 - Qt API
+    def enterEvent(self, event: QEnterEvent) -> None:
         self.update()
         super().enterEvent(event)
 
-    def leaveEvent(self, event: Any) -> None:  # noqa: N802 - Qt API
+    def leaveEvent(self, event: Any) -> None:
         self.update()
         super().leaveEvent(event)
 

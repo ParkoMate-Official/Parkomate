@@ -1,22 +1,14 @@
-"""The four stage screens. Same layout everywhere: left = steps/checks, right = live data."""
+"""The four stage screens on the 12-column grid: left 5 columns = steps / checks, right
+7 columns = live data / result. One level of cards on the page background."""
 
 from __future__ import annotations
 
+import re
 from datetime import datetime
 
-from PySide6.QtCore import QRectF, Qt, QTimer
-from PySide6.QtGui import QColor, QImage, QPainter, QPaintEvent, QPen
-from PySide6.QtWidgets import (
-    QComboBox,
-    QFrame,
-    QGridLayout,
-    QHBoxLayout,
-    QLabel,
-    QLineEdit,
-    QProgressBar,
-    QVBoxLayout,
-    QWidget,
-)
+from PySide6.QtCore import Qt, QTimer
+from PySide6.QtGui import QImage
+from PySide6.QtWidgets import QGridLayout, QHBoxLayout, QSizePolicy, QVBoxLayout, QWidget
 
 from parkomate.core.enums import (
     MAX_SENSOR_READINGS,
@@ -25,121 +17,109 @@ from parkomate.core.enums import (
     IdEntryMethod,
     Stage,
 )
-from parkomate.core.models import CheckOutcome
+from parkomate.core.models import CheckOutcome, PortInfo
 from parkomate.i18n import t
+from parkomate.ui.components.base import Divider
+from parkomate.ui.components.buttons import AppButton
+from parkomate.ui.components.camera import CameraFrame
+from parkomate.ui.components.cards import Banner, Card, IconBadge
+from parkomate.ui.components.checklist import ChecklistRow
+from parkomate.ui.components.chips import StatusChip
 from parkomate.ui.components.icons import Icon
-from parkomate.ui.components.widgets import (
-    BigButton,
-    CheckRow,
-    CounterBadge,
-    StatusPill,
-    TrLabel,
-    ValueRow,
-    scroll_card,
-    set_prop,
-)
+from parkomate.ui.components.inputs import ROLE_SECONDARY, ROLE_SHORT, Select, TextField
+from parkomate.ui.components.layout import ScrollArea, column_grid
+from parkomate.ui.components.measure import Band, ReadingSlots, ValueRow
+from parkomate.ui.components.progress import AttemptDots, ProgressBar, ProgressRing
+from parkomate.ui.components.segmented import PassFailToggle
+from parkomate.ui.components.stepper import StepList
+from parkomate.ui.components.text import Text, TrText
 from parkomate.ui.qt_i18n import language_notifier
-from parkomate.ui.theme.legacy import font
-from parkomate.ui.theme.legacy import COLORS, SIZES
+from parkomate.ui.theme.tokens import COLORS, SIZES, SPACE
 from parkomate.ui.viewmodels.base import StageViewModel
 from parkomate.ui.viewmodels.labeling import ChecklistMixin, LabelingViewModel, PackagingViewModel
 from parkomate.ui.viewmodels.programming import ProgrammingViewModel, StepState
 from parkomate.ui.viewmodels.station import StationController
 from parkomate.ui.viewmodels.testing import TestingViewModel
 
-_PILL = {
+CHIP = {
+    StepState.PENDING: "neutral",
+    StepState.WORKING: "working",
+    StepState.PASS: "success",
+    StepState.FAIL: "danger",
+    StepState.ERROR: "warning",
+}
+STEP = {
     StepState.PENDING: "pending",
     StepState.WORKING: "working",
     StepState.PASS: "pass",
     StepState.FAIL: "fail",
-    StepState.ERROR: "warn",
+    StepState.ERROR: "error",
 }
-
 CHECK_ICONS = {
-    CheckCode.C1: "pcb",
-    CheckCode.C2: "screw",
-    CheckCode.C3: "sticker",
-    CheckCode.C4: "qr",
-    CheckCode.D1: "sensor",
-    CheckCode.D2: "indicator",
-    CheckCode.D3: "connector",
-    CheckCode.D4: "screw",
+    CheckCode.C1: "developer_board",
+    CheckCode.C2: "build",
+    CheckCode.C3: "label",
+    CheckCode.C4: "qr_code_2",
+    CheckCode.D1: "sensors",
+    CheckCode.D2: "lightbulb",
+    CheckCode.D3: "cable",
+    CheckCode.D4: "build",
 }
+_BRIDGE = re.compile(r"\b(CP\d{3,4}\w*|CH\d{3}\w*|FT\d{3}\w*|PL\d{4}\w*|ESP32\S*)", re.IGNORECASE)
+CAMERA_POLL_MS = 66  # ~15 fps preview
 
 
 def local_time(value: datetime) -> str:
     return value.astimezone().strftime("%H:%M:%S")
 
 
-class StepRow(QFrame):
-    """Numbered step with a title, a status pill and a body."""
-
-    def __init__(self, number: str, title_key: str, parent: QWidget | None = None) -> None:
-        super().__init__(parent)
-        self.setProperty("tone", "pending")
-        outer = QVBoxLayout(self)
-        outer.setContentsMargins(SIZES.space_s + 4, 6, SIZES.space_s + 4, 6)
-        outer.setSpacing(2)
-        header = QHBoxLayout()
-        self.number = QLabel(number)
-        self.number.setFont(font(SIZES.font_h2, bold=True))
-        self.number.setFixedWidth(36)
-        self.title = TrLabel(title_key, role="h2")
-        self.pill = StatusPill()
-        header.addWidget(self.number)
-        header.addWidget(self.title, 1)
-        header.addWidget(self.pill)
-        outer.addLayout(header)
-        self.body = QVBoxLayout()
-        self.body.setContentsMargins(42, 0, 0, 0)
-        self.body.setSpacing(SIZES.space_xs)
-        outer.addLayout(self.body)
-
-    def set_state(self, state: StepState, key: str | None = None) -> None:
-        pill = _PILL[state]
-        self.pill.set_state(pill, key)
-        set_prop(self, "tone", {"working": "info"}.get(pill, pill))
+def short_bridge(port: PortInfo) -> str:
+    """'Silicon Labs CP210x USB to UART Bridge' -> 'CP210x' (P4)."""
+    match = _BRIDGE.search(port.description or "")
+    if match:
+        return match.group(1)
+    return " ".join((port.description or "").split()[:2])
 
 
 class StageView(QWidget):
     vm: StageViewModel
 
-    def __init__(
-        self, controller: StationController, vm: StageViewModel, ratio: tuple[int, int] = (5, 6)
-    ) -> None:
+    def __init__(self, controller: StationController, vm: StageViewModel) -> None:
         super().__init__()
         self.c = controller
         self.vm = vm
-        layout = QHBoxLayout(self)
+        layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(SIZES.space_m)
-        self.left, self.left_layout = scroll_card()
-        self.right, self.right_layout = scroll_card()
-        layout.addWidget(self.left, ratio[0])
-        layout.addWidget(self.right, ratio[1])
+        self.left_scroll = ScrollArea()
+        self.right_scroll = ScrollArea()
+        self.left_layout = self.left_scroll.layout_
+        self.right_layout = self.right_scroll.layout_
+        layout.addLayout(column_grid(self.left_scroll, self.right_scroll))
         vm.changed.connect(self.update_view)
         language_notifier().changed.connect(self.update_view)
+
+    def finish_columns(self) -> None:
+        self.left_layout.addStretch(1)
+        self.right_layout.addStretch(1)
 
     def update_view(self, *_args: object) -> None:
         raise NotImplementedError
 
 
-class RejectChooser(QFrame):
+class RejectChooser(Card):
     """'Which item failed?' - inline, never a dialog."""
 
     def __init__(self, vm: ChecklistMixin, parent: QWidget | None = None) -> None:
-        super().__init__(parent)
+        super().__init__("reject.choose_item", icon="error", parent=parent)
         self.vm = vm
-        self.setProperty("tone", "fail")
-        self._layout = QVBoxLayout(self)
-        self._layout.setContentsMargins(SIZES.space_m, SIZES.space_m, SIZES.space_m, SIZES.space_m)
-        self._layout.addWidget(TrLabel("reject.choose_item", role="h2"))
+        self.set_variant("danger")
         self._grid = QGridLayout()
-        self._layout.addLayout(self._grid)
-        self.cancel = BigButton("action.cancel", hint_key="key.esc")
+        self._grid.setSpacing(SPACE.s)
+        self.body.addLayout(self._grid)
+        self.cancel = AppButton("action.cancel", variant="outlined", hint_key="key.esc")
         self.cancel.clicked.connect(vm.cancel_reject)
-        self._layout.addWidget(self.cancel, 0, Qt.AlignmentFlag.AlignRight)
-        self._buttons: dict[CheckCode, BigButton] = {}
+        self.body.addWidget(self.cancel, 0, Qt.AlignmentFlag.AlignRight)
+        self._buttons: dict[CheckCode, AppButton] = {}
         self.setVisible(False)
 
     def update_view(self) -> None:
@@ -149,7 +129,8 @@ class RejectChooser(QFrame):
                 button.deleteLater()
             self._buttons = {}
             for index, code in enumerate(codes):
-                button = BigButton(code.label_key, variant="danger")
+                button = AppButton(code.label_key, variant="danger_tonal", size="compact")
+                button.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
                 button.clicked.connect(lambda _c=False, code=code: self.vm.reject_for(code))
                 self._grid.addWidget(button, index // 2, index % 2)
                 self._buttons[code] = button
@@ -159,179 +140,287 @@ class RejectChooser(QFrame):
 # =========================================================================== Programming
 
 
+class ResultHero(Card):
+    """The right half of Programming - what is happening, big and calm (P3)."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.body.setSpacing(SPACE.m)
+        self.body.addStretch(1)
+        center = Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignVCenter
+        self.badge = IconBadge("usb", "neutral", size=SIZES.ring)
+        self.ring = ProgressRing()
+        self.body.addWidget(self.badge, 0, Qt.AlignmentFlag.AlignHCenter)
+        self.body.addWidget(self.ring, 0, Qt.AlignmentFlag.AlignHCenter)
+        self.title = Text("", "headline", wrap=True, align=center)
+        self.text = Text("", "body_lg", "secondary", wrap=True, align=center)
+        self.body.addWidget(self.title)
+        self.body.addWidget(self.text)
+        dots_row = QHBoxLayout()
+        dots_row.setSpacing(SPACE.s)
+        dots_row.addStretch(1)
+        self.dots = AttemptDots()
+        self.dots_caption = Text("", "caption", "secondary")
+        dots_row.addWidget(self.dots)
+        dots_row.addWidget(self.dots_caption)
+        dots_row.addStretch(1)
+        self.body.addLayout(dots_row)
+        self.body.addStretch(1)
+        self.adjust = Banner("info", actions_below=True)
+        self.adjust_yes = AppButton("action.adjust_yes", variant="tonal")
+        self.adjust_no = AppButton("action.adjust_no", variant="outlined")
+        self.adjust.action_box.addWidget(self.adjust_no)
+        self.adjust.action_box.addWidget(self.adjust_yes)
+        self.body.addWidget(self.adjust)
+
+    def show_badge(self, icon: str, tone: str) -> None:
+        self.ring.setVisible(False)
+        self.ring.set_indeterminate(False)
+        self.badge.setVisible(True)
+        self.badge.set_icon(icon, tone)
+
+    def show_ring(self, value: int | None, state: str = "running") -> None:
+        self.badge.setVisible(False)
+        self.ring.setVisible(True)
+        self.ring.set_state(state)
+        self.ring.set_indeterminate(value is None)
+        if value is not None:
+            self.ring.set_value(value)
+
+
 class ProgrammingView(StageView):
     vm: ProgrammingViewModel
 
     def __init__(self, controller: StationController) -> None:
         super().__init__(controller, controller.programming)
-        left = self.left_layout
-        self.step_connect = StepRow("1", "prog.step.connect")
-        self.port_combo = QComboBox()
-        self.port_combo.setMinimumWidth(320)
+        steps_card = Card("prog.steps_title")
+        self.steps = StepList(
+            ["prog.step.connect", "prog.step.authorised", "prog.step.firmware", "prog.step.upload"]
+        )
+        self.step_connect, self.step_whitelist, self.step_firmware, self.step_upload = (
+            self.steps.items
+        )
+        steps_card.body.addWidget(self.steps)
+        self.left_layout.addWidget(steps_card)
+        # 1 - connect
+        self.port_combo = Select()
+        self.port_combo.set_placeholder_key("prog.choose_port")
         self.port_combo.activated.connect(self._port_chosen)
-        self.chip = QLabel()
-        self.chip.setProperty("role", "muted")
+        self.chip = Text("", "caption", "secondary")
         self.step_connect.body.addWidget(self.port_combo)
         self.step_connect.body.addWidget(self.chip)
-        self.step_whitelist = StepRow("2", "prog.step.authorised")
-        self.mac = QLabel()
-        self.mac.setFont(font(SIZES.font_h2, bold=True))
-        self.whitelist_text = QLabel()
-        self.whitelist_text.setWordWrap(True)
+        # 2 - whitelist
+        self.mac = Text("", "mono_title")
         self.step_whitelist.body.addWidget(self.mac)
-        self.step_whitelist.body.addWidget(self.whitelist_text)
-        self.step_firmware = StepRow("3", "prog.step.firmware")
-        self.firmware_text = QLabel()
-        self.firmware_text.setWordWrap(True)
+        # 3 - firmware
+        self.firmware_text = Text("", "body", "secondary", wrap=True)
         self.step_firmware.body.addWidget(self.firmware_text)
-        self.step_upload = StepRow("4", "prog.step.upload")
-        self.progress = QProgressBar()
-        self.progress.setRange(0, 100)
-        self.progress.setFormat("%p %")
-        self.upload_info = QLabel()
+        # 4 - upload
+        self.progress = ProgressBar()
+        self.upload_info = Text("", "caption", "secondary")
         self.step_upload.body.addWidget(self.progress)
         self.step_upload.body.addWidget(self.upload_info)
-        for step in (self.step_connect, self.step_whitelist, self.step_firmware, self.step_upload):
-            left.addWidget(step)
-        left.addStretch(1)
-
-        right = self.right_layout
-        right.addWidget(TrLabel("prog.result_title", role="h2"))
-        self.result_pill = StatusPill(size="large")
-        right.addWidget(self.result_pill, 0, Qt.AlignmentFlag.AlignLeft)
-        self.result_text = QLabel()
-        self.result_text.setWordWrap(True)
-        self.result_text.setFont(font(SIZES.font_h2))
-        right.addWidget(self.result_text)
-        self.adjust = QFrame()
-        self.adjust.setProperty("tone", "info")
-        adjust_layout = QVBoxLayout(self.adjust)
-        adjust_layout.setContentsMargins(SIZES.space_m, SIZES.space_m, SIZES.space_m, SIZES.space_m)
-        adjust_layout.addWidget(TrLabel("prog.adjust.question", role="h2"))
-        adjust_layout.addWidget(TrLabel("prog.adjust.help", role="muted"))
-        buttons = QHBoxLayout()
-        self.adjust_yes = BigButton("action.adjust_yes", variant="primary")
-        self.adjust_no = BigButton("action.adjust_no")
+        self.left_layout.addStretch(1)
+        # result hero
+        self.hero = ResultHero()
+        self.hero.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Expanding)
+        self.right_layout.addWidget(self.hero, 1)
+        self.adjust = self.hero.adjust
+        self.adjust_yes = self.hero.adjust_yes
+        self.adjust_no = self.hero.adjust_no
         self.adjust_yes.clicked.connect(lambda: self.vm.answer_adjust(True))
         self.adjust_no.clicked.connect(lambda: self.vm.answer_adjust(False))
-        buttons.addWidget(self.adjust_yes)
-        buttons.addWidget(self.adjust_no)
-        buttons.addStretch(1)
-        adjust_layout.addLayout(buttons)
-        right.addWidget(self.adjust)
-        right.addStretch(1)
-        counters = QFrame()
-        counters.setProperty("tone", "pending")
-        grid = QGridLayout(counters)
-        grid.setContentsMargins(SIZES.space_m, SIZES.space_m, SIZES.space_m, SIZES.space_m)
-        grid.addWidget(TrLabel("prog.counters_title", role="h2"), 0, 0, 1, 2)
-        self.c_ok = CounterBadge("counter.uploads_ok", "check")
-        self.c_fail = CounterBadge("counter.uploads_fail", "cross")
-        self.c_adjusted = CounterBadge("counter.failures_adjusted", "info")
-        grid.addWidget(self.c_ok, 1, 0)
-        grid.addWidget(self.c_fail, 1, 1)
-        grid.addWidget(self.c_adjusted, 2, 0)
-        self.reset_counters = BigButton("action.reset_counters", variant="danger")
-        self.reset_counters.clicked.connect(controller.reset_counters)
-        grid.addWidget(self.reset_counters, 2, 1)
-        right.addWidget(counters)
-        controller.counters_changed.connect(self.update_view)
         controller.session_changed.connect(self.update_view)
         self.update_view()
 
     def _port_chosen(self, index: int) -> None:
         self.vm.select_port(self.port_combo.itemData(index))
 
+    # ------------------------------------------------------------------ render
     def update_view(self, *_args: object) -> None:
         vm = self.vm
-        # 1 - connect
-        self.port_combo.blockSignals(True)
-        self.port_combo.clear()
-        self.port_combo.addItem(t("prog.choose_port"), None)
-        for port in vm.ports:
-            label = f"{port.name}  -  {port.description}"
-            if port.vid_pid:
-                label = f"{label}  ({port.vid_pid})"
-            self.port_combo.addItem(label, port.name)
-        index = self.port_combo.findData(vm.selected_port) if vm.selected_port else 0
-        self.port_combo.setCurrentIndex(max(0, index))
-        self.port_combo.setEnabled(not vm.device_started and not vm.ports_loading)
-        self.port_combo.setAccessibleName(t("prog.step.connect"))
-        self.port_combo.blockSignals(False)
-        self.chip.setText(t("prog.chip", chip=vm.chip) if vm.chip else "")
-        self.step_connect.set_state(vm.connect_state)
-        # 2 - whitelist
-        self.mac.setText(t("prog.mac", mac=vm.mac) if vm.mac else t("prog.mac_unknown"))
-        self.whitelist_text.setText(
+        self._render_ports()
+        self.step_connect.set_state(
+            STEP[vm.connect_state],
             {
-                StepState.PENDING: "",
-                StepState.WORKING: t("prog.whitelist.checking"),
-                StepState.PASS: t("prog.whitelist.allowed"),
-                StepState.FAIL: t("prog.whitelist.denied"),
-                StepState.ERROR: t("prog.whitelist.error"),
-            }[vm.whitelist_state]
+                StepState.WORKING: "gate.connecting",
+                StepState.PASS: "status.word.done",
+                StepState.ERROR: "prog.connect_failed",
+            }.get(vm.connect_state),
         )
-        self.step_whitelist.set_state(vm.whitelist_state)
+        self.chip.setText(t("prog.chip", chip=vm.chip) if vm.chip else "")
+        self.chip.setVisible(bool(vm.chip))
+        # 2 - whitelist
+        if vm.mac:
+            self.mac.set_key(None)
+            self.mac.setText(vm.mac)
+            self.mac.set_style("mono_title")
+            self.mac.set_tone("primary")
+        else:
+            self.mac.set_key("prog.mac_unknown")
+            self.mac.set_style("body")
+            self.mac.set_tone("tertiary")
+        self.step_whitelist.set_state(
+            STEP[vm.whitelist_state],
+            {
+                StepState.WORKING: "prog.whitelist.checking",
+                StepState.PASS: "prog.whitelist.allowed",
+                StepState.FAIL: "prog.whitelist.denied",
+                StepState.ERROR: "prog.whitelist.error",
+            }.get(vm.whitelist_state),
+        )
         # 3 - firmware
         firmware = self.c.firmware
         if self.c.firmware_loading:
-            self.firmware_text.setText(t("prog.firmware.loading"))
-            self.step_firmware.set_state(StepState.WORKING)
+            self.firmware_text.setText("")
+            self.step_firmware.set_state("working", "prog.firmware.loading")
         elif self.c.firmware_error is not None:
-            self.firmware_text.setText(t("prog.firmware.error"))
-            self.step_firmware.set_state(StepState.ERROR)
+            self.firmware_text.setText("")
+            self.step_firmware.set_state("error", "prog.firmware.error")
         elif firmware is not None:
-            text = t("prog.firmware.info", name=firmware.name, version=firmware.version)
-            if firmware.hash_verified:
-                text = f"{text}\n{t('prog.firmware.hash_ok')}"
-            self.firmware_text.setText(text)
-            self.step_firmware.set_state(StepState.PASS)
+            self.firmware_text.setText(
+                t("prog.firmware.info", name=firmware.name, version=firmware.version)
+            )
+            self.step_firmware.set_state(
+                "pass", "prog.firmware.hash_ok" if firmware.hash_verified else "status.word.done"
+            )
         else:
             self.firmware_text.setText("")
-            self.step_firmware.set_state(StepState.PENDING)
-        # 4 - upload
-        self.progress.setValue(vm.progress)
+            self.step_firmware.set_state("pending")
+        self.firmware_text.setVisible(bool(self.firmware_text.text()))
+        self._render_upload()
+        self._render_hero()
+
+    def _render_upload(self) -> None:
+        """The bar appears only once an upload has started (P2); red keeps the % reached."""
+        vm = self.vm
+        started = vm.upload_state is not StepState.PENDING or vm.attempts > 0
+        self.progress.setVisible(started)
+        if vm.upload_state is StepState.PASS:
+            self.progress.set_state("success")
+        elif vm.upload_state in (StepState.FAIL, StepState.ERROR):
+            self.progress.set_state("danger")
+        else:
+            self.progress.set_state("running")
+        self.progress.set_value(vm.progress, animate=vm.upload_state is StepState.WORKING)
         self.progress.setAccessibleName(t("prog.step.upload"))
         info = []
-        if vm.upload_state is not StepState.PENDING or vm.elapsed_s:
+        if started:
+            info.append(f"{vm.progress} %")
             info.append(t("prog.elapsed", s=f"{vm.elapsed_s:.1f}"))
         if vm.attempts or vm.upload_state is StepState.WORKING:
             shown = vm.attempts + (1 if vm.upload_state is StepState.WORKING else 0)
             info.append(t("prog.attempt", n=max(1, shown), total=vm.max_attempts))
-        self.upload_info.setText("   ·   ".join(info))
-        self.step_upload.set_state(vm.upload_state)
-        # result panel
+        self.upload_info.setText("  ·  ".join(info))
+        self.upload_info.setVisible(bool(info))
+        caption = {
+            StepState.WORKING: "status.word.uploading",
+            StepState.PASS: "status.word.done",
+            StepState.FAIL: "status.word.fail",
+        }.get(vm.upload_state)
+        self.step_upload.set_state(STEP[vm.upload_state], caption)
+
+    def _render_ports(self) -> None:
+        vm = self.vm
+        combo = self.port_combo
+        combo.blockSignals(True)
+        combo.clear()
+        for port in vm.ports:
+            secondary = port.description + (f"  ({port.vid_pid})" if port.vid_pid else "")
+            combo.addItem(port.name, port.name)
+            index = combo.count() - 1
+            combo.setItemData(index, f"{port.name} · {short_bridge(port)}", ROLE_SHORT)
+            combo.setItemData(index, secondary, ROLE_SECONDARY)
+            combo.setItemData(index, f"{port.name}  -  {secondary}", Qt.ItemDataRole.ToolTipRole)
+        index = combo.findData(vm.selected_port) if vm.selected_port else -1
+        combo.setCurrentIndex(index)
+        combo.setToolTip(
+            str(combo.itemData(index, Qt.ItemDataRole.ToolTipRole)) if index >= 0 else ""
+        )
+        combo.setEnabled(not vm.device_started and not vm.ports_loading)
+        combo.setAccessibleName(t("prog.step.connect"))
+        combo.blockSignals(False)
+        combo.update()
+
+    def _render_hero(self) -> None:
+        vm = self.vm
+        hero = self.hero
+        firmware = self.c.firmware
+        version = firmware.version if firmware else "-"
+        passed = vm.upload_state is StepState.PASS
+        results = [False] * max(0, vm.attempts - (1 if passed else 0))
+        if passed:
+            results.append(True)
+        hero.dots.set_attempts(results, vm.max_attempts)
+        show_dots = vm.attempts > 0 or vm.upload_state is StepState.WORKING
+        hero.dots.setVisible(show_dots)
+        hero.dots_caption.setVisible(show_dots)
+        shown = vm.attempts + (1 if vm.upload_state is StepState.WORKING else 0)
+        hero.dots_caption.setText(t("prog.attempt", n=max(1, shown), total=vm.max_attempts))
         state = vm.upload_state
-        if state is StepState.PASS:
-            self.result_pill.set_state("pass")
-            self.result_text.setText(t("prog.result.pass"))
+        if state is StepState.WORKING:
+            hero.show_ring(vm.progress)
+            hero.title.setText(t("prog.hero.uploading", version=version))
+            hero.text.setText(t("prog.elapsed", s=f"{vm.elapsed_s:.1f}"))
+        elif passed:
+            hero.show_badge("check_circle", "success")
+            hero.title.setText(t("prog.hero.pass", version=version))
+            hero.text.setText(t("prog.result.pass"))
         elif state in (StepState.FAIL, StepState.ERROR) and vm.attempts:
-            self.result_pill.set_state("fail")
+            hero.show_badge("cancel", "danger")
             outcome = vm.last_outcome
             reason = t(outcome.reason_key) if outcome and outcome.reason_key else ""
-            self.result_text.setText(
-                t("prog.result.fail", reason=reason, n=vm.attempts, total=vm.max_attempts)
-            )
-        elif state is StepState.WORKING:
-            self.result_pill.set_state("working", "status.word.uploading")
-            self.result_text.setText(t("prog.result.uploading", pct=vm.progress))
+            hero.title.setText(t("prog.hero.fail"))
+            retry_left = vm.attempts < vm.max_attempts
+            hero.text.setText(t("prog.hero.fail_hint") if retry_left else reason)
+        elif vm.whitelist_state is StepState.FAIL:
+            hero.show_badge("block", "danger")
+            hero.title.setText(t("prog.whitelist.denied"))
+            hero.text.setText(t("prog.mac", mac=vm.mac or "-"))
+        elif vm.connect_state is StepState.WORKING or vm.whitelist_state is StepState.WORKING:
+            hero.show_ring(None)
+            connecting = vm.connect_state is StepState.WORKING
+            hero.title.setText(t("prog.hero.connecting" if connecting else "prog.hero.checking"))
+            hero.text.setText(vm.selected_port or "")
+        elif vm.whitelist_state is StepState.PASS and vm.firmware_ready:
+            hero.show_badge("verified_user", "info")
+            hero.title.setText(t("prog.hero.ready"))
+            hero.text.setText(t("prog.hero.ready_text", version=version, mac=vm.mac or "-"))
+        elif vm.device_started:
+            hero.show_badge("memory", "info")
+            hero.title.setText(t("prog.hero.preparing"))
+            hero.text.setText("" if vm.firmware_ready else t("gate.firmware_loading"))
         else:
-            self.result_pill.set_state("pending")
-            self.result_text.setText(t("prog.result.waiting"))
+            hero.show_badge("usb", "neutral")
+            hero.title.setText(t("prog.hero.idle"))
+            hero.text.setText(self._port_hint())
+        hero.text.setVisible(bool(hero.text.text()))
+        if vm.adjust_prompt:
+            hero.adjust.set_texts(t("prog.adjust.question"), t("prog.adjust.help"))
         self.adjust.setVisible(vm.adjust_prompt)
-        counters = self.c.counters
-        if counters is not None:
-            self.c_ok.set_value(str(counters.upload_success))
-            self.c_fail.set_value(str(counters.net_upload_failure))
-            self.c_adjusted.set_value(str(counters.failures_adjusted))
-        self.reset_counters.setVisible(self.c.is_admin)
+        hero.set_variant(
+            {StepState.PASS: "success", StepState.FAIL: "danger"}.get(state, "default")
+        )
+
+    def _port_hint(self) -> str:
+        vm = self.vm
+        if vm.ports_loading:
+            return t("status.prog.looking_for_ports")
+        if not vm.ports:
+            return t("prog.hero.no_port")
+        if vm.selected_port is None:
+            return t("prog.hero.choose_port")
+        port = next((p for p in vm.ports if p.name == vm.selected_port), None)
+        return t(
+            "prog.hero.port_hint", port=vm.selected_port, chip=short_bridge(port) if port else ""
+        )
 
 
 # =========================================================================== Testing
 
 
-class DecisionRow(QFrame):
-    """'Sensor readings: [✓ Success] [✕ Failure]' with one line of guidance."""
+class DecisionRow(QWidget):
+    """'Sensor readings' + help line + [Success | Failure] toggle (S2)."""
 
     def __init__(
         self, code: CheckCode, title_key: str, help_key: str, vm: TestingViewModel
@@ -339,120 +428,142 @@ class DecisionRow(QFrame):
         super().__init__()
         self.code = code
         self.vm = vm
-        self.setProperty("tone", "pending")
         layout = QHBoxLayout(self)
-        layout.setContentsMargins(SIZES.space_m, SIZES.space_s, SIZES.space_m, SIZES.space_s)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(SPACE.l)
         text = QVBoxLayout()
-        text.addWidget(TrLabel(title_key, role="h2"))
-        text.addWidget(TrLabel(help_key, role="muted"))
+        text.setSpacing(0)
+        text.addWidget(TrText(title_key, "body_lg_strong"))
+        text.addWidget(TrText(help_key, "caption", "secondary", wrap=True))
         layout.addLayout(text, 1)
-        self.success = BigButton("action.mark_success", variant="pass")
-        self.failure = BigButton("action.mark_failure", variant="danger")
-        for button in (self.success, self.failure):
-            button.setCheckable(True)
-            layout.addWidget(button)
-        self.success.clicked.connect(lambda: self.vm.mark(code, True))
-        self.failure.clicked.connect(lambda: self.vm.mark(code, False))
+        self.toggle = PassFailToggle()
+        self.success = self.toggle.success
+        self.failure = self.toggle.failure
+        layout.addWidget(self.toggle, 0, Qt.AlignmentFlag.AlignVCenter)
+        self.success.clicked.connect(self._success)
+        self.failure.clicked.connect(self._failure)
 
-    def update_view(self, enabled: bool) -> None:
+    def _success(self) -> None:
+        self.vm.mark(self.code, True)
+
+    def _failure(self) -> None:
+        self.vm.mark(self.code, False)
+
+    def update_view(self, enabled: bool, lock_key: str | None, **params: object) -> None:
         value = self.vm.marks[self.code]
         self.success.setChecked(value is True)
         self.failure.setChecked(value is False)
         self.success.setEnabled(enabled and value is None)
         self.failure.setEnabled(enabled and value is None)
-        set_prop(self, "tone", "pending" if value is None else ("pass" if value else "fail"))
+        locked = not enabled and value is None
+        self.toggle.set_locked(lock_key if locked else None)
+        if locked and lock_key:
+            tip = t(lock_key, **params)
+            for widget in (self.toggle.lock, self.success, self.failure):
+                widget.setToolTip(tip)
 
 
 class TestingView(StageView):
     vm: TestingViewModel
 
-    ROWS = (CheckCode.B3_V_A, CheckCode.B3_V_B, CheckCode.B3_V_C, CheckCode.B3_T_REG)
+    ROWS = (
+        (CheckCode.B3_V_A, "bolt"),
+        (CheckCode.B3_V_B, "bolt"),
+        (CheckCode.B3_V_C, "bolt"),
+        (CheckCode.B3_T_REG, "device_thermostat"),
+    )
 
     def __init__(self, controller: StationController) -> None:
-        super().__init__(controller, controller.testing, ratio=(6, 5))
-        left = self.left_layout
-        self.step_comm = StepRow("B1", "test.step.comm")
-        self.comm_text = QLabel()
-        self.step_comm.body.addWidget(self.comm_text)
-        left.addWidget(self.step_comm)
-        self.step_sensor = StepRow("B2", "test.step.sensor")
-        self.reading_title = QLabel()
-        self.reading_title.setFont(font(SIZES.font_h2, bold=True))
-        self.step_sensor.body.addWidget(self.reading_title)
-        readings = QGridLayout()
-        readings.setHorizontalSpacing(SIZES.space_l)
-        readings.setVerticalSpacing(0)
-        self.reading_labels: list[QLabel] = []
-        for index in range(MAX_SENSOR_READINGS):
-            label = QLabel()
-            label.setFont(font(SIZES.font_base))
-            readings.addWidget(label, index // 2, index % 2)
-            self.reading_labels.append(label)
-        self.step_sensor.body.addLayout(readings)
-        left.addWidget(self.step_sensor)
+        super().__init__(controller, controller.testing)
+        # B1 communication
+        self.card_comm = Card("test.step.comm", icon="cable", compact=True)
+        self.comm_chip = StatusChip(compact=True)
+        self.card_comm.add_trailing(self.comm_chip)
+        self.comm_text = self.card_comm.subtitle
+        self.left_layout.addWidget(self.card_comm)
+        # B2 sensor
+        self.card_sensor = Card("test.step.sensor", icon="sensors", compact=True)
+        self.sensor_chip = StatusChip(compact=True)
+        self.card_sensor.add_trailing(self.sensor_chip)
+        self.reading_title = self.card_sensor.subtitle
+        self.reading_title.setVisible(True)
+        self.slots = ReadingSlots(MAX_SENSOR_READINGS)
+        self.card_sensor.body.addWidget(self.slots)
+        self.card_sensor.body.addWidget(Divider())
         self.sensor_row = DecisionRow(
             CheckCode.B2_SENSOR_OK, "test.mark.sensor", "test.mark.sensor_help", self.vm
         )
         self.indicator_row = DecisionRow(
             CheckCode.B2_INDICATOR_OK, "test.mark.indicator", "test.mark.indicator_help", self.vm
         )
-        left.addWidget(self.sensor_row)
-        left.addWidget(self.indicator_row)
-        left.addStretch(1)
-
-        right = self.right_layout
-        self.step_elec = StepRow("B3", "test.step.electrical")
-        right.addWidget(self.step_elec)
+        self.card_sensor.body.addWidget(self.sensor_row)
+        self.card_sensor.body.addWidget(self.indicator_row)
+        self.left_layout.addWidget(self.card_sensor)
+        # B3 electrical
+        self.card_elec = Card("test.step.electrical", icon="bolt", compact=True)
+        self.elec_chip = StatusChip(compact=True)
+        self.card_elec.add_trailing(self.elec_chip)
         grid = QGridLayout()
-        grid.setHorizontalSpacing(SIZES.space_m)
-        grid.setVerticalSpacing(SIZES.space_s)
-        for col, key in enumerate(
-            ("test.col.check", "test.col.measured", "test.col.allowed", "test.col.result")
-        ):
-            header = TrLabel(key, role="small")
-            header.setFont(font(SIZES.font_small, bold=True))
-            grid.addWidget(header, 0, col)
+        grid.setHorizontalSpacing(SPACE.l)
+        grid.setVerticalSpacing(SPACE.m)
+        headers = ("test.col.check", "test.col.measured", "test.col.allowed", "test.col.result")
+        aligns = (
+            Qt.AlignmentFlag.AlignLeft,
+            Qt.AlignmentFlag.AlignRight,
+            Qt.AlignmentFlag.AlignHCenter,
+            Qt.AlignmentFlag.AlignRight,
+        )
+        for column, (key, align) in enumerate(zip(headers, aligns, strict=True)):
+            header = TrText(key, "label", "tertiary", align=align | Qt.AlignmentFlag.AlignVCenter)
+            grid.addWidget(header, 0, column)
         self.cells: dict[CheckCode, ValueRow] = {
-            code: ValueRow(grid, row, code.label_key) for row, code in enumerate(self.ROWS, start=1)
+            code: ValueRow(grid, row, code.label_key, icon)
+            for row, (code, icon) in enumerate(self.ROWS, start=1)
         }
-        right.addLayout(grid)
-        self.waiting = QLabel()
-        self.waiting.setFont(font(SIZES.font_h2, bold=True))
-        self.waiting.setWordWrap(True)
-        right.addWidget(self.waiting)
-        right.addStretch(1)
+        grid.setColumnStretch(2, 1)
+        grid.setColumnMinimumWidth(
+            0, max(row.name_box.sizeHint().width() for row in self.cells.values())
+        )
+        self.card_elec.body.addLayout(grid)
+        self.waiting = Text("", "body", "info")
+        self.card_elec.body.addWidget(self.waiting)
+        self.card_elec.body.addWidget(Divider())
         ambient = QHBoxLayout()
-        ambient.addWidget(Icon("thermo", 32, COLORS.text_muted))
-        self.ambient = QLabel()
-        self.ambient.setFont(font(SIZES.font_h2, bold=True))
+        ambient.setSpacing(SPACE.s)
+        ambient.addWidget(Icon("device_thermostat", SIZES.icon_m, COLORS.text_2))
+        self.ambient = Text("", "body_lg")
         ambient.addWidget(self.ambient, 1)
-        self.remeasure = BigButton("action.remeasure_ambient", hint_key="key.f9")
+        self.remeasure = AppButton(
+            "action.remeasure_ambient", variant="outlined", size="compact", hint_key="key.f9"
+        )
         self.remeasure.clicked.connect(controller.remeasure_ambient)
         ambient.addWidget(self.remeasure)
-        right.addLayout(ambient)
+        self.card_elec.body.addLayout(ambient)
+        self.right_layout.addWidget(self.card_elec)
+        self.finish_columns()
         self.update_view()
 
-    def _allowed_text(self, code: CheckCode) -> str:
+    def _band(self, code: CheckCode) -> tuple[Band, str]:
         limits = self.c.settings.limits
         decimals = limits.decimals
         if code is CheckCode.B3_T_REG:
             ambient = self.c.ambient_c
+            margin = f"{limits.temp_margin_c:g}"
             if ambient is None:
-                return t("test.allowed_temp_unknown", margin=f"{limits.temp_margin_c:g}")
-            return t(
-                "test.allowed_temp",
-                limit=f"{ambient + limits.temp_margin_c:.1f}",
-                margin=f"{limits.temp_margin_c:g}",
-            )
+                return Band(None, None), t("test.allowed_temp_unknown", margin=margin)
+            limit = ambient + limits.temp_margin_c
+            return Band(None, limit), t("test.allowed_temp", limit=f"{limit:.1f}", margin=margin)
         point = code.value[-1].lower()
         low, high = limits.voltage_range(point)
-        return t(
+        caption = t(
             "test.allowed_range", low=f"{low:.{decimals}f}", high=f"{high:.{decimals}f}", unit="V"
         )
+        return Band(low, high), caption
 
     def update_view(self, *_args: object) -> None:
         vm = self.vm
-        self.step_comm.set_state(vm.comm_state)
+        # B1
+        self.comm_chip.set_state(CHIP[vm.comm_state])
         self.comm_text.setText(
             {
                 StepState.PENDING: "",
@@ -462,80 +573,103 @@ class TestingView(StageView):
                 StepState.ERROR: t("test.comm.error"),
             }[vm.comm_state]
         )
+        self.comm_text.setVisible(True)
+        # B2
         total = vm.total_readings
         count = len(vm.readings)
-        sensor_state = (
-            StepState.PASS
-            if vm.readings_done and vm.marks_ok
-            else StepState.WORKING
-            if count or vm.reading_busy
-            else StepState.PENDING
-        )
         if any(v is False for v in vm.marks.values()):
             sensor_state = StepState.FAIL
-        self.step_sensor.set_state(sensor_state)
-        self.reading_title.setText(t("test.reading_progress", n=count, total=total))
-        for index, label in enumerate(self.reading_labels):
-            label.setVisible(index < total)
-            if index < count:
-                reading = vm.readings[index]
-                label.setText(
-                    f"{index + 1}.  {reading.value:g} {reading.unit}   "
-                    f"{local_time(reading.read_at)}"
-                )
-            else:
-                label.setText(f"{index + 1}.  -")
+        elif vm.readings_done and vm.marks_ok:
+            sensor_state = StepState.PASS
+        elif count or vm.reading_busy:
+            sensor_state = StepState.WORKING
+        else:
+            sensor_state = StepState.PENDING
+        self.sensor_chip.set_state(CHIP[sensor_state])
+        progress = t("test.reading_progress", n=count, total=total)
+        unit = vm.readings[0].unit if vm.readings else ""
+        self.reading_title.setText(f"{progress}  ·  {unit}" if unit else progress)
+        self.slots.set_count(total)
+        self.slots.set_readings(
+            [(f"{r.value:g}", r.unit, local_time(r.read_at)) for r in vm.readings]
+        )
         comm_ok = vm.comm_state is StepState.PASS
-        self.sensor_row.update_view(comm_ok and vm.readings_done)
-        self.indicator_row.update_view(comm_ok)
+        self.sensor_row.update_view(
+            comm_ok and vm.readings_done,
+            "test.mark.locked_readings" if comm_ok else "test.mark.locked_comm",
+            n=total,
+        )
+        self.indicator_row.update_view(comm_ok, "test.mark.locked_comm")
         # B3
         results: dict[CheckCode, CheckOutcome] = {o.check_code: o for o in vm.results}
         for code, value_row in self.cells.items():
+            band, caption = self._band(code)
             outcome = results.get(code)
             if outcome is None or outcome.value_num is None:
                 working = vm.measure_state is StepState.WORKING
-                value_row.set_value(
-                    None, self._allowed_text(code), "working" if working else "pending"
-                )
+                value_row.set_value(None, None, band, caption, "working" if working else "neutral")
+                continue
+            unit = "°C" if code is CheckCode.B3_T_REG else "V"
+            if outcome.passed is None:
+                state = "neutral"
             else:
-                unit = "°C" if code is CheckCode.B3_T_REG else "V"
-                state = (
-                    "pending" if outcome.passed is None else ("pass" if outcome.passed else "fail")
-                )
-                value_row.set_value(
-                    f"{outcome.value_num:g} {unit}", self._allowed_text(code), state
-                )
-        elec_state = vm.measure_state
-        self.step_elec.set_state(elec_state)
+                state = "success" if outcome.passed else "danger"
+            value_row.set_value(
+                f"{outcome.value_num:g} {unit}", outcome.value_num, band, caption, state
+            )
+        self.elec_chip.set_state(CHIP[vm.measure_state])
         if vm.measure_state is StepState.WORKING:
             self.waiting.setText(t("test.waiting", s=vm.seconds_left))
         elif vm.measure_state is StepState.ERROR:
             self.waiting.setText(t("test.measure_error"))
         else:
             self.waiting.setText("")
+        self.waiting.setVisible(bool(self.waiting.text()))
         self.ambient.setText(
             t("test.ambient", value=f"{self.c.ambient_c:.1f}")
             if self.c.ambient_c is not None
             else t("drawer.ambient_unknown")
         )
+        self._render_cards(sensor_state)
+
+    def _render_cards(self, sensor_state: StepState) -> None:
+        """Exactly one active card (S5); a failed step is outlined red."""
+        vm = self.vm
+        if vm.comm_state is not StepState.PASS:
+            active: Card | None = self.card_comm
+        elif not (vm.readings_done and vm.marks_ok):
+            active = self.card_sensor
+        elif vm.measure_state is not StepState.PASS:
+            active = self.card_elec
+        else:
+            active = None
+        for card, state in (
+            (self.card_comm, vm.comm_state),
+            (self.card_sensor, sensor_state),
+            (self.card_elec, vm.measure_state),
+        ):
+            if state is StepState.FAIL:
+                card.set_variant("danger")
+            elif card is active:
+                card.set_variant("active")
+            else:
+                card.set_variant("default")
 
 
 # =========================================================================== Labeling
 
 
-class CameraPreview(QWidget):
-    """Live camera frames, or an animated placeholder with a framing guide (mock)."""
+class CameraPreview(CameraFrame):
+    """Live camera frames, polled from the hardware service while Labeling is shown."""
 
     def __init__(self, controller: StationController, vm: LabelingViewModel) -> None:
         super().__init__()
         self.c = controller
         self.vm = vm
-        self.setMinimumSize(420, 240)
-        self._image: QImage | None = None
-        self._phase = 0
         self._timer = QTimer(self)
-        self._timer.setInterval(66)  # ~15 fps
+        self._timer.setInterval(CAMERA_POLL_MS)
         self._timer.timeout.connect(self._poll)
+        self._last_qr: str | None = None
         self.setAccessibleName(t("camera.preview"))
 
     def set_active(self, active: bool) -> None:
@@ -548,64 +682,39 @@ class CameraPreview(QWidget):
     def _poll(self) -> None:
         frame = self.c.ctx.hardware.get_preview_frame()
         if frame is not None:
-            self._image = QImage(
+            image = QImage(
                 frame.rgb, frame.width, frame.height, frame.width * 3, QImage.Format.Format_RGB888
-            ).copy()
-        self._phase = (self._phase + 1) % 60
-        self.update()
-
-    def paintEvent(self, _event: QPaintEvent) -> None:
-        painter = QPainter(self)
-        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-        rect = QRectF(self.rect())
-        painter.fillRect(rect, QColor(COLORS.text))
-        if self._image is not None:
-            painter.drawImage(rect, self._image)
-        guide = rect.adjusted(
-            rect.width() * 0.28, rect.height() * 0.12, -rect.width() * 0.28, -rect.height() * 0.12
-        )
-        pen = QPen(QColor(COLORS.surface), 4)
-        painter.setPen(pen)
-        arm = min(guide.width(), guide.height()) * 0.2
-        for x, y, dx, dy in (
-            (guide.left(), guide.top(), 1, 1),
-            (guide.right(), guide.top(), -1, 1),
-            (guide.left(), guide.bottom(), 1, -1),
-            (guide.right(), guide.bottom(), -1, -1),
-        ):
-            painter.drawLine(int(x), int(y), int(x + dx * arm), int(y))
-            painter.drawLine(int(x), int(y), int(x), int(y + dy * arm))
-        scanning = self.vm.camera_state is StepState.WORKING
-        if scanning:
-            y = guide.top() + guide.height() * (self._phase / 60)
-            painter.setPen(QPen(QColor(COLORS.focus), 3))
-            painter.drawLine(int(guide.left() + 8), int(y), int(guide.right() - 8), int(y))
-        painter.setPen(QColor(COLORS.surface))
-        painter.setFont(font(SIZES.font_small, bold=True))
-        if self._image is None:
-            text = t("camera.scanning") if scanning else t("camera.simulated")
-            if not self.c.ctx.using_mocks:
-                text = t("camera.scanning") if scanning else t("camera.idle")
-            painter.drawText(
-                rect.adjusted(8, 8, -8, -8),
-                int(Qt.AlignmentFlag.AlignBottom | Qt.AlignmentFlag.AlignHCenter),
-                text,
             )
-        painter.end()
+            self.set_image(image.copy())
+
+    def sync(self) -> None:
+        scanning = self.vm.camera_state is StepState.WORKING
+        self.set_scanning(scanning)
+        if scanning:
+            self.set_placeholder(t("camera.scanning"))
+        else:
+            self.set_placeholder(t("camera.simulated" if self.c.ctx.using_mocks else "camera.idle"))
+        if self.vm.qr_id and self.vm.qr_id != self._last_qr:
+            self.flash_success()  # a code was read: green flash + corner pulse (L3)
+        self._last_qr = self.vm.qr_id
 
 
 class ChecklistView(StageView):
     vm: ChecklistMixin
 
-    def _build_checklist(self, title_key: str) -> None:
-        self.left_layout.addWidget(TrLabel(title_key, role="h2"))
-        self.rows: dict[CheckCode, CheckRow] = {}
+    def _build_checklist(self, title_key: str) -> Card:
+        card = Card(title_key)
+        card.body.setSpacing(SPACE.s)
+        self.rows: dict[CheckCode, ChecklistRow] = {}
         for index, code in enumerate(self.vm.checklist, start=1):
-            row = CheckRow(code.label_key, CHECK_ICONS.get(code, "list"), f"key.f{index}")
+            row = ChecklistRow(code.label_key, CHECK_ICONS.get(code, "fact_check"), f"key.f{index}")
             row.clicked.connect(lambda _c=False, code=code: self._clicked(code))
             self.rows[code] = row
-            self.left_layout.addWidget(row)
-        self.left_layout.addStretch(1)
+            card.body.addWidget(row)
+        self.left_layout.addWidget(card)
+        self.chooser = RejectChooser(self.vm)
+        self.left_layout.addWidget(self.chooser)
+        return card
 
     def _clicked(self, code: CheckCode) -> None:
         self.vm.toggle(code)
@@ -624,63 +733,73 @@ class LabelingView(ChecklistView):
     def __init__(self, controller: StationController) -> None:
         super().__init__(controller, controller.labeling)
         self._build_checklist("label.checklist_title")
-        right = self.right_layout
-        right.addWidget(TrLabel("label.qr_title", role="h2"))
+        self.left_layout.addStretch(1)
+        # camera + the ID that was read (L1, L3)
+        camera_card = Card("label.qr_title", icon="qr_code_scanner", compact=True)
+        camera_card.body.setSpacing(SPACE.m)
         self.preview = CameraPreview(controller, self.vm)
-        right.addWidget(self.preview, 1)
-        decoded = QHBoxLayout()
-        decoded.addWidget(TrLabel("label.decoded", role="muted"))
-        self.decoded = QLabel("-")
-        self.decoded.setFont(font(SIZES.font_value_large, bold=True))
-        self.decoded.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
-        decoded.addWidget(self.decoded, 1)
-        self.manual_flag = TrLabel("label.manual_flag", role="small")
-        decoded.addWidget(self.manual_flag)
-        right.addLayout(decoded)
-
-        self.manual = QFrame()
-        self.manual.setProperty("tone", "info")
-        manual_layout = QGridLayout(self.manual)
-        manual_layout.setContentsMargins(SIZES.space_m, SIZES.space_m, SIZES.space_m, SIZES.space_m)
-        manual_layout.addWidget(TrLabel("manual.title", role="h2"), 0, 0, 1, 2)
-        self.manual_first = QLineEdit()
-        self.manual_second = QLineEdit()
+        camera_card.body.addWidget(self.preview, 1)
+        read = QHBoxLayout()
+        read.setSpacing(SPACE.m)
+        column = QVBoxLayout()
+        column.setSpacing(0)
+        column.addWidget(TrText("label.qr_read", "label", "secondary"))
+        self.decoded = Text("-", "value_xl")
+        column.addWidget(self.decoded)
+        read.addLayout(column, 1)
+        self.manual_flag = StatusChip("warning", "label.manual_flag", compact=True)
+        read.addWidget(self.manual_flag, 0, Qt.AlignmentFlag.AlignBottom)
+        camera_card.body.addLayout(read)
+        self.right_layout.addWidget(camera_card, 1)
+        # typed ID (fallback)
+        self.manual = Card("manual.title", icon="badge", compact=True)
+        self.manual.set_variant("active")
+        fields = QHBoxLayout()
+        fields.setSpacing(SPACE.m)
+        self.manual_first = TextField("manual.first", max_width=None)
+        self.manual_second = TextField("manual.second", max_width=None)
         for field in (self.manual_first, self.manual_second):
             field.setProperty("enter_submits", True)
             field.returnPressed.connect(self._submit_manual)
-        manual_layout.addWidget(self.manual_first, 1, 0)
-        manual_layout.addWidget(self.manual_second, 1, 1)
-        self.manual_error = QLabel()
-        self.manual_error.setProperty("status", "fail")
-        manual_layout.addWidget(self.manual_error, 2, 0, 1, 2)
-        self.manual_ok = BigButton("action.confirm_id", variant="primary")
-        self.manual_cancel = BigButton("action.cancel")
+            fields.addWidget(field)
+        self.manual.body.addLayout(fields)
+        self.manual_error = Text("", "body", "danger")
+        self.manual.body.addWidget(self.manual_error)
+        buttons = QHBoxLayout()
+        buttons.addStretch(1)
+        self.manual_cancel = AppButton("action.cancel", variant="outlined")
+        self.manual_ok = AppButton("action.confirm_id", variant="tonal")
         self.manual_ok.clicked.connect(self._submit_manual)
         self.manual_cancel.clicked.connect(self.vm.cancel_manual)
-        manual_layout.addWidget(self.manual_cancel, 3, 0)
-        manual_layout.addWidget(self.manual_ok, 3, 1)
-        right.addWidget(self.manual)
-
-        self.identity = QFrame()
-        self.identity.setProperty("tone", "pending")
-        identity_layout = QGridLayout(self.identity)
-        identity_layout.setContentsMargins(
-            SIZES.space_m, SIZES.space_m, SIZES.space_m, SIZES.space_m
-        )
-        identity_layout.addWidget(TrLabel("label.identity_title", role="h2"), 0, 0, 1, 2)
-        identity_layout.addWidget(TrLabel("label.board_id", role="muted"), 1, 0)
-        identity_layout.addWidget(TrLabel("label.qr_id", role="muted"), 2, 0)
-        self.board_value = QLabel("-")
-        self.board_value.setFont(font(SIZES.font_h2, bold=True))
-        self.qr_value = QLabel("-")
-        self.qr_value.setFont(font(SIZES.font_h2, bold=True))
-        identity_layout.addWidget(self.board_value, 1, 1)
-        identity_layout.addWidget(self.qr_value, 2, 1)
-        self.identity_pill = StatusPill()
-        identity_layout.addWidget(self.identity_pill, 1, 2, 2, 1)
-        right.addWidget(self.identity)
-        self.chooser = RejectChooser(self.vm)
-        right.addWidget(self.chooser)
+        buttons.addWidget(self.manual_cancel)
+        buttons.addWidget(self.manual_ok)
+        self.manual.body.addLayout(buttons)
+        self.manual.setVisible(False)
+        self.right_layout.addWidget(self.manual)
+        # identity: before -> now (L2)
+        self.identity = Card("label.identity_title", icon="badge", compact=True)
+        self.identity_pill = StatusChip()
+        self.identity.add_trailing(self.identity_pill)
+        rows = QGridLayout()
+        rows.setHorizontalSpacing(SPACE.l)
+        rows.setVerticalSpacing(SPACE.xs)
+        self.board_label = TrText("label.board_id", "label", "secondary")
+        self.qr_label = TrText("label.qr_id", "label", "secondary")
+        self.board_value = Text("-", "mono_title")
+        self.qr_value = Text("-", "mono_title")
+        self.arrow = Icon("arrow_forward", SIZES.icon_m, COLORS.text_3)
+        policy = self.arrow.sizePolicy()
+        policy.setRetainSizeWhenHidden(True)
+        self.arrow.setSizePolicy(policy)
+        rows.addWidget(self.board_label, 0, 0)
+        rows.addWidget(self.board_value, 1, 0)
+        rows.addWidget(self.arrow, 1, 1)
+        rows.addWidget(self.qr_label, 0, 2)
+        rows.addWidget(self.qr_value, 1, 2)
+        rows.setColumnStretch(0, 1)
+        rows.setColumnStretch(2, 1)
+        self.identity.body.addLayout(rows)
+        self.right_layout.addWidget(self.identity)
         controller.stage_changed.connect(self._stage_changed)
         self.update_view()
 
@@ -694,68 +813,110 @@ class LabelingView(ChecklistView):
         vm = self.vm
         self._render_checklist()
         self.preview.set_active(self.c.stage is Stage.LABELING and self.c.reject is None)
-        self.preview.update()
+        self.preview.sync()
         self.decoded.setText(vm.qr_id or "-")
+        self.decoded.set_tone("primary" if vm.qr_id else "tertiary")
         self.manual_flag.setVisible(vm.qr_id is not None and vm.method is IdEntryMethod.MANUAL)
-        was_hidden = not self.manual.isVisible()
+        was_hidden = self.manual.isHidden()
         self.manual.setVisible(vm.manual_mode)
         if vm.manual_mode and was_hidden:
             self.manual_first.clear()
             self.manual_second.clear()
             self.manual_first.setFocus()
-        self.manual_first.setPlaceholderText(t("manual.first"))
-        self.manual_second.setPlaceholderText(t("manual.second"))
-        self.manual_first.setAccessibleName(t("manual.first"))
-        self.manual_second.setAccessibleName(t("manual.second"))
+        for field, key in (
+            (self.manual_first, "manual.first"),
+            (self.manual_second, "manual.second"),
+        ):
+            field.setAccessibleName(t(key))
+            field.set_invalid(vm.manual_error_key is not None)
         self.manual_error.setText(t(vm.manual_error_key) if vm.manual_error_key else "")
-        self.board_value.setText(vm.board_id if vm.board_id else "-")
-        self.qr_value.setText(vm.qr_id or "-")
+        self.manual_error.setVisible(bool(vm.manual_error_key))
+        self._render_identity()
+        self.chooser.update_view()
+
+    def _render_identity(self) -> None:
+        vm = self.vm
         identity = vm.identity
+        rewritten = vm.board_id_before is not None and identity in (
+            IdentityStatus.WRITE_REQUIRED,
+            IdentityStatus.CONFIRMED,
+            IdentityStatus.FAILED,
+        )
+        if rewritten:
+            self.board_label.set_key("label.before")
+            self.board_value.setText(vm.board_id_before or "-")
+            self.board_value.set_strike(True)
+            self.board_value.set_tone("tertiary")
+            self.qr_label.set_key("label.now")
+            now = vm.qr_id if identity is IdentityStatus.WRITE_REQUIRED else vm.board_id
+            self.qr_value.setText(now or "-")
+            self.qr_value.set_tone("danger" if identity is IdentityStatus.FAILED else "primary")
+        else:
+            self.board_label.set_key("label.board_id")
+            self.board_value.setText(vm.board_id or "-")
+            self.board_value.set_strike(False)
+            self.board_value.set_tone("primary" if vm.board_id else "tertiary")
+            self.qr_label.set_key("label.qr_id")
+            self.qr_value.setText(vm.qr_id or "-")
+            self.qr_value.set_tone("primary" if vm.qr_id else "tertiary")
+        self.arrow.setVisible(rewritten)
+        pill = self.identity_pill
         if identity is None:
             if vm.identity_state is StepState.WORKING:
-                self.identity_pill.set_state("working", "label.reading_board")
+                pill.set_state("working", "label.reading_board")
             elif vm.identity_state is StepState.ERROR:
-                self.identity_pill.set_state("warn", "identity.failed")
+                pill.set_state("warning", "identity.failed")
             else:
-                self.identity_pill.set_state("pending")
+                pill.set_state("neutral")
         elif identity is IdentityStatus.WRITE_REQUIRED:
-            pill = "warn" if vm.identity_state is StepState.ERROR else "working"
-            self.identity_pill.set_state(pill, identity.label_key)
+            state = "warning" if vm.identity_state is StepState.ERROR else "working"
+            pill.set_state(state, identity.label_key)
         elif identity is IdentityStatus.FAILED:
-            self.identity_pill.set_state("fail", identity.label_key)
+            pill.set_state("danger", identity.label_key)
         else:
-            self.identity_pill.set_state("pass", identity.label_key)
-        set_prop(
-            self.identity,
-            "tone",
-            {"pass": "pass", "fail": "fail", "working": "info"}.get(
-                self.identity_pill.state(), "pending"
-            ),
-        )
-        self.chooser.update_view()
+            pill.set_state("success", identity.label_key)
+        variants = {"success": "success", "danger": "danger"}
+        self.identity.set_variant(variants.get(pill.state(), "default"))
+
+
+# =========================================================================== Packaging
 
 
 class PackagingView(ChecklistView):
     vm: PackagingViewModel
 
+    STAGES = (
+        (Stage.PROGRAMMING, "pack.detail.programming"),
+        (Stage.TESTING, "pack.detail.testing"),
+        (Stage.LABELING, "pack.detail.labeling"),
+        (Stage.PACKAGING, "pack.detail.packaging"),
+    )
+
     def __init__(self, controller: StationController) -> None:
         super().__init__(controller, controller.packaging)
         self._build_checklist("pack.checklist_title")
-        right = self.right_layout
-        right.addWidget(TrLabel("pack.device_title", role="h2"))
-        self.device = QLabel("-")
-        self.device.setFont(font(SIZES.font_value_large, bold=True))
-        right.addWidget(self.device)
-        self.mac = QLabel()
-        self.mac.setProperty("role", "muted")
-        right.addWidget(self.mac)
-        self.passed = QLabel()
-        self.passed.setFont(font(SIZES.font_h2, bold=True))
-        self.passed.setProperty("status", "pass")
-        right.addWidget(self.passed)
-        right.addStretch(1)
-        self.chooser = RejectChooser(self.vm)
-        right.addWidget(self.chooser)
+        self.left_layout.addStretch(1)
+        summary = Card("pack.summary_title", icon="inventory_2")
+        self.device = Text("-", "value_xl")
+        self.mac = Text("", "mono_label", "secondary")
+        summary.body.addWidget(self.device)
+        summary.body.addWidget(self.mac)
+        summary.body.addWidget(Divider())
+        self.stage_rows: list[tuple[Icon, Text]] = []
+        for stage, _key in self.STAGES:
+            row = QHBoxLayout()
+            row.setSpacing(SPACE.m)
+            done = Icon("check_circle", SIZES.icon_m, COLORS.success, filled=True)
+            name = TrText(stage.label_key, "body_lg_strong")
+            name.setFixedWidth(name.sizeHint().width())
+            detail = Text("", "body", "secondary")
+            row.addWidget(done)
+            row.addWidget(name)
+            row.addWidget(detail, 1)
+            summary.body.addLayout(row)
+            self.stage_rows.append((done, detail))
+        self.right_layout.addWidget(summary)
+        self.right_layout.addStretch(1)
         controller.device_changed.connect(self.update_view)
         self.update_view()
 
@@ -763,7 +924,23 @@ class PackagingView(ChecklistView):
         self._render_checklist()
         state = self.c.device
         self.device.setText((state.device_id or state.mac_address) if state else "-")
-        self.mac.setText(t("prog.mac", mac=state.mac_address) if state else "")
-        stages = [Stage.PROGRAMMING, Stage.TESTING, Stage.LABELING]
-        self.passed.setText("\n".join(f"✓  {t(stage.label_key)}" for stage in stages))
+        self.mac.setText(state.mac_address if state else "")
+        firmware = self.c.firmware
+        checks = len(self.c.ctx.workflow.required_checks(Stage.TESTING)) if state else 0
+        ticked = len(self.vm.checklist) - len(self.vm.missing_ticks)
+        details = (
+            t("pack.detail.programming", version=firmware.version if firmware else "-"),
+            t("pack.detail.testing", n=checks),
+            t("pack.detail.labeling", id=(state.device_id or "-") if state else "-"),
+            t("pack.detail.packaging", n=ticked, total=len(self.vm.checklist)),
+        )
+        complete = not self.vm.missing_ticks
+        for index, ((icon, detail), text) in enumerate(zip(self.stage_rows, details, strict=True)):
+            detail.setText(text)
+            done = index < len(self.stage_rows) - 1 or complete
+            icon.set_icon(
+                "check_circle" if done else "schedule",
+                COLORS.success if done else COLORS.info,
+                filled=done,
+            )
         self.chooser.update_view()

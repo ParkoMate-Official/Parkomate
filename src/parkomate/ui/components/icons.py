@@ -31,19 +31,8 @@ def icon_names() -> list[str]:
     )
 
 
-# TEMPORARY: pre-redesign icon names used by screens not rebuilt yet.
-_LEGACY = {
-    "cross": "close", "warn": "warning", "clock": "schedule", "pcb": "developer_board",
-    "screw": "build", "sticker": "label", "qr": "qr_code_2", "sensor": "sensors",
-    "indicator": "lightbulb", "connector": "cable", "box": "inventory_2", "plug": "usb",
-    "chip": "memory", "thermo": "device_thermostat", "camera": "photo_camera", "user": "person",
-    "list": "fact_check",
-}
-
-
 @lru_cache(maxsize=512)
 def _renderer(name: str, filled: bool) -> QSvgRenderer:
-    name = _LEGACY.get(name, name)
     file = f"{name}-fill.svg" if filled else f"{name}.svg"
     entry = _FOLDER.joinpath(file)
     if not entry.is_file():

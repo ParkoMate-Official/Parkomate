@@ -7,8 +7,7 @@ from PySide6.QtCore import QPointF, QRectF, Qt
 from PySide6.QtGui import QColor, QImage, QLinearGradient, QPainter, QPainterPath, QPaintEvent, QPen
 from PySide6.QtWidgets import QSizePolicy, QWidget
 
-from parkomate.ui.components.base import qcolor
-from parkomate.ui.theme.fonts import font_for
+from parkomate.ui.components.base import draw_line, qcolor
 from parkomate.ui.theme.motion import FrameClock, Tween
 from parkomate.ui.theme.tokens import ALPHA, COLORS, MOTION, RADIUS, SIZES, SPACE, TYPE
 
@@ -54,7 +53,7 @@ class CameraFrame(QWidget):
         side = min(rect.width() * 0.5, rect.height() * 0.72)
         return QRectF(rect.center().x() - side / 2, rect.center().y() - side / 2, side, side)
 
-    def paintEvent(self, _event: QPaintEvent) -> None:  # noqa: N802 - Qt API
+    def paintEvent(self, _event: QPaintEvent) -> None:
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         rect = QRectF(self.rect())
@@ -67,7 +66,9 @@ class CameraFrame(QWidget):
             scale = max(rect.width() / image.width(), rect.height() / image.height())
             width, height = image.width() * scale, image.height() * scale
             painter.drawImage(
-                QRectF(rect.center().x() - width / 2, rect.center().y() - height / 2, width, height),
+                QRectF(
+                    rect.center().x() - width / 2, rect.center().y() - height / 2, width, height
+                ),
                 image,
             )
         flash = self._flash.value
@@ -99,13 +100,15 @@ class CameraFrame(QWidget):
             glow.setColorAt(1.0, qcolor(COLORS.camera_line, 0.0))
             painter.fillRect(QRectF(guide.left(), y - SPACE.l, guide.width(), 2 * SPACE.l), glow)
             painter.setPen(QPen(QColor(COLORS.camera_line), SIZES.active_outline))
-            painter.drawLine(QPointF(guide.left() + SPACE.s, y), QPointF(guide.right() - SPACE.s, y))
+            painter.drawLine(
+                QPointF(guide.left() + SPACE.s, y), QPointF(guide.right() - SPACE.s, y)
+            )
         if self._image is None and self._placeholder:
-            painter.setPen(QColor(COLORS.surface))
-            painter.setFont(font_for(TYPE.label))
-            painter.drawText(
-                rect.adjusted(SPACE.m, SPACE.m, -SPACE.m, -SPACE.m),
-                int(Qt.AlignmentFlag.AlignBottom | Qt.AlignmentFlag.AlignHCenter),
+            draw_line(
+                painter,
+                QRectF(rect.left() + SPACE.l, rect.top() + SPACE.m, rect.width() / 2, SIZES.chip),
                 self._placeholder,
+                TYPE.label,
+                COLORS.surface,
             )
         painter.end()

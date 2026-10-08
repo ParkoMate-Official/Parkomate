@@ -35,7 +35,8 @@ def os_prefers_reduced_motion() -> bool:
         try:
             enabled = ctypes.c_bool(True)
             spi_get_client_area_animation = 0x1042
-            ok = ctypes.windll.user32.SystemParametersInfoW(  # type: ignore[attr-defined]
+            windll = getattr(ctypes, "windll")  # noqa: B009 - Windows only
+            ok = windll.user32.SystemParametersInfoW(
                 spi_get_client_area_animation, 0, ctypes.byref(enabled), 0
             )
             result = bool(ok) and not enabled.value

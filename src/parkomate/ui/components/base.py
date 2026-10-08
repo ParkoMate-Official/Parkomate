@@ -149,7 +149,7 @@ class Divider(QWidget):
             self.setFixedHeight(SIZES.hairline)
             self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
 
-    def paintEvent(self, _event: object) -> None:  # noqa: N802 - Qt API
+    def paintEvent(self, _event: object) -> None:
         painter = QPainter(self)
         painter.fillRect(self.rect(), QColor(COLORS.outline_soft))
         painter.end()
