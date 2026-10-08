@@ -428,16 +428,227 @@ def capture(out: Path, lang: str) -> list[Path]:
     return shots
 
 
+# =========================================================================== design review
+
+DESIGN_SIZES = ((1366, 768), (1920, 1080))
+
+
+def capture_design(out: Path, lang: str, size: tuple[int, int]) -> list[Path]:
+    """Every screen and state of the design review (docs/design/after/<size>/)."""
+    shots: list[Path] = []
+    folder = out / f"{size[0]}x{size[1]}"
+
+    def save(driver: StationDriver, name: str) -> None:
+        path = folder / f"{lang}_{name}.png"
+        driver.shot(path)
+        shots.append(path)
+
+    def fresh(**kwargs: Any) -> StationDriver:
+        driver = StationDriver(size=size, **kwargs)
+        for operator in driver.ctx.auth.list_operators():
+            driver.ctx.repos.operators.set_language(operator.id, lang)
+        set_language(lang)
+        return driver
+
+    # --- login: normal, error, locked; programming: idle, fail (attempt 1), uploading, pass
+    d = fresh(scenario=MockScenario.UPLOAD_FAILS_THEN_SUCCEEDS)
+    d.start()
+    set_language(lang)
+    save(d, "01_login")
+    d.login(OPERATOR[0], "wrong-password")
+    save(d, "02_login_error")
+    for _ in range(4):
+        d.c.login_phase = LoginPhase.FORM
+        d.login(OPERATOR[0], "wrong-password")
+    save(d, "03_login_locked")
+    d.login()
+    d.ready_for_board()
+    save(d, "04_programming_idle")
+    d.connect()
+    d.c.programming.upload()
+    d.idle()
+    save(d, "05_programming_fail_attempt_1")
+    d.hardware.gate_at = 56
+    d.c.programming.upload()
+    d.wait(lambda: d.hardware.reached.is_set() and d.c.programming.progress >= 56, what="56 %")
+    d.process(250)
+    save(d, "06_programming_uploading_56")
+    d.hardware.gate.set()
+    d.idle()
+    d.hardware.gate_at = None
+    save(d, "07_programming_pass")
+    d.c.programming.answer_adjust(True)
+    d.c.advance()
+    d.wait(lambda: d.c.stage is Stage.TESTING, what="testing")
+    d.read_all_sensors(3)
+    save(d, "08_testing_in_progress")
+    d.read_all_sensors()
+    d.mark_ok()
+    save(d, "09_testing_all_pass")
+    d.c.advance()
+    d.wait(lambda: d.c.labeling.identity_ok, what="labeling")
+    d.c.labeling.toggle(CheckCode.C1)
+    d.c.labeling.toggle(CheckCode.C2)
+    save(d, "10_labeling_match")
+    d.c.labeling.toggle(CheckCode.C3)
+    d.c.labeling.toggle(CheckCode.C4)
+    d.c.advance()
+    d.wait(lambda: d.c.stage is Stage.PACKAGING, what="packaging")
+    d.c.packaging.toggle(CheckCode.D1)
+    d.c.packaging.toggle(CheckCode.D2)
+    save(d, "11_packaging")
+    d.c.packaging.toggle(CheckCode.D3)
+    d.c.packaging.toggle(CheckCode.D4)
+    d.c.advance()
+    d.wait(lambda: d.window.shell.toast.isVisible(), what="toast")
+    save(d, "12_success_toast")
+    d.window.shell.toast.hide()
+    # --- a failing measurement: the testing screen under the takeover, then the takeover
+    d.hardware.set_scenario(MockScenario.V_C_OUT_OF_RANGE)
+    d.through_programming()
+    d.read_all_sensors()
+    d.mark_ok()
+    d.wait(lambda: d.c.reject is not None, what="reject")
+    d.window.shell.takeover.hide()
+    save(d, "13_testing_one_fail")
+    d.window.shell.takeover.show()
+    save(d, "14_reject_takeover")
+    d.c.reject_confirmed()
+    d.idle()
+    d.c.toggle_drawer(True)
+    save(d, "15_session_drawer")
+    d.c.toggle_drawer(False)
+    d.c.request_end_session()
+    save(d, "16_end_session_confirm")
+    d.c.answer(True)
+    d.wait(
+        lambda: d.c.send_state is not None and d.c.send_state.value != "closing",
+        what="session closed",
+    )
+    save(d, "17_session_summary")
+    d.close()
+
+    # --- labeling: ID rewritten (before -> now)
+    d = fresh(scenario=MockScenario.ID_DIFFERS)
+    d.start()
+    d.login()
+    d.through_programming()
+    d.through_testing()
+    d.wait(lambda: d.c.labeling.identity_ok, what="identity written")
+    save(d, "18_labeling_updated")
+    d.close()
+
+    # --- labeling: unreadable QR (error banner + typed ID)
+    d = fresh(
+        scenario=MockScenario.QR_UNREADABLE, settings={"camera": {"allow_manual_entry": True}}
+    )
+    d.start()
+    d.login()
+    d.through_programming()
+    d.through_testing()
+    d.wait(lambda: d.c.error is not None, what="QR unreadable")
+    save(d, "19_labeling_unreadable_qr")
+    d.c.labeling.start_manual()
+    d.c.labeling.submit_manual("PKM-000519", "PKM-000591")
+    save(d, "20_labeling_manual_entry")
+    d.close()
+
+    # --- error banner: measurement timeout
+    d = fresh(scenario=MockScenario.MEASUREMENT_TIMEOUT)
+    d.start()
+    d.login()
+    d.through_programming()
+    d.read_all_sensors()
+    d.mark_ok()
+    d.wait(lambda: d.c.error is not None, what="timeout banner")
+    save(d, "21_error_measurement_timeout")
+    d.close()
+
+    # --- admin: empty (fresh station) and with data
+    d = fresh()
+    d.start()
+    d.login()
+    d.c.open_admin()
+    d.wait(lambda: d.c.page is Page.ADMIN, what="admin")
+    for index, name in enumerate(
+        ["settings", "operators", "reports", "counters", "errors"], start=0
+    ):
+        d.window.admin.tabs.setCurrentIndex(index)
+        save(d, f"3{index}_admin_{name}_empty")
+    d.close()
+    d = fresh()
+    d.start()
+    d.login()
+    d.full_device()
+    import logging
+
+    from parkomate.logging_setup import setup_logging
+
+    setup_logging(d.ctx.paths.logs_dir, console=False)
+    logger = logging.getLogger("parkomate.design")
+    logger.error("SMTP server refused the login", extra={"error_code": "MAIL_FAILED"})
+    logger.warning("no measurement within 30 s", extra={"error_code": "MEAS_TIMEOUT"})
+    for handler in logging.getLogger().handlers:
+        handler.flush()
+    from email.message import EmailMessage
+
+    message = EmailMessage()
+    message["Subject"] = "[Parkomate] Session report STATION-01"
+    message.set_content("report")
+    d.ctx.outbox.enqueue(message, None)
+    d.c.open_admin()
+    d.wait(lambda: d.c.page is Page.ADMIN, what="admin")
+    d.window.admin.refresh()
+    for index, name in enumerate(["settings", "operators", "reports", "counters", "errors"]):
+        d.window.admin.tabs.setCurrentIndex(index)
+        if name == "errors" and d.window.admin.errors_tab.table.rowCount():
+            d.window.admin.errors_tab.table.selectRow(0)
+        save(d, f"4{index}_admin_{name}_data")
+    root = logging.getLogger()
+    for handler in list(root.handlers):
+        if getattr(handler, "_parkomate_handler", False):
+            root.removeHandler(handler)
+            handler.close()
+    d.close()
+
+    # --- settings problem (fatal page)
+    from parkomate.ui.views.pages import FatalView
+
+    try:
+        validate_settings({"limits": {"v_c_low": 3.4}, "email": {"password": "x"}})
+    except SettingsError as exc:
+        view = FatalView(exc, r"C:\ProgramData\Parkomate\settings.toml")
+        view.resize(*size)
+        view.show()
+        QApplication.processEvents()
+        path = folder / f"{lang}_50_settings_problem.png"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        view.grab().save(str(path))
+        shots.append(path)
+        view.close()
+    set_language("en")
+    return shots
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Render every station screen to PNG")
     parser.add_argument("--out", type=Path, default=Path("docs/screenshots"))
     parser.add_argument("--lang", nargs="+", default=["en", "mr"])
+    parser.add_argument(
+        "--design",
+        action="store_true",
+        help="design review set: every state at 1366x768 and 1920x1080 (docs/design/after)",
+    )
     args = parser.parse_args(argv)
     os.environ["PARKOMATE_MOCK_DELAY"] = "0"
     create_application()
     written: list[Path] = []
     for lang in args.lang:
-        written.extend(capture(args.out, lang))
+        if args.design:
+            for size in DESIGN_SIZES:
+                written.extend(capture_design(args.out, lang, size))
+        else:
+            written.extend(capture(args.out, lang))
     sys.stdout.write("\n".join(str(p) for p in written) + "\n")
     return 0
 

@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from PySide6.QtCore import Qt, QUrl
-from PySide6.QtGui import QDesktopServices, QGuiApplication, QKeySequence, QShortcut
+from PySide6.QtGui import QDesktopServices, QGuiApplication, QKeySequence, QResizeEvent, QShortcut
 from PySide6.QtWidgets import QGridLayout, QHBoxLayout, QSizePolicy, QVBoxLayout, QWidget
 
 from parkomate import __version__
@@ -141,15 +141,24 @@ class LoginView(QWidget):
         outer.setSpacing(0)
         self.band = SimulationBand()
         outer.addWidget(self.band)
-        corner = QHBoxLayout()
-        corner.setContentsMargins(SIZES.page_margin, SPACE.l, SIZES.page_margin, 0)
-        corner.addStretch(1)
-        corner.addWidget(self.language)
-        outer.addLayout(corner)
         outer.addWidget(_centered(panel, LOGIN_WIDTH))
+        # floats in the top-right corner, so the card keeps the full height
+        self.language.setParent(self)
+        self.language.raise_()
         controller.login_changed.connect(self.update_view)
         language_notifier().changed.connect(self.update_view)
         self.update_view()
+
+    def resizeEvent(self, event: QResizeEvent) -> None:
+        super().resizeEvent(event)
+        hint = self.language.sizeHint()
+        self.language.setGeometry(
+            self.width() - hint.width() - SIZES.page_margin,
+            SIZES.sim_band + SPACE.l,
+            hint.width(),
+            hint.height(),
+        )
+        self.language.raise_()
 
     def _submit(self) -> None:
         if self.c.login_phase is LoginPhase.FORM:
@@ -430,11 +439,13 @@ class FatalView(QWidget):
         row = QVBoxLayout()
         row.setSpacing(0)
         label_key = f"settings.f.{key}"
-        name = t(label_key) if translator().has(label_key, "en") else key
         line = QHBoxLayout()
         line.setSpacing(SPACE.s)
-        line.addWidget(Text(name, "body_lg_strong"))
-        line.addWidget(Text(key, "mono_label", "tertiary"))
+        if translator().has(label_key, "en"):
+            line.addWidget(Text(t(label_key), "body_lg_strong"))
+            line.addWidget(Text(key, "mono_label", "tertiary"))
+        else:  # an unknown key has no friendly name: show the key once
+            line.addWidget(Text(key, "mono_title"))
         line.addStretch(1)
         row.addLayout(line)
         row.addWidget(Text(problem, "body", "danger", wrap=True))

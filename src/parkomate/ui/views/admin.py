@@ -138,8 +138,17 @@ ResultLine = InlineMessage
 def _tab_scroll() -> tuple[ScrollArea, QVBoxLayout]:
     scroll = ScrollArea()
     layout = scroll.layout_
-    layout.setContentsMargins(0, SPACE.l, 0, SPACE.l)
+    # right gutter = scroll bar width: the bar never sits on top of a card
+    layout.setContentsMargins(0, SPACE.l, SPACE.m, SPACE.l)
     return scroll, layout
+
+
+def _log_time(value: object) -> str:
+    """ISO time from the error log -> local 'YYYY-MM-DD HH:MM:SS'."""
+    try:
+        return datetime.fromisoformat(str(value)).astimezone().strftime("%Y-%m-%d %H:%M:%S")
+    except ValueError:
+        return str(value)
 
 
 # =========================================================================== settings
@@ -1307,7 +1316,7 @@ class ErrorLogTab(QWidget):
         self._entries = read_error_log(self.c.ctx.paths.logs_dir, limit=200, error_code=code)
         rows = [
             [
-                str(e.get("time", "")),
+                _log_time(e.get("time", "")),
                 str(e.get("level", "")),
                 str(e.get("error_code") or ""),
                 str(e.get("message", "")),
