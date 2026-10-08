@@ -39,8 +39,8 @@ from parkomate.ui.components.widgets import (
     set_prop,
 )
 from parkomate.ui.qt_i18n import language_notifier
-from parkomate.ui.theme.fonts import font
-from parkomate.ui.theme.tokens import COLORS, SIZES
+from parkomate.ui.theme.legacy import font
+from parkomate.ui.theme.legacy import COLORS, SIZES
 from parkomate.ui.viewmodels.base import StageViewModel
 from parkomate.ui.viewmodels.labeling import ChecklistMixin, LabelingViewModel, PackagingViewModel
 from parkomate.ui.viewmodels.programming import ProgrammingViewModel, StepState

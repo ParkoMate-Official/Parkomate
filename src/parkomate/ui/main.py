@@ -13,22 +13,32 @@ from parkomate.app import AppContext, build_context
 from parkomate.app_paths import AppPaths
 from parkomate.core.errors import ErrorCode, ParkomateError, SettingsError
 from parkomate.i18n import set_language
+from parkomate.ui.components.focus import FocusRingManager
 from parkomate.ui.theme.fonts import app_font, load_fonts
+from parkomate.ui.theme.palette import build_palette, force_light_scheme
 from parkomate.ui.theme.qss import build_stylesheet
 
 log = logging.getLogger(__name__)
 
 
 def create_application(argv: list[str] | None = None) -> QApplication:
-    """QApplication with bundled fonts and the station stylesheet (idempotent)."""
+    """QApplication with bundled fonts, the light token palette, the station stylesheet and
+    the keyboard focus ring (idempotent).
+
+    Fusion + our own palette: whatever the Windows colour scheme, no widget can fall back to
+    a dark OS palette (the near-black Admin Settings background, A1)."""
     app = QApplication.instance()
     if not isinstance(app, QApplication):
         app = QApplication(argv if argv is not None else sys.argv[:1])
     app.setApplicationName("Parkomate Station")
     app.setOrganizationName("Parkomate")
+    force_light_scheme()
+    app.setStyle("Fusion")
     load_fonts()
     app.setFont(app_font())
+    app.setPalette(build_palette())
     app.setStyleSheet(build_stylesheet())
+    FocusRingManager.install(app)
     return app
 
 

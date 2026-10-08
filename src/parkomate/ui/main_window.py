@@ -8,7 +8,7 @@ from PySide6.QtWidgets import QMainWindow, QStackedWidget, QWidget
 
 from parkomate.i18n import t
 from parkomate.ui.qt_i18n import language_notifier
-from parkomate.ui.theme.tokens import SIZES
+from parkomate.ui.theme.legacy import SIZES
 from parkomate.ui.viewmodels.station import Page, StationController
 from parkomate.ui.views.admin import AdminView
 from parkomate.ui.views.pages import LoginView, SessionEndView, StartingView

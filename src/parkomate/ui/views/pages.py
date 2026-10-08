@@ -27,8 +27,8 @@ from parkomate.ui.components.widgets import (
     card,
 )
 from parkomate.ui.qt_i18n import error_cause, error_steps, error_title, language_notifier
-from parkomate.ui.theme.fonts import font
-from parkomate.ui.theme.tokens import COLORS, SIZES
+from parkomate.ui.theme.legacy import font
+from parkomate.ui.theme.legacy import COLORS, SIZES
 from parkomate.ui.viewmodels.station import LoginPhase, SendState, StationController
 
 

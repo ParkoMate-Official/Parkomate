@@ -29,8 +29,8 @@ from parkomate.core.enums import PRODUCTION_STAGES, Stage
 from parkomate.i18n import t
 from parkomate.ui.components.icons import Icon, paint_icon
 from parkomate.ui.qt_i18n import language_notifier
-from parkomate.ui.theme.fonts import font
-from parkomate.ui.theme.tokens import COLORS, SIZES
+from parkomate.ui.theme.legacy import font
+from parkomate.ui.theme.legacy import COLORS, SIZES
 
 
 def restyle(widget: QWidget) -> None:

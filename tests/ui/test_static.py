@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from parkomate.ui.theme.tokens import COLORS, contrast_ratio
+from parkomate.ui.theme.tokens import COLORS, NON_TEXT_PAIRS, TEXT_PAIRS, contrast_ratio
 
 UI_DIR = Path(__file__).resolve().parents[2] / "src" / "parkomate" / "ui"
 
@@ -95,31 +95,18 @@ def test_scanner_catches_literals(tmp_path: Path) -> None:
     assert len(problems) == 3
 
 
-@pytest.mark.parametrize(
-    ("foreground", "background", "minimum"),
-    [
-        (COLORS.text, COLORS.surface, 7.0),
-        (COLORS.text, COLORS.bg, 7.0),
-        (COLORS.text_muted, COLORS.surface, 4.5),
-        (COLORS.text_muted, COLORS.bg, 4.5),
-        (COLORS.on_accent, COLORS.accent, 4.5),
-        (COLORS.disabled_fg, COLORS.disabled_bg, 4.5),
-        # status text: AAA
-        (COLORS.pass_fg, COLORS.pass_bg, 7.0),
-        (COLORS.fail_fg, COLORS.fail_bg, 7.0),
-        (COLORS.warn_fg, COLORS.warn_bg, 7.0),
-        (COLORS.info_fg, COLORS.info_bg, 7.0),
-        (COLORS.pass_fg, COLORS.surface, 7.0),
-        (COLORS.fail_fg, COLORS.surface, 7.0),
-        (COLORS.on_status_solid, COLORS.pass_solid, 7.0),
-        (COLORS.on_status_solid, COLORS.fail_solid, 7.0),
-        # focus ring vs neighbours (non-text, >= 3:1)
-        (COLORS.focus, COLORS.surface, 3.0),
-        (COLORS.focus, COLORS.bg, 3.0),
-    ],
-)
-def test_contrast(foreground: str, background: str, minimum: float) -> None:
-    assert contrast_ratio(foreground, background) >= minimum
+@pytest.mark.parametrize(("foreground", "background"), TEXT_PAIRS)
+def test_text_contrast_aa(foreground: str, background: str) -> None:
+    """Every text/background pair the UI uses meets WCAG AA (4.5:1)."""
+    ratio = contrast_ratio(getattr(COLORS, foreground), getattr(COLORS, background))
+    assert ratio >= 4.5, f"{foreground} on {background}: {ratio:.2f}"
+
+
+@pytest.mark.parametrize(("foreground", "background"), NON_TEXT_PAIRS)
+def test_non_text_contrast(foreground: str, background: str) -> None:
+    """Icons, borders of controls and the focus border: >= 3:1."""
+    ratio = contrast_ratio(getattr(COLORS, foreground), getattr(COLORS, background))
+    assert ratio >= 3.0, f"{foreground} on {background}: {ratio:.2f}"
 
 
 def test_contrast_formula() -> None:
@@ -129,10 +116,7 @@ def test_contrast_formula() -> None:
 
 def test_fonts_bundled() -> None:
     folder = UI_DIR / "assets" / "fonts"
-    for name in (
-        "NotoSans-Regular.ttf",
-        "NotoSansDevanagari-Regular.ttf",
-        "NotoSansSymbols2-Regular.ttf",
-        "OFL.txt",
-    ):
+    from parkomate.ui.theme.fonts import FONT_FILES
+
+    for name in (*FONT_FILES, "OFL.txt"):
         assert (folder / name).is_file(), name

@@ -1,248 +1,206 @@
 """The application stylesheet, generated from the design tokens.
 
-Widgets opt into styles with dynamic properties, e.g. ``variant="primary"`` on a button or
-``role="h1"`` on a label, so no colour is hard-coded in a view.
+Most components paint themselves from the tokens (buttons, chips, cards, stepper, ...). The
+stylesheet covers the native Qt widgets that remain - inputs, tables, lists, scroll bars,
+tool tips, the calendar popup - so no Windows-style widget leaks through (G5).
+
+Widgets opt into variants with dynamic properties (``invalid="true"`` on an input, ...).
 """
 
 from __future__ import annotations
 
-from parkomate.ui.theme.tokens import COLORS, SIZES, Colors, Sizes
+from parkomate.ui.theme.tokens import (
+    COLORS,
+    RADIUS,
+    SIZES,
+    SPACE,
+    TYPE,
+    Colors,
+    Radius,
+    Sizes,
+    Spacing,
+    Typography,
+)
 
 
-def build_stylesheet(c: Colors = COLORS, s: Sizes = SIZES) -> str:
+def build_stylesheet(
+    c: Colors = COLORS,
+    s: Sizes = SIZES,
+    sp: Spacing = SPACE,
+    r: Radius = RADIUS,
+    ty: Typography = TYPE,
+) -> str:
+    field_inner = s.input - 2 * s.hairline
     return f"""
-/* Font family and the 18 px base size come from QApplication.setFont(); setting a font-size
-   here would override every widget's setFont(). */
-* {{
-    color: {c.text};
-}}
-QMainWindow, QWidget#Root, QWidget#Page {{
-    background: {c.bg};
-}}
+/* Fonts come from QApplication.setFont() / widget.setFont() (type scale); a font-size here
+   would override them, so only the native widgets below set one. */
+* {{ outline: none; }}
+QMainWindow, QWidget#Root, QWidget#Page {{ background: {c.bg}; }}
+QWidget#Surface {{ background: {c.surface}; }}
 QToolTip {{
     background: {c.text};
     color: {c.surface};
     border: none;
-    padding: 6px 8px;
-    font-size: {s.font_small}px;
+    padding: {sp.s}px {sp.m}px;
+    font-size: {ty.caption.size}px;
 }}
 
-/* ---------- cards & text roles ---------- */
-QFrame[card="true"] {{
-    background: {c.surface};
-    border: 1px solid {c.border};
-    border-radius: {s.radius}px;
+/* ---------- scroll areas: always transparent (A1) ---------- */
+QScrollArea, QScrollArea > QWidget, QScrollArea > QWidget > QWidget#ScrollContent {{
+    background: transparent;
+    border: none;
 }}
-QLabel[role="h1"] {{ font-size: {s.font_h1}px; font-weight: 700; }}
-QLabel[role="h2"] {{ font-size: {s.font_h2}px; font-weight: 700; }}
-QLabel[role="muted"] {{ color: {c.text_muted}; }}
-QLabel[role="small"] {{ font-size: {s.font_small}px; color: {c.text_muted}; }}
-QLabel[role="value"] {{ font-size: {s.font_value}px; font-weight: 700; }}
-QLabel[role="value_large"] {{ font-size: {s.font_value_large}px; font-weight: 700; }}
-QLabel[role="hint"] {{
-    font-size: {s.font_small}px;
-    color: {c.text_muted};
+QScrollBar:vertical {{
+    background: transparent;
+    width: {sp.m}px;
+    margin: {sp.xs}px {sp.xs // 2}px;
+}}
+QScrollBar:horizontal {{
+    background: transparent;
+    height: {sp.m}px;
+    margin: {sp.xs // 2}px {sp.xs}px;
+}}
+QScrollBar::handle:vertical {{
+    background: {c.outline};
+    border-radius: {sp.xs}px;
+    min-height: {sp.xxxl}px;
+    margin: 0 {sp.xs // 2}px;
+}}
+QScrollBar::handle:horizontal {{
+    background: {c.outline};
+    border-radius: {sp.xs}px;
+    min-width: {sp.xxxl}px;
+    margin: {sp.xs // 2}px 0;
+}}
+QScrollBar::handle:hover {{ background: {c.outline_strong}; }}
+QScrollBar::add-line, QScrollBar::sub-line {{
+    width: 0; height: 0; border: none; background: none;
+}}
+QScrollBar::add-page, QScrollBar::sub-page {{ background: none; }}
+
+/* ---------- inputs (TextField, PasswordField, NumberField) ---------- */
+QLineEdit, QAbstractSpinBox {{
+    min-height: {field_inner}px;
+    max-height: {field_inner}px;
+    padding: 0 {s.input_pad}px;
+    border: {s.hairline}px solid {c.outline};
+    border-radius: {r.control}px;
+    background: {c.surface_2};
+    color: {c.text};
+    selection-background-color: {c.primary_cont};
+    selection-color: {c.text};
+}}
+QLineEdit:hover, QAbstractSpinBox:hover {{ border-color: {c.outline_strong}; }}
+QLineEdit:focus, QAbstractSpinBox:focus {{
+    background: {c.surface};
+    border: {s.hairline}px solid {c.primary};
+}}
+QLineEdit[invalid="true"], QAbstractSpinBox[invalid="true"] {{
+    background: {c.surface};
+    border: {s.hairline}px solid {c.danger};
+}}
+QLineEdit:disabled, QAbstractSpinBox:disabled {{
+    background: {c.surface_3};
+    color: {c.text_3};
+    border-color: {c.outline_soft};
+}}
+QAbstractSpinBox::up-button, QAbstractSpinBox::down-button {{
+    width: 0; height: 0; border: none;
+}}
+QLineEdit[trailing="true"] {{ padding-right: {s.input_pad + s.icon_m + sp.s}px; }}
+
+/* ---------- Select popup list ---------- */
+QListView#SelectList {{
+    background: {c.surface};
+    border: none;
+    outline: 0;
+    padding: {sp.xs}px 0;
 }}
 
-/* ---------- buttons ---------- */
-QPushButton {{
-    min-height: {s.button_height}px;
-    padding: 0 {s.space_l}px;
-    border-radius: {s.radius}px;
-    font-weight: 600;
+/* ---------- DataTable ---------- */
+QTableView {{
     background: {c.surface};
-    border: 2px solid {c.border_strong};
+    alternate-background-color: {c.surface};
+    border: none;
+    gridline-color: transparent;
+    selection-background-color: {c.primary_cont};
+    selection-color: {c.text};
+    outline: 0;
+}}
+QTableView::item {{
+    padding: 0 {sp.l}px;
+    border: none;
+    border-bottom: {s.hairline}px solid {c.outline_soft};
+}}
+QTableView::item:hover {{ background: {c.surface_2}; }}
+QTableView::item:selected {{ background: {c.primary_cont}; color: {c.text}; }}
+QHeaderView {{ background: {c.surface_2}; border: none; }}
+QHeaderView::section {{
+    background: {c.surface_2};
+    color: {c.text_2};
+    border: none;
+    border-bottom: {s.hairline}px solid {c.outline};
+    padding: 0 {sp.l}px;
+    min-height: {s.table_row}px;
+    font-size: {ty.label.size}px;
+    font-weight: {ty.label.weight};
+}}
+QTableCornerButton::section {{ background: {c.surface_2}; border: none; }}
+
+/* ---------- plain lists (session drawer) ---------- */
+QListWidget {{
+    background: transparent;
+    border: none;
+    outline: 0;
+}}
+QListWidget::item {{
+    min-height: {s.list_row}px;
+    padding: 0 {sp.s}px;
+    border-bottom: {s.hairline}px solid {c.outline_soft};
     color: {c.text};
 }}
-QPushButton:hover {{ background: {c.surface_alt}; }}
-QPushButton:pressed {{ background: {c.accent_soft}; }}
-QPushButton:focus {{ border: {s.focus_width}px solid {c.focus}; }}
-QPushButton:disabled {{
-    background: {c.disabled_bg};
-    color: {c.disabled_fg};
-    border: 2px solid {c.disabled_bg};
-}}
-QPushButton[variant="primary"] {{
-    background: {c.accent};
-    color: {c.on_accent};
-    border: 2px solid {c.accent};
-    font-size: {s.font_h2}px;
-}}
-QPushButton[variant="primary"]:hover {{ background: {c.accent_hover}; }}
-QPushButton[variant="primary"]:pressed {{ background: {c.accent_pressed}; }}
-QPushButton[variant="primary"]:focus {{ border: {s.focus_width}px solid {c.focus}; }}
-QPushButton[variant="primary"]:disabled {{
-    background: {c.disabled_bg};
-    color: {c.disabled_fg};
-    border: 2px solid {c.disabled_bg};
-}}
-QPushButton[variant="danger"] {{
-    color: {c.fail_fg};
-    border: 2px solid {c.fail_fg};
-}}
-QPushButton[variant="pass"] {{
-    color: {c.pass_fg};
-    border: 2px solid {c.pass_fg};
-}}
-QPushButton[variant="pass"]:checked {{
-    background: {c.pass_solid};
-    color: {c.on_status_solid};
-    border: 2px solid {c.pass_solid};
-}}
-QPushButton[variant="danger"]:checked {{
-    background: {c.fail_solid};
-    color: {c.on_status_solid};
-    border: 2px solid {c.fail_solid};
-}}
-QPushButton[variant="pass"]:disabled, QPushButton[variant="danger"]:disabled {{
-    background: {c.disabled_bg};
-    color: {c.disabled_fg};
-    border: 2px solid {c.disabled_bg};
-}}
-QPushButton[variant="pass"]:checked:disabled {{
-    background: {c.pass_solid};
-    color: {c.on_status_solid};
-    border: 2px solid {c.pass_solid};
-}}
-QPushButton[variant="danger"]:checked:disabled {{
-    background: {c.fail_solid};
-    color: {c.on_status_solid};
-    border: 2px solid {c.fail_solid};
-}}
-QPushButton#TopButton {{ padding: 0 14px; }}
-QPushButton[variant="link"] {{
-    min-height: 32px;
-    border: none;
-    background: transparent;
-    color: {c.accent};
-    text-decoration: underline;
-    font-weight: 400;
-    font-size: {s.font_small}px;
-    padding: 0 4px;
-}}
-QPushButton[variant="link"]:focus {{ border: 2px solid {c.focus}; }}
-QPushButton[variant="toggle"] {{
-    min-height: 44px;
-    padding: 0 {s.space_m}px;
-    font-weight: 600;
-}}
-QPushButton[variant="toggle"]:checked {{
-    background: {c.accent};
-    color: {c.on_accent};
-    border: 2px solid {c.accent};
-}}
-QPushButton[variant="takeover"] {{
-    background: {c.surface};
-    color: {c.fail_fg};
-    border: 3px solid {c.surface};
-    font-size: {s.font_h1}px;
-    min-height: 72px;
-    padding: 0 48px;
-}}
-QPushButton[variant="takeover"]:focus {{ border: 4px solid {c.text}; }}
+QListWidget::item:selected {{ background: {c.primary_cont}; color: {c.text}; }}
 
-/* ---------- inputs ---------- */
-QLineEdit, QComboBox, QSpinBox, QDoubleSpinBox, QDateEdit {{
-    min-height: 44px;
-    padding: 0 {s.space_s}px;
-    border: 2px solid {c.border_strong};
-    border-radius: 8px;
-    background: {c.surface};
-}}
-QLineEdit:focus, QComboBox:focus, QSpinBox:focus, QDoubleSpinBox:focus, QDateEdit:focus {{
-    border: {s.focus_width}px solid {c.focus};
-}}
-QLineEdit[invalid="true"], QComboBox[invalid="true"], QSpinBox[invalid="true"],
-QDoubleSpinBox[invalid="true"] {{
-    border: {s.focus_width}px solid {c.fail_fg};
-}}
-QComboBox QAbstractItemView {{
-    background: {c.surface};
-    selection-background-color: {c.accent_soft};
+/* ---------- read-only details (error log JSON) ---------- */
+QPlainTextEdit {{
+    background: {c.surface_2};
+    border: none;
+    border-radius: {r.control}px;
+    padding: {sp.m}px;
+    color: {c.text};
+    selection-background-color: {c.primary_cont};
     selection-color: {c.text};
 }}
-QCheckBox {{ spacing: 12px; min-height: 40px; }}
-QCheckBox::indicator {{ width: 28px; height: 28px; }}
-QCheckBox:focus {{ color: {c.focus}; }}
-QProgressBar {{
-    min-height: 30px;
-    border: 2px solid {c.border_strong};
-    border-radius: 8px;
-    background: {c.surface_alt};
-    text-align: center;
-    font-weight: 700;
-}}
-QProgressBar::chunk {{ background: {c.accent}; border-radius: 6px; }}
 
-/* ---------- tables & lists ---------- */
-QTableWidget, QListWidget, QPlainTextEdit {{
+/* ---------- calendar (DateRangePicker popup) ---------- */
+QCalendarWidget QWidget#qt_calendar_navigationbar {{
     background: {c.surface};
-    border: 1px solid {c.border};
-    border-radius: 8px;
-    gridline-color: {c.border};
-    selection-background-color: {c.accent_soft};
-    selection-color: {c.text};
+    min-height: {s.button_compact}px;
 }}
-QTableWidget:focus, QListWidget:focus, QPlainTextEdit:focus {{
-    border: {s.focus_width}px solid {c.focus};
-}}
-QHeaderView::section {{
-    background: {c.surface_alt};
+QCalendarWidget QToolButton {{
+    color: {c.text};
+    background: transparent;
     border: none;
-    border-bottom: 1px solid {c.border};
-    padding: 8px;
-    font-weight: 700;
-    font-size: {s.font_small}px;
+    border-radius: {r.chip}px;
+    padding: {sp.xs}px {sp.s}px;
+    font-size: {ty.body_strong.size}px;
+    font-weight: {ty.body_strong.weight};
 }}
-QTabWidget::pane {{ border: none; }}
-QTabBar::tab {{
-    min-height: 48px;
-    padding: 0 {s.space_l}px;
-    background: transparent;
-    border-bottom: 3px solid transparent;
-    font-weight: 600;
-    color: {c.text_muted};
+QCalendarWidget QToolButton:hover {{ background: {c.surface_2}; }}
+QCalendarWidget QToolButton::menu-indicator {{ image: none; width: 0; }}
+QCalendarWidget QMenu {{ background: {c.surface}; border: {s.hairline}px solid {c.outline}; }}
+QCalendarWidget QSpinBox {{
+    min-height: {s.button_compact - 2 * s.hairline}px;
+    max-height: {s.button_compact - 2 * s.hairline}px;
+    padding: 0 {sp.s}px;
 }}
-QTabBar::tab:selected {{ color: {c.accent}; border-bottom: 3px solid {c.accent}; }}
-QTabBar::tab:focus {{ color: {c.focus}; }}
-QScrollArea {{ border: none; background: transparent; }}
-QScrollArea#CardScroll, QScrollArea#CardScroll > QWidget, QWidget#CardInner {{
-    background: transparent;
+QCalendarWidget QAbstractItemView {{
+    background: {c.surface};
+    color: {c.text};
+    selection-background-color: {c.primary};
+    selection-color: {c.on_primary};
+    outline: 0;
+    border: none;
 }}
-
-/* ---------- stage stepper ---------- */
-QLabel[step="current"] {{
-    background: {c.accent};
-    color: {c.on_accent};
-    border-radius: 8px;
-}}
-QLabel[step="done"] {{ color: {c.pass_fg}; }}
-QLabel[step="todo"] {{ color: {c.text_muted}; }}
-QLabel[step="rejected"] {{
-    background: {c.fail_solid};
-    color: {c.on_status_solid};
-    border-radius: 8px;
-}}
-
-/* ---------- top bar ---------- */
-QFrame#TopBar {{ background: {c.surface}; border-bottom: 1px solid {c.border}; }}
-QFrame#InfoStrip {{ background: {c.surface_alt}; border-bottom: 1px solid {c.border}; }}
-QFrame#BottomBar {{ background: {c.surface}; border-top: 1px solid {c.border}; }}
-QFrame#Drawer {{ background: {c.surface}; border-left: 2px solid {c.border_strong}; }}
-
-/* ---------- status surfaces ---------- */
-QFrame[tone="pass"] {{ background: {c.pass_bg}; border: 2px solid {c.pass_fg}; border-radius: {s.radius}px; }}
-QFrame[tone="fail"] {{ background: {c.fail_bg}; border: 2px solid {c.fail_fg}; border-radius: {s.radius}px; }}
-QFrame[tone="warn"] {{ background: {c.warn_bg}; border: 2px solid {c.warn_fg}; border-radius: {s.radius}px; }}
-QFrame[tone="info"] {{ background: {c.info_bg}; border: 2px solid {c.info_fg}; border-radius: {s.radius}px; }}
-QFrame[tone="pending"] {{ background: {c.surface_alt}; border: 2px solid {c.border}; border-radius: {s.radius}px; }}
-QLabel[status="pass"] {{ color: {c.pass_fg}; font-weight: 700; }}
-QLabel[status="fail"] {{ color: {c.fail_fg}; font-weight: 700; }}
-QLabel[status="warn"] {{ color: {c.warn_fg}; font-weight: 700; }}
-QLabel[status="info"] {{ color: {c.info_fg}; font-weight: 700; }}
-QLabel[status="pending"] {{ color: {c.text_muted}; font-weight: 700; }}
-QFrame#RejectTakeover {{ background: {c.fail_solid}; }}
-QFrame#RejectTakeover QLabel {{ color: {c.on_status_solid}; }}
-QFrame#SuccessToast {{ background: {c.pass_solid}; border-radius: {s.radius}px; }}
-QFrame#SuccessToast QLabel {{ color: {c.on_status_solid}; font-size: {s.font_h1}px; font-weight: 700; }}
+QCalendarWidget QAbstractItemView:disabled {{ color: {c.text_3}; }}
 """

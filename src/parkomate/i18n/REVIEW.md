@@ -911,3 +911,60 @@ Total keys: **689** - needs_review: **689**
 | Key | English | Marathi | Status |
 |---|---|---|---|
 | `toast.device_complete` | Device {device} complete | डिव्हाइस {device} पूर्ण | needs_review |
+
+## UI redesign (October 2026)
+
+New or changed Marathi texts of the UI redesign - please review on the bench.
+Changed values only lost a status glyph (✓ ✕); the UI now shows an icon instead.
+
+| Key | English | Marathi |
+|---|---|---|
+| `identity.match` | Match | जुळते |
+| `identity.confirmed` | Updated and confirmed | अपडेट करून खात्री केली |
+| `identity.failed` | Failed | अयशस्वी |
+| `action.mark_success` | Success | यशस्वी |
+| `action.mark_failure` | Failure | अयशस्वी |
+| `status.word.done` | Done | झाले |
+| `counter.uploads_ok` | Uploads OK | यशस्वी अपलोड |
+| `counter.uploads_fail` | Uploads failed | अयशस्वी अपलोड |
+| `login.ambient_result` | Ambient temperature {value} °C | वातावरण तापमान {value} °C |
+| `prog.whitelist.allowed` | Allowed by the server | सर्व्हरने परवानगी दिली |
+| `prog.whitelist.denied` | NOT allowed by the server | सर्व्हरने परवानगी दिली नाही |
+| `prog.firmware.hash_ok` | Hash verified | हॅश तपासला |
+| `test.comm.ok` | Board answers | बोर्ड उत्तर देतो |
+| `test.comm.fail` | Board does not answer | बोर्ड उत्तर देत नाही |
+| `end.sent` | Report sent | अहवाल पाठवला |
+| `admin.out.sent` | E-mail sent | ई-मेल पाठवला |
+| `settings.secret_stored` | stored | जतन |
+| `reject.box_caption` | Reject box | नाकार बॉक्स |
+| `sim.chip` | Simulation mode | सिम्युलेशन मोड |
+| `sim.tooltip` | Simulated bench - scenario: {scenario}. No real board, server or camera is used. | सिम्युलेटेड बेंच - परिस्थिती: {scenario}. खरा बोर्ड, सर्व्हर किंवा कॅमेरा वापरला जात नाही. |
+| `counter.tip.uploads_ok` | Uploads OK: {n} | यशस्वी अपलोड: {n} |
+| `counter.tip.uploads_fail` | Uploads failed: {n} | अयशस्वी अपलोड: {n} |
+| `counter.tip.completed` | Devices completed: {n} | पूर्ण डिव्हाइस: {n} |
+| `counter.tip.rejected` | Devices rejected: {n} | नाकारलेली डिव्हाइस: {n} |
+| `date.range` | {start} – {end} | {start} – {end} |
+| `date.today` | Today | आज |
+| `date.last_7` | Last 7 days | मागील 7 दिवस |
+| `date.last_30` | Last 30 days | मागील 30 दिवस |
+| `date.pick_start` | Choose the first day | पहिला दिवस निवडा |
+| `date.pick_end` | Now choose the last day | आता शेवटचा दिवस निवडा |
+| `admin.rep.range` | Date range | तारखांची श्रेणी |
+| `unit.v` | V | V |
+| `unit.c` | °C | °C |
+| `unit.s` | s | से. |
+| `unit.days` | days | दिवस |
+| `unit.minutes` | min | मि. |
+| `unit.cm` | cm | सेमी |
+| `unit.bytes` | bytes | बाइट |
+| `unit.baud` | baud | बॉड |
+| `unit.fps` | fps | fps |
+| `unit.px` | px | px |
+| `test.mark.locked_readings` | Take all {n} readings first | आधी सर्व {n} वाचने घ्या |
+| `test.mark.locked_comm` | Available after the communication test | संवाद चाचणीनंतर उपलब्ध |
+| `admin.out.empty_title` | No e-mails waiting | कोणतेही ई-मेल प्रलंबित नाहीत |
+| `admin.out.empty_body` | Report e-mails that could not be sent yet appear here. | अजून न पाठवलेले अहवाल ई-मेल येथे दिसतात. |
+| `admin.log.empty_title` | No errors logged - all good | कोणतीही त्रुटी नोंदलेली नाही - सर्व ठीक |
+| `admin.log.empty_body` | Problems the station records appear here. | स्टेशनने नोंदवलेल्या अडचणी येथे दिसतात. |
+| `menu.session` | Session details | सत्राचा तपशील |
+| `menu.account` | Account and session | खाते आणि सत्र |

@@ -44,8 +44,8 @@ from parkomate.i18n import LANGUAGES, t, translator
 from parkomate.logging_setup import read_error_log
 from parkomate.ui.components.widgets import BigButton, InlineConfirm, TrLabel, card, set_prop
 from parkomate.ui.qt_i18n import error_cause, error_title, language_notifier
-from parkomate.ui.theme.fonts import font
-from parkomate.ui.theme.tokens import SIZES
+from parkomate.ui.theme.legacy import font
+from parkomate.ui.theme.legacy import SIZES
 from parkomate.ui.viewmodels.station import StationController
 
 log = logging.getLogger(__name__)
