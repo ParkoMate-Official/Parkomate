@@ -764,5 +764,6 @@
   "gallery.data": "टॅब आणि तक्ते",
   "gallery.shell": "मुख्य चौकट",
   "gallery.overlays": "नाकार स्क्रीन आणि सूचना",
-  "gallery.card": "कार्ड"
+  "gallery.card": "कार्ड",
+  "cli.help.gallery": "प्रत्येक UI घटक प्रत्येक स्थितीत दाखवा (डिझाइन तपासणी)"
 }

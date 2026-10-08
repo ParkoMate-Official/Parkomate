@@ -764,5 +764,6 @@
   "gallery.data": "Tabs and tables",
   "gallery.shell": "Shell",
   "gallery.overlays": "Reject takeover and toast",
-  "gallery.card": "Card"
+  "gallery.card": "Card",
+  "cli.help.gallery": "show every UI component in every state (design review)"
 }

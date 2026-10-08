@@ -46,6 +46,7 @@ def _parser() -> argparse.ArgumentParser:
         help=t("cli.help.scenario"),
     )
     parser.add_argument("--kiosk", action="store_true", help=t("cli.help.kiosk"))
+    parser.add_argument("--gallery", action="store_true", help=t("cli.help.gallery"))
     sub = parser.add_subparsers(dest="command")
 
     admin = sub.add_parser("admin", help=t("cli.help.admin"))
@@ -133,6 +134,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.scenario:
         os.environ[ENV_SCENARIO] = args.scenario
 
+    if args.gallery:
+        from parkomate.ui.gallery import run_gallery
+
+        return run_gallery()
     if args.command is None:
         from parkomate.ui.main import run_ui
 

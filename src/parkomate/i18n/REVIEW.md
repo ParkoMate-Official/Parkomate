@@ -968,3 +968,4 @@ Changed values only lost a status glyph (✓ ✕); the UI now shows an icon inst
 | `admin.log.empty_body` | Problems the station records appear here. | स्टेशनने नोंदवलेल्या अडचणी येथे दिसतात. |
 | `menu.session` | Session details | सत्राचा तपशील |
 | `menu.account` | Account and session | खाते आणि सत्र |
+| `cli.help.gallery` | show every UI component in every state (design review) | प्रत्येक UI घटक प्रत्येक स्थितीत दाखवा (डिझाइन तपासणी) |
