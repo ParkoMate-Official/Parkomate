@@ -527,6 +527,8 @@ class TestingView(StageView):
         self.card_elec.body.addLayout(grid)
         self.waiting = Text("", "body", "info")
         self.card_elec.body.addWidget(self.waiting)
+        self.send_to = Text("", "caption", "secondary")
+        self.card_elec.body.addWidget(self.send_to)
         self.card_elec.body.addWidget(Divider())
         ambient = QHBoxLayout()
         ambient.setSpacing(SPACE.s)
@@ -625,12 +627,27 @@ class TestingView(StageView):
         else:
             self.waiting.setText("")
         self.waiting.setVisible(bool(self.waiting.text()))
+        urls = self._listen_urls() if vm.measure_state is StepState.WORKING else []
+        self.send_to.setText(t("test.send_to", url=urls[0]) if urls else "")
+        self.send_to.setToolTip("\n".join(urls))
+        self.send_to.setVisible(bool(urls))
         self.ambient.setText(
             t("test.ambient", value=f"{self.c.ambient_c:.1f}")
             if self.c.ambient_c is not None
             else t("drawer.ambient_unknown")
         )
         self._render_cards(sensor_state)
+
+    def _listen_urls(self) -> list[str]:
+        """Where the real measuring device must send (empty when it is simulated)."""
+        hardware = self.c.ctx.hardware
+        urls = getattr(hardware, "listen_urls", None)
+        if not getattr(hardware, "real_measuring_device", False) or not callable(urls):
+            return []
+        try:
+            return [str(url) for url in urls()]
+        except OSError:
+            return []
 
     def _render_cards(self, sensor_state: StepState) -> None:
         """Exactly one active card (S5); a failed step is outlined red."""

@@ -275,13 +275,22 @@ class Select(QComboBox):
         self.setProperty("ring_radius", RADIUS.control)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
-        self.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToContents)
+        # Not AdjustToContents: with it Qt calls adjustSize() 20 ms after the items change, which
+        # shrinks the field to its hint inside a layout (the port list jumped narrower after a
+        # language switch). sizeHint() is ours, so a changed list only needs updateGeometry().
+        self.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
+        model = self.model()
+        for signal in (model.rowsInserted, model.rowsRemoved, model.modelReset, model.dataChanged):
+            signal.connect(self._items_changed)
         self.currentIndexChanged.connect(self._sync_tooltip)
         self.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
 
     def set_placeholder_key(self, key: str | None) -> None:
         self._placeholder_key = key
         self.update()
+
+    def _items_changed(self, *_args: object) -> None:
+        self.updateGeometry()
 
     def _sync_tooltip(self, *_args: object) -> None:
         self.setToolTip(self.currentText() if self.currentIndex() >= 0 else "")

@@ -15,6 +15,7 @@ from parkomate.data.repositories import (
     DeviceRepo,
     OperatorRepo,
     OutboxRepo,
+    RepairRepo,
     SessionRepo,
     TransitionRepo,
 )
@@ -34,6 +35,7 @@ class Repositories:
     outbox: OutboxRepo
     audit: AuditRepo
     transitions: TransitionRepo
+    repairs: RepairRepo
 
     @classmethod
     def create(cls, db: Database, clock: Clock) -> Repositories:
@@ -48,6 +50,7 @@ class Repositories:
             outbox=OutboxRepo(db, clock),
             audit=AuditRepo(db, clock),
             transitions=TransitionRepo(db, clock),
+            repairs=RepairRepo(db, clock),
         )
 
 

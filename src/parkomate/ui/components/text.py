@@ -27,8 +27,8 @@ from PySide6.QtGui import (
 )
 from PySide6.QtWidgets import QLabel, QSizePolicy, QWidget
 
-from parkomate.i18n import t
-from parkomate.ui.components.base import key_width, on_language_change, translations
+from parkomate.i18n import LANGUAGES, t, tr_message
+from parkomate.ui.components.base import on_language_change, text_width, translations
 from parkomate.ui.theme.fonts import font_for, line_box
 from parkomate.ui.theme.tokens import COLORS, TYPE
 
@@ -160,7 +160,7 @@ class Text(QLabel):
         metrics = QFontMetricsF(self.font())
         width = max(metrics.horizontalAdvance(p) for p in self._paragraphs())
         if self._key:
-            width = max(width, key_width(self.font(), self._key, **self._params))
+            width = max(width, text_width(self.font(), self._all_texts()))
         margins = self.contentsMargins()
         return math.ceil(width) + self._reserve + margins.left() + margins.right() + 1
 
@@ -191,11 +191,15 @@ class Text(QLabel):
         so a wrapped text is as tall in English as in Marathi."""
         if not self.wordWrap():
             return len(self._paragraphs())
-        texts = translations(self._key, **self._params) if self._key else [self.text()]
+        texts = self._all_texts() if self._key else [self.text()]
         return max(
             1,
             *(sum(layout.lineCount() for layout in self._layouts(width, text)) for text in texts),
         )
+
+    def _all_texts(self) -> list[str]:
+        """The bound key in every UI language (the room to reserve)."""
+        return translations(self._key, **self._params) if self._key else [self.text()]
 
     def _content_height(self, lines: int) -> int:
         margins = self.contentsMargins()
@@ -310,6 +314,21 @@ class TrText(Text):
     ) -> None:
         super().__init__("", style, tone, wrap=wrap, align=align, parent=parent)
         self.set_key(key, **params)
+
+
+class MessageText(Text):
+    """``Text`` for a stored message whose params name other messages (``check_key``,
+    ``action_key``, ...): those are translated too, in the current language, and the room
+    of the longest language is reserved like :class:`TrText`."""
+
+    def _retranslate(self, *_args: object) -> None:
+        self.setText(tr_message(None, self._key, self._params) if self._key else "")
+        self.updateGeometry()
+
+    def _all_texts(self) -> list[str]:
+        if not self._key:
+            return [self.text()]
+        return [tr_message(language, self._key, self._params) for language in LANGUAGES]
 
 
 class SelectableText(QLabel):

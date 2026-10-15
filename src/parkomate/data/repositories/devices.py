@@ -17,7 +17,7 @@ from parkomate.data.repositories._rows import dumps, iso, last_id, loads_dict, t
 _COLUMNS = (
     "id, session_id, device_id, mac_address, firmware_version, started_at, finished_at, status, "
     "reject_stage, reject_check_code, reject_reason, reject_reason_key, reject_reason_params, "
-    "programming_attempts, id_entry_method"
+    "programming_attempts, id_entry_method, repair_case_id"
 )
 
 
@@ -38,6 +38,7 @@ def _to_model(row: sqlite3.Row) -> Device:
         reject_reason_params=loads_dict(row["reject_reason_params"]),
         programming_attempts=row["programming_attempts"],
         id_entry_method=IdEntryMethod(row["id_entry_method"]) if row["id_entry_method"] else None,
+        repair_case_id=row["repair_case_id"],
     )
 
 
@@ -47,13 +48,24 @@ class DeviceRepo:
         self._clock = clock
 
     def create(
-        self, session_id: int, mac_address: str, firmware_version: str | None = None
+        self,
+        session_id: int,
+        mac_address: str,
+        firmware_version: str | None = None,
+        *,
+        repair_case_id: int | None = None,
     ) -> Device:
         with self._db.transaction() as conn:
             cursor = conn.execute(
-                "INSERT INTO devices (session_id, mac_address, firmware_version, started_at)"
-                " VALUES (?, ?, ?, ?)",
-                (session_id, mac_address, firmware_version, iso(self._clock.now())),
+                "INSERT INTO devices (session_id, mac_address, firmware_version, started_at,"
+                " repair_case_id) VALUES (?, ?, ?, ?, ?)",
+                (
+                    session_id,
+                    mac_address,
+                    firmware_version,
+                    iso(self._clock.now()),
+                    repair_case_id,
+                ),
             )
             return self.require(last_id(cursor))
 
@@ -81,6 +93,13 @@ class DeviceRepo:
         rows = self._db.query(
             f"SELECT {_COLUMNS} FROM devices WHERE session_id IN ({marks}) ORDER BY session_id, id",
             tuple(session_ids),
+        )
+        return [_to_model(row) for row in rows]
+
+    def list_for_repair_case(self, case_id: int) -> list[Device]:
+        """Retest runs of a repair case, oldest first."""
+        rows = self._db.query(
+            f"SELECT {_COLUMNS} FROM devices WHERE repair_case_id = ? ORDER BY id", (case_id,)
         )
         return [_to_model(row) for row in rows]
 

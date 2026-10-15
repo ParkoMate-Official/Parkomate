@@ -184,19 +184,44 @@ class KeyCap(QWidget):
 
 
 class SimulationChip(StatusChip):
-    """Amber 'Simulation mode' chip; the scenario is in the tooltip."""
+    """Amber 'Simulation mode' chip; the scenario is in the tooltip (bench test: the board
+    itself is real). ``set_icon_only(True)`` on narrow screens: the amber band across the top
+    already says "simulated", the word would crowd the app bar."""
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__("warning", "sim.chip", parent=parent)
         self._scenario = ""
+        self._real_board = False
+        self._wifi = False
+        self._icon_only = False
 
-    def set_scenario(self, scenario: str) -> None:
+    def set_icon_only(self, icon_only: bool) -> None:
+        if icon_only != self._icon_only:
+            self._icon_only = icon_only
+            self.updateGeometry()
+            self.update()
+
+    def icon_only(self) -> bool:
+        return self._icon_only
+
+    def sizeHint(self) -> QSize:
+        if getattr(self, "_icon_only", False):
+            return QSize(2 * self._pad() + self._icon(), self._height())
+        return super().sizeHint()
+
+    def set_scenario(self, scenario: str, *, real_board: bool = False, wifi: bool = False) -> None:
+        """``wifi``: the measuring device is the real one (or its simulator) on the network."""
         self._scenario = scenario
+        self._real_board = real_board
+        self._wifi = wifi
         self._retranslate()
 
     def _retranslate(self, *_args: object) -> None:
         super()._retranslate()
-        tip = t("sim.tooltip", scenario=getattr(self, "_scenario", "") or "-")
+        key = "sim.tooltip_bench" if getattr(self, "_real_board", False) else "sim.tooltip"
+        if getattr(self, "_wifi", False):
+            key += "_wifi"
+        tip = t(key, scenario=getattr(self, "_scenario", "") or "-")
         self.setToolTip(tip)
         self.setAccessibleDescription(tip)
 
@@ -211,6 +236,9 @@ class SimulationChip(StatusChip):
         side = self._icon()
         icon_rect = QRectF(rect.left() + self._pad(), rect.center().y() - side / 2, side, side)
         paint_icon(painter, "warning", icon_rect, COLORS.warning, filled=True)
+        if self._icon_only:
+            painter.end()
+            return
         text_x = icon_rect.right() + SPACE.s
         draw_line(
             painter,

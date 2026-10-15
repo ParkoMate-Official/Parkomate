@@ -6,6 +6,8 @@ Composition:
     DeviceLink       text protocol to the running firmware (PING / READ_SENSOR / GET_ID ...)
     EsptoolFlasher   MAC + chip via the ROM bootloader; flashing from RAM
     ServerClient     whitelist + firmware download (TLS, token from the keyring, retries)
+    FirmwareSource   where the firmware comes from: the server, or a local build in a
+                     bench test (``LocalFirmwareSource``)
     FirmwareStore    firmware in RAM only, zeroed on shutdown
     HttpMeasurementListener   measuring device JSON over Wi-Fi/LAN
     CameraService    USB QR camera + preview frames
@@ -36,7 +38,7 @@ from parkomate.core.models import (
     WhitelistResult,
 )
 from parkomate.hardware.camera import CameraService
-from parkomate.hardware.firmware import FirmwareStore
+from parkomate.hardware.firmware import FirmwareSource, FirmwareStore
 from parkomate.hardware.flasher import EsptoolFlasher
 from parkomate.hardware.link import DeviceLink, PortGuard
 from parkomate.hardware.measurement import HttpMeasurementListener, MeasurementTransport
@@ -58,6 +60,7 @@ class RealHardwareService:
         server: ServerClient | None = None,
         measurement: MeasurementTransport | None = None,
         camera: CameraService | None = None,
+        firmware_source: FirmwareSource | None = None,
     ) -> None:
         self._settings = settings
         guard = link.guard if link is not None else PortGuard()
@@ -65,6 +68,7 @@ class RealHardwareService:
         self._link = link or DeviceLink(settings, guard=guard)
         self._flasher = flasher or EsptoolFlasher(settings, guard)
         self._server = server or ServerClient(settings, secrets)
+        self._firmware_source: FirmwareSource = firmware_source or self._server
         self._measurement = measurement or HttpMeasurementListener(settings)
         self._camera = camera or CameraService(settings)
         self._store = FirmwareStore()
@@ -122,7 +126,7 @@ class RealHardwareService:
         return self._server.check_whitelist(mac)
 
     def fetch_firmware(self) -> FirmwareInfo:
-        info, images = self._server.fetch_firmware()
+        info, images = self._firmware_source.fetch_firmware()
         self._store.replace(info, images)
         return info
 
@@ -159,6 +163,12 @@ class RealHardwareService:
         return self._link.set_id(device_id)
 
     # ------------------------------------------------------------------ measurement
+    real_measuring_device = True
+
+    def listen_urls(self) -> list[str]:
+        urls = getattr(self._measurement, "listen_urls", None)
+        return list(urls()) if callable(urls) else []
+
     def measure(self, timeout_s: float) -> Measurement:
         return self._measurement.measure(timeout_s)
 

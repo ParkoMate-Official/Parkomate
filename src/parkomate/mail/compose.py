@@ -42,6 +42,21 @@ def summary_lines(summary: SessionSummary, lang: str, station_id: str) -> list[t
     return lines
 
 
+def compose_test_email(settings: EmailSettings, *, station_id: str, lang: str) -> EmailMessage:
+    """A short message that proves the e-mail settings work (Admin -> Send test e-mail)."""
+    message = EmailMessage()
+    subject = tr(lang, "mail.test_subject", station=station_id)
+    message["Subject"] = f"{settings.subject_prefix} {subject}".strip()
+    message["From"] = settings.sender
+    message["To"] = ", ".join(settings.recipients)
+    message["Date"] = formatdate(localtime=True)
+    message["Message-ID"] = make_msgid(domain="parkomate.station")
+    message.set_content(
+        "\n\n".join([tr(lang, "mail.test_body", station=station_id), tr(lang, "mail.footer")])
+    )
+    return message
+
+
 def compose_session_email(
     summary: SessionSummary,
     attachments: Sequence[Path],

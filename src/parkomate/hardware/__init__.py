@@ -6,7 +6,7 @@
 * :mod:`.replay` - record a real session and replay it.
 """
 
-from parkomate.hardware.replay import ReplayHardwareService, RecordingHardwareService
+from parkomate.hardware.replay import RecordingHardwareService, ReplayHardwareService
 from parkomate.hardware.service import RealHardwareService
 
 __all__ = ["RealHardwareService", "RecordingHardwareService", "ReplayHardwareService"]

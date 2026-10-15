@@ -4,14 +4,20 @@ For supervisors / administrators. Operators use the [operator guide](OPERATOR_GU
 
 ## 1. Install and first start
 
-1. Install the station (installer arrives with the full build; today: `uv sync`, see README).
-2. Create the first administrator **once**, in a command window on the bench PC:
+1. Run `ParkomateStation-Setup-<version>.exe` (built with `packaging\build.ps1`). It asks for
+   this PC's **station name** (every PC a different one, e.g. `STATION-02`) and the **measuring
+   device address** (its IP, or the Wi-Fi network like `192.168.1.0/24`), opens TCP port 8765
+   in the Windows firewall and adds Start-menu shortcuts. (Developers: `uv sync`, see README.)
+2. Create the first administrator **once** (the Setup offers it at the end), or in a command
+   window:
    ```
-   python -m parkomate admin create
+   parkomate admin create
    ```
    (asks for operator ID, full name, password twice). Refused if an admin already exists.
-3. Start the station, log in with that admin, open **Admin** (click your initials, top right)
-   and add operators.
+3. Check the PC: Start menu **Parkomate Station - check this PC** (`parkomate doctor`). Every
+   line must be OK or WARN - a FAIL says what to fix.
+4. Start the station, log in with that admin, open **Admin** (click your initials, top right)
+   and add operators. Then set up e-mail and press **Send test e-mail** (below).
 
 Data folder: `C:\ProgramData\Parkomate`
 
@@ -79,8 +85,33 @@ In *Report e-mail*: switch on, recipients (comma separated), sender, SMTP server
 * Microsoft 365: `smtp.office365.com`, port 587, `starttls`. Microsoft switches off password
   (basic) SMTP sign-in by default from **end of December 2026** - plan `oauth2` (see
   DECISIONS M6; token set-up comes with the full build).
-* Gmail: `smtp.gmail.com`, 587, `starttls`, an app password.
+* Gmail: `smtp.gmail.com`, 587, `starttls`, an **app password** (Google account → Security →
+  2-Step Verification on → App passwords). Store it under *Passwords and tokens* as
+  `smtp_password`.
+* Press **Reports & e-mail → Send test e-mail**: it is sent at once (not queued) and the message
+  says why when it fails.
 * Internal relay without sign-in: security `none` (the password is then never sent).
+
+### Measuring device (Wi-Fi / LAN)
+* The device and the station PC must be on the same network. The device POSTs its JSON to
+  `http://<station PC>:8765/measurement`; `parkomate doctor` and the Testing screen (while it
+  waits) show this address.
+* **Measuring device IP (or network)**: the device's fixed address, or the whole network
+  (`192.168.1.0/24`) when the router gives it changing addresses. The station PC itself is
+  always allowed.
+* **Refuse data for other stations** (on by default): with several stations on one Wi-Fi, a
+  packet whose `station` field names another station is refused - set the device's station
+  name to this PC's station name.
+* Test without the device: `parkomate measuring-device --to <station IP>` from any PC on the
+  network (**Enter** = good values, **1-4** = one value out of limits).
+
+### Repair tab
+Every rejected board opens a repair case. Anyone logged in can repair: top bar
+**Production | Repair** → choose the board → write the repair → **Test again** (the whole line
+again; the station checks the MAC) → **Accept board** after a passed retest, or **Scrap board**
+with a reason. A failed retest puts the board back as *Needs repair*. Each step is stored with
+the person and the session, and appears in the session report (**Repairs** sheet). Cases are per
+PC: the list shows the boards rejected on this station.
 
 ### Counters
 Live counters of the current session as tiles. **Reset counters** (only here, no longer on the
@@ -96,7 +127,11 @@ or firmware are ever logged).
 * **Remove 1 failure**: after a failed upload and a successful retry the operator may remove
   that one failure from the count - once per board, recorded in the audit log.
 * **Crash / power cut**: at the next start the unfinished board is marked *abandoned*, the
-  session is closed and its report queued; the login screen tells the operator.
+  session is closed and its report queued; the login screen tells the operator. A retest that
+  was running goes back to *Repaired* on the Repair tab.
+* **Updates**: run the new Setup over the old one. Settings, database and reports in
+  `C:\ProgramData\Parkomate` are kept; the database is backed up to `backups\` before it is
+  upgraded.
 * **Only one station window** can run per PC.
 * **Simulated bench**: an amber band across the top and an amber **Simulation mode** chip (the
   scenario is in its tooltip) while mock hardware is in use (`dev.use_mock_hardware`). Never use

@@ -64,6 +64,13 @@ class DeviceAbandoned(Event):
 
 
 @dataclass(frozen=True, slots=True)
+class RepairCaseChanged(Event):
+    """A repair was written, or a case was accepted / scrapped."""
+
+    case_id: int
+
+
+@dataclass(frozen=True, slots=True)
 class CountersChanged(Event):
     session_id: int
 

@@ -15,14 +15,19 @@ Login → A Programming → B Testing → C Labeling → D Packaging → Complet
   measuring device JSON: V_A 23.85-24.15, V_B 4.90-5.10, V_C 3.25-3.35, T_reg ≤ ambient + 3 °C.
 * **C Labeling** - checklist C1-C4, QR scan, device ID read / write / read-back.
 * **D Packaging** - checklist D1-D4 → complete.
-* Data stored locally (SQLite). On session close: report files + summary e-mail (outbox, retried).
+* **Repair tab** (top-bar switch *Production | Repair*) - every rejected board opens a repair
+  case: write the repair → **Test again** (the whole line A → D again, same MAC) → **Accept**
+  (only after a passed retest) or **Scrap** (with a reason). `workflow/repair.py`.
+* Data stored locally (SQLite, one database per PC). On session close: report files (Summary,
+  Devices, Checks, Rejections, Repairs) + summary e-mail (outbox, retried).
+* The measuring device POSTs JSON over Wi-Fi / LAN (format confirmed by the client).
 * UI in English and Marathi.
 
 ## Owners and folders (one codebase)
 | Owner | Folder | Role |
 |---|---|---|
-| Aditya | `src/parkomate/hardware/` | `HardwareService`: serial, esptool, server API, measuring device, camera. Today only `hardware/mocks/`. |
-| Piyush | `src/parkomate/workflow/` | `WorkflowService`: state machine, gates, limits, reject/retry. Today only `workflow/stub/` (STUB). |
+| Aditya | `src/parkomate/hardware/` | `HardwareService`: serial, esptool, server API, measuring device (HTTP listener), camera; mocks, bench test, `hybrid.py` (simulated bench + real Wi-Fi device), `measuring_sim.py` (plays the device). |
+| Piyush | `src/parkomate/workflow/` | `WorkflowEngine` (state machine, gates, limits, reject/retry) and `RepairService` (repair → retest → accept / scrap). |
 | Yugant | everything else | `core/` contracts, `config/`, `data/`, `auth/`, `reports/`, `mail/`, `i18n/`, `logging_setup.py`, `station.py`, `app.py`, `ui/` |
 
 Contracts: `src/parkomate/core/interfaces.py` + `CONTRACTS.md`. Decisions: `DECISIONS.md`
@@ -38,6 +43,11 @@ smtplib (+ XOAUTH2) · pytest / pytest-qt · ruff · mypy --strict.
 uv sync                                       # install (Python 3.12 is fetched by uv)
 uv run python -m parkomate --mock             # run the station on the simulated bench
 PARKOMATE_MOCK_SCENARIO=v_c_out_of_range uv run python -m parkomate --mock
+uv run python -m parkomate --bench-test --firmware-dir firmware\esp32-blink  # real ESP32, local build
+uv run python -m parkomate flash --firmware-dir firmware\esp32-blink         # flash once, no screens
+uv run python -m parkomate --mock --real-measuring-device   # simulated bench + REAL Wi-Fi measuring device
+uv run python -m parkomate measuring-device --to 127.0.0.1  # play the measuring device (Enter / 1-4)
+uv run python -m parkomate doctor             # is this PC ready? (OK / WARN / FAIL)
 uv run python -m parkomate admin create       # first administrator
 uv run pytest                                 # all tests (unit, integration, ui)
 uv run pytest --cov=parkomate                 # with coverage
@@ -47,6 +57,7 @@ uv run python -m parkomate.ui.screenshots --out docs/screenshots   # EN + MR PNG
 uv run python -m parkomate.ui.screenshots --design --out docs/design/after  # every state, 2 sizes
 uv run python -m parkomate --gallery          # every UI component in every state (EN / MR)
 uv run python -m parkomate.ui.gallery --out docs/design   # gallery_en.png + gallery_mr.png
+powershell -ExecutionPolicy Bypass -File packaging\build.ps1   # program folder + Setup.exe (Inno Setup)
 ```
 Use `PARKOMATE_DATA_DIR=<temp dir>` to keep experiments out of the real data folder.
 
@@ -56,7 +67,8 @@ Use `PARKOMATE_DATA_DIR=<temp dir>` to keep experiments out of the real data fol
    key to **both** files (parity test) and list new Marathi in `i18n/REVIEW.md`.
 2. **Firmware only in RAM.** The BIN lives in a `bytearray` inside the hardware service, never
    on disk, temp files, logs, reports or the DB (only name/version/SHA-256 are stored);
-   zeroed on `shutdown()`.
+   zeroed on `shutdown()`. Production firmware always comes from the server; only the bench
+   test (`--bench-test`, `flash`) *reads* a local test build (`hardware/local_firmware.py`).
 3. **Counters are computed from events.** Never store a counter number; append
    `counter_events` (`upload_success`, `upload_failure`, `failure_adjusted`, `reset`) and
    compute. `failure_adjusted` at most once per device, only after failure → success.
@@ -79,5 +91,8 @@ Use `PARKOMATE_DATA_DIR=<temp dir>` to keep experiments out of the real data fol
   settings, i18n, mocks + stub. ✅
 * **P2 UX (Yugant)** - every screen on mocks, screenshots, guides. ✅
 * **P3 full build** - real `HardwareService` (Aditya), real `WorkflowService` (Piyush),
-  composition in `app.py` (`create_hardware`), HIL tests, PyInstaller + Inno Setup installer.
-  Not started - wait for the "PROMPT 3" message.
+  composition in `app.py` (`create_hardware`), PyInstaller + Inno Setup installer
+  (`packaging/`). Written; real server / board protocol / camera still untried on the bench.
+* **Client answers (Oct 2026)** - Repair tab, Wi-Fi measuring device (network allow-list,
+  station check, simulator), `doctor`, test e-mail, Repairs report sheet, demo guide
+  (`docs/DEMO_GUIDE.md`). See DECISIONS "Client answers" and RP/MW/PK.

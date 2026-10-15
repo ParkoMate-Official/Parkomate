@@ -50,7 +50,8 @@ class ChipInfo:
 def _esptool_api() -> ModuleType:
     import esptool.cmds
 
-    return esptool.cmds
+    module: ModuleType = esptool.cmds
+    return module
 
 
 class ProgressMapper:
@@ -203,7 +204,7 @@ class EsptoolFlasher:
     @staticmethod
     def _close(esp: Any) -> None:
         try:
-            esp._port.close()  # noqa: SLF001 - esptool exposes no public close
+            esp._port.close()  # esptool exposes no public close
         except Exception:
             log.debug("closing esptool port failed", exc_info=True)
 
@@ -240,7 +241,8 @@ class EsptoolFlasher:
                     esp.change_baud(settings.flash_baud)
                 self.api.attach_flash(esp)
                 # esptool needs immutable bytes: the only copies, wiped right after.
-                payload = [(i.offset, bytes(i.data)) for i in sorted(images, key=lambda x: x.offset)]
+                ordered = sorted(images, key=lambda x: x.offset)
+                payload = [(i.offset, bytes(i.data)) for i in ordered]
                 self.api.write_flash(esp, payload, compress=True, erase_all=settings.erase_all)
                 written = sum(len(data) for _, data in payload)
                 self.api.reset_chip(esp, "hard-reset")

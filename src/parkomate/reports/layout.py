@@ -20,14 +20,18 @@ from parkomate.core.enums import (
     PRODUCTION_STAGES,
     CheckCode,
     CheckKind,
+    RepairAction,
+    RepairEventKind,
+    ScrapReason,
     Stage,
 )
-from parkomate.core.models import CheckResult, Device, SessionSummary
+from parkomate.core.models import CheckResult, Device, RepairCase, SessionSummary
 from parkomate.i18n import tr, tr_message
 from parkomate.reports.data import (
     CheckRowContext,
     DeviceRowContext,
     RejectionRowContext,
+    RepairRowContext,
     ReportData,
 )
 
@@ -217,6 +221,19 @@ SUMMARY_FIELDS: list[SummaryField] = [
     SummaryField(
         "report.summary.first_pass_yield", Kind.PERCENT, lambda s, _l, _st: s.first_pass_yield
     ),
+    SummaryField("report.summary.retests", Kind.INTEGER, lambda s, _l, _st: s.retests),
+    SummaryField(
+        "report.summary.retests_passed", Kind.INTEGER, lambda s, _l, _st: s.retests_passed
+    ),
+    SummaryField(
+        "report.summary.repairs_written", Kind.INTEGER, lambda s, _l, _st: s.repairs_written
+    ),
+    SummaryField(
+        "report.summary.repairs_accepted", Kind.INTEGER, lambda s, _l, _st: s.repairs_accepted
+    ),
+    SummaryField(
+        "report.summary.repairs_scrapped", Kind.INTEGER, lambda s, _l, _st: s.repairs_scrapped
+    ),
 ]
 
 
@@ -262,6 +279,7 @@ DEVICE_COLUMNS: list[Column[DeviceRowContext]] = [
     Column("report.col.finished", 26, Kind.TEXT, lambda r, _l: _dt(r.device.finished_at)),
     Column("report.col.duration_s", 11, Kind.NUMBER, lambda r, _l: _duration_s(r.device)),
     Column("report.col.status", 14, Kind.TEXT, lambda r, lang: tr(lang, r.device.status.label_key)),
+    Column("report.col.retest_of", 11, Kind.INTEGER, lambda r, _l: r.device.repair_case_id),
     Column(
         "report.col.programming_attempts",
         11,
@@ -439,6 +457,13 @@ REJECTION_COLUMNS: list[Column[RejectionRowContext]] = [
         "report.col.reject_reason", 52, Kind.TEXT, lambda r, lang: _reject_reason(r.device, lang)
     ),
     Column("report.col.time", 26, Kind.TEXT, lambda r, _l: _dt(r.device.finished_at)),
+    Column("report.col.repair_case", 10, Kind.INTEGER, lambda r, _l: r.case.id if r.case else None),
+    Column(
+        "report.col.repair_status",
+        16,
+        Kind.TEXT,
+        lambda r, lang: _case_status(r.case, lang),
+    ),
 ]
 
 
@@ -446,6 +471,63 @@ def build_rejections_table(data: ReportData) -> Table:
     return _table(
         "rejections", "report.sheet.rejections", REJECTION_COLUMNS, data.rejections, data.language
     )
+
+
+# ----------------------------------------------------------------------------- repairs
+
+
+def _case_status(case: RepairCase | None, lang: str) -> str:
+    return "" if case is None else tr(lang, case.status.label_key)
+
+
+def _repair_detail(row: RepairRowContext, lang: str) -> str:
+    """What was repaired / why scrapped / which check failed the retest."""
+    event, action = row.event.event, row.event.action
+    if not action:
+        return ""
+    if event is RepairEventKind.REPAIRED and action in RepairAction:
+        return tr(lang, RepairAction(action).label_key)
+    if event is RepairEventKind.SCRAPPED and action in ScrapReason:
+        return tr(lang, ScrapReason(action).label_key)
+    if action in CheckCode:
+        return _check_name(CheckCode(action), lang)
+    return action
+
+
+REPAIR_COLUMNS: list[Column[RepairRowContext]] = [
+    Column("report.col.time", 26, Kind.TEXT, lambda r, _l: _dt(r.event.created_at)),
+    Column("report.col.session_id", 9, Kind.INTEGER, lambda r, _l: r.event.session_id),
+    Column("report.col.repair_case", 10, Kind.INTEGER, lambda r, _l: r.case.id),
+    Column("report.col.device_id", 16, Kind.TEXT, lambda r, _l: r.board_id),
+    Column("report.col.mac", 19, Kind.TEXT, lambda r, _l: r.case.mac_address),
+    Column(
+        "report.col.reject_box",
+        8,
+        Kind.TEXT,
+        lambda r, _l: r.origin.reject_stage.letter if r.origin.reject_stage else "",
+    ),
+    Column(
+        "report.col.first_fault",
+        26,
+        Kind.TEXT,
+        lambda r, lang: _check_name(r.origin.reject_check_code, lang),
+    ),
+    Column("report.col.repair_step", 18, Kind.TEXT, lambda r, lang: tr(lang, r.event.event.label_key)),
+    Column("report.col.repair_detail", 30, Kind.TEXT, _repair_detail),
+    Column("report.col.note", 40, Kind.TEXT, lambda r, _l: r.event.note or ""),
+    Column("report.col.retest_row", 10, Kind.INTEGER, lambda r, _l: r.event.device_row_id),
+    Column(
+        "report.col.done_by",
+        24,
+        Kind.TEXT,
+        lambda r, _l: f"{r.operator.operator_code} - {r.operator.full_name}" if r.operator else "",
+    ),
+    Column("report.col.repair_status", 16, Kind.TEXT, lambda r, lang: _case_status(r.case, lang)),
+]
+
+
+def build_repairs_table(data: ReportData) -> Table:
+    return _table("repairs", "report.sheet.repairs", REPAIR_COLUMNS, data.repairs, data.language)
 
 
 # ----------------------------------------------------------------------------- assembly
@@ -469,12 +551,13 @@ def _table[R](
 
 
 def build_session_tables(data: ReportData) -> list[Table]:
-    """The four sheets in order: Summary, Devices, Checks, Rejections."""
+    """The five sheets in order: Summary, Devices, Checks, Rejections, Repairs."""
     return [
         build_summary_table(data),
         build_devices_table(data),
         build_checks_table(data),
         build_rejections_table(data),
+        build_repairs_table(data),
     ]
 
 
@@ -487,6 +570,7 @@ DEVICE_INFO_FIELDS: list[tuple[str, Callable[[Device, str], Any]]] = [
     ("report.col.mac", lambda d, _l: d.mac_address),
     ("report.col.firmware_version", lambda d, _l: d.firmware_version or ""),
     ("report.col.status", lambda d, lang: tr(lang, d.status.label_key)),
+    ("report.col.retest_of", lambda d, _l: d.repair_case_id or ""),
     ("report.col.started", lambda d, _l: _dt(d.started_at)),
     ("report.col.finished", lambda d, _l: _dt(d.finished_at)),
     ("report.col.duration_s", lambda d, _l: _duration_s(d)),

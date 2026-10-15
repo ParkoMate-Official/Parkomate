@@ -35,6 +35,7 @@ class ErrorCode(StrEnum):
     WHITELIST_DENIED = "WHITELIST_DENIED"
     FW_HASH_MISMATCH = "FW_HASH_MISMATCH"
     FW_NOT_LOADED = "FW_NOT_LOADED"
+    FW_LOCAL_INVALID = "FW_LOCAL_INVALID"
     # Measurement device (Aditya)
     MEAS_TIMEOUT = "MEAS_TIMEOUT"
     MEAS_BAD_DATA = "MEAS_BAD_DATA"
@@ -44,6 +45,8 @@ class ErrorCode(StrEnum):
     QR_UNREADABLE = "QR_UNREADABLE"
     QR_BAD_FORMAT = "QR_BAD_FORMAT"
     ID_WRITE_FAILED = "ID_WRITE_FAILED"
+    # Repair (Piyush)
+    REPAIR_WRONG_BOARD = "REPAIR_WRONG_BOARD"
     # Backend (Yugant)
     MAIL_FAILED = "MAIL_FAILED"
     MAIL_NOT_CONFIGURED = "MAIL_NOT_CONFIGURED"
@@ -98,6 +101,7 @@ _SEVERITY: dict[ErrorCode, Severity] = {
     ErrorCode.WHITELIST_DENIED: Severity.WARNING,
     ErrorCode.FW_HASH_MISMATCH: Severity.CRITICAL,
     ErrorCode.FW_NOT_LOADED: Severity.ERROR,
+    ErrorCode.FW_LOCAL_INVALID: Severity.ERROR,
     ErrorCode.MEAS_TIMEOUT: Severity.WARNING,
     ErrorCode.MEAS_BAD_DATA: Severity.ERROR,
     ErrorCode.MEAS_LISTEN_FAILED: Severity.CRITICAL,
@@ -115,6 +119,7 @@ _SEVERITY: dict[ErrorCode, Severity] = {
     ErrorCode.AUTH_LOCKED: Severity.WARNING,
     ErrorCode.AUTH_INACTIVE: Severity.WARNING,
     ErrorCode.AUTH_WEAK_PASSWORD: Severity.WARNING,
+    ErrorCode.REPAIR_WRONG_BOARD: Severity.WARNING,
     ErrorCode.AUTH_DUPLICATE_OPERATOR: Severity.WARNING,
     ErrorCode.PERMISSION_DENIED: Severity.WARNING,
     ErrorCode.INVALID_STATE: Severity.ERROR,

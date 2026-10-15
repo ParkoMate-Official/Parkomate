@@ -100,8 +100,12 @@ retries = 3
 # The app listens here for the measuring device's JSON (POST /measurement).
 listen_host = "0.0.0.0"
 listen_port = 8765
-# Only packets from this IP address are accepted.
+# Who may send: one IP address ("192.168.4.2") or a whole network in CIDR form
+# ("192.168.1.0/24") when the Wi-Fi router gives the device a changing address.
 allowed_ip = "192.168.4.2"
+# Several stations on one Wi-Fi network: refuse packets whose "station" field names another
+# station (packets without a "station" field are always accepted).
+check_station = true
 # HTTP path the device POSTs to. JSON body:
 # {"station": "...", "seq": 1, "ts": "...", "v_a": 24.0, "v_b": 5.0, "v_c": 3.3,
 #  "t_reg_c": 28.4, "t_amb_c": 27.1}
@@ -195,6 +199,20 @@ backup_count = 5
 [dev]
 # Use the simulated bench instead of the real hardware (same as "--mock"). Never in production.
 use_mock_hardware = false
+# Bench test (same as "--bench-test"): the real ESP32 on USB is flashed with the local build in
+# firmware_dir; server whitelist, device tests, measuring device and camera are simulated.
+# Never in production. Cannot be on together with use_mock_hardware.
+bench_test = false
+# Local firmware build for the bench test: a folder (e.g. Arduino's build\esp32 with
+# *.bootloader.bin, *.partitions.bin and the app .bin) or one application .bin file. When set,
+# the simulated bench shows this build too. Production ALWAYS downloads the firmware from the
+# server. PARKOMATE_FIRMWARE_DIR / "--firmware-dir" override it.
+firmware_dir = ""
+# With the simulated bench or the bench test: take the measurement from the REAL measuring
+# device over Wi-Fi (same as "--real-measuring-device"). The simulator
+# "python -m parkomate measuring-device --to <this PC's IP>" can play the device from another
+# PC or phone on the same network. Never needed in production (always real there).
+real_measuring_device = false
 # Mock scenario; the PARKOMATE_MOCK_SCENARIO environment variable overrides it. One of:
 # all_pass, upload_fails_then_succeeds, upload_always_fails, whitelist_denied,
 # v_c_out_of_range, temp_too_high, measurement_timeout, qr_unreadable, id_differs,

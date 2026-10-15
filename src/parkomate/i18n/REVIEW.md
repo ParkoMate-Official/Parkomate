@@ -11,7 +11,7 @@ How to review
 4. Edit `mr.json`; then change the status here to `ok`.
 5. Look at the Marathi screenshots (`docs/screenshots/mr_*.png`) for length and layout.
 
-Total keys: **689** - needs_review: **689**
+Total keys: **1030** - needs_review: **1030**
 
 ## a11y (`a11y.*`, 1)
 
@@ -1036,3 +1036,218 @@ Changed values only lost a status glyph (✓ ✕); the UI now shows an icon inst
 | `admin.cnt.since` | Counting since {since} | {since} पासून मोजणी |
 | `action.export` | Export | निर्यात करा |
 | `cli.help.gallery` | show every UI component in every state (design review) | प्रत्येक UI घटक प्रत्येक स्थितीत दाखवा (डिझाइन तपासणी) |
+
+## Bench test (October 2026)
+
+New texts for the bench test (real board, local firmware) and the `flash` command.
+
+| Key | English | Marathi |
+|---|---|---|
+| `error.fw_local_invalid.title` | Test firmware not usable | चाचणी फर्मवेअर वापरता येत नाही |
+| `error.fw_local_invalid.cause` | The local firmware folder {path} has no usable .bin file, or a file is damaged. | स्थानिक फर्मवेअर फोल्डर {path} मध्ये वापरण्यायोग्य .bin फाइल नाही, किंवा एखादी फाइल खराब आहे. |
+| `error.fw_local_invalid.action` | Check the folder given with --firmware-dir or in the settings (local firmware folder). / It must contain the build's .bin files (bootloader, partitions, app). / Press Try again. | --firmware-dir मध्ये किंवा सेटिंग्जमध्ये (स्थानिक फर्मवेअर फोल्डर) दिलेला फोल्डर तपासा. / त्यात बिल्डच्या .bin फाइल्स (bootloader, partitions, app) असाव्यात. / 'पुन्हा प्रयत्न करा' दाबा. |
+| `cli.help.bench_test` | bench test: flash the real ESP32 on USB with a local firmware build; server, device tests, measuring device and camera are simulated | बेंच चाचणी: USB वरील खऱ्या ESP32 वर स्थानिक फर्मवेअर बिल्ड फ्लॅश करा; सर्व्हर, डिव्हाइस चाचण्या, मापन उपकरण आणि कॅमेरा सिम्युलेटेड असतात |
+| `cli.help.firmware_dir` | folder with a local firmware build (or one .bin file) for --bench-test and flash | --bench-test आणि flash साठी स्थानिक फर्मवेअर बिल्डचा फोल्डर (किंवा एक .bin फाइल) |
+| `cli.help.flash` | flash the ESP32 on USB once with a local firmware build (no screens, no server) | USB वरील ESP32 वर स्थानिक फर्मवेअर बिल्ड एकदा फ्लॅश करा (स्क्रीन नाही, सर्व्हर नाही) |
+| `cli.help.port` | serial port of the board, e.g. COM5 (default: the only ESP32 USB port) | बोर्डचा सिरियल पोर्ट, उदा. COM5 (डीफॉल्ट: एकमेव ESP32 USB पोर्ट) |
+| `cli.flash.start` | Connecting to the board on {port}… | {port} वरील बोर्डशी जोडत आहे… |
+| `cli.flash.chip` | Board on {port}: {chip}, MAC {mac} | {port} वरील बोर्ड: {chip}, MAC {mac} |
+| `cli.flash.firmware` | Firmware {name} ({version}), {size} bytes: | फर्मवेअर {name} ({version}), {size} बाइट्स: |
+| `cli.flash.image` |   {name} → {offset} ({size} bytes) |   {name} → {offset} ({size} बाइट्स) |
+| `cli.flash.progress` | Flashing… {percent} % | फ्लॅश करत आहे… {percent} % |
+| `cli.flash.done` | Done in {seconds} s. The board restarted with the new firmware. | {seconds} सेकंदांत पूर्ण. बोर्ड नवीन फर्मवेअरसह पुन्हा सुरू झाला. |
+| `cli.flash.failed` | Flashing failed: {message} | फ्लॅशिंग अयशस्वी: {message} |
+| `cli.flash.ports` | Serial ports on this PC: | या PC वरील सिरियल पोर्ट: |
+| `cli.flash.esp_mark` | ESP32 USB bridge | ESP32 USB ब्रिज |
+| `settings.err.dev_modes_exclusive` | Switch on either the simulated bench or the bench test, not both | सिम्युलेटेड बेंच किंवा बेंच चाचणी यापैकी एकच चालू करा, दोन्ही नाही |
+| `settings.f.dev.bench_test` | Bench test (real board) | बेंच चाचणी (खरा बोर्ड) |
+| `settings.f.dev.firmware_dir` | Local firmware folder | स्थानिक फर्मवेअर फोल्डर |
+| `sim.tooltip_bench` | Bench test ({scenario}): the real board is flashed with firmware from a local folder. Server, device tests, measuring device and camera are simulated. | बेंच चाचणी ({scenario}): खऱ्या बोर्डवर स्थानिक फोल्डरमधील फर्मवेअर फ्लॅश होते. सर्व्हर, डिव्हाइस चाचण्या, मापन उपकरण आणि कॅमेरा सिम्युलेटेड आहेत. |
+
+## Repair tab, Wi-Fi measuring device, doctor (October 2026)
+
+New texts for the Repair tab (faulty boards: repair, test again, accept or scrap), the
+real measuring device over Wi-Fi, the measuring-device simulator, `parkomate doctor`,
+the test e-mail and the Repairs report sheet. The last row is a changed text.
+
+| Key | English | Marathi |
+|---|---|---|
+| `mode.production` | Production | उत्पादन |
+| `mode.repair` | Repair | दुरुस्ती |
+| `gate.repair_device_busy` | Finish or cancel the board on the line first | आधी लाइनवरील बोर्ड पूर्ण करा किंवा रद्द करा |
+| `retest.banner_title` | Retest of repaired board {board} | दुरुस्त बोर्ड {board} ची पुन्हा चाचणी |
+| `retest.banner_body` | MAC {mac} · repair case {case}. The board goes through every stage again. Plug in this board and press Connect board. | MAC {mac} · दुरुस्ती केस {case}. बोर्ड पुन्हा प्रत्येक टप्प्यातून जाईल. हाच बोर्ड जोडा आणि 'बोर्ड जोडा' दाबा. |
+| `action.cancel_retest` | Cancel retest | पुन्हा चाचणी रद्द करा |
+| `action.accept_board` | Accept board | बोर्ड स्वीकारा |
+| `action.scrap_board` | Scrap board | बोर्ड स्क्रॅप करा |
+| `action.save_repair` | Save repair | दुरुस्ती जतन करा |
+| `action.send_test_mail` | Send test e-mail | चाचणी ई-मेल पाठवा |
+| `confirm.cancel_retest` | Stop the retest of {board}? The board goes back to the repair list. | {board} ची पुन्हा चाचणी थांबवायची? बोर्ड दुरुस्ती यादीत परत जाईल. |
+| `repair.list_title` | Faulty boards | सदोष बोर्ड |
+| `repair.open_count` | {n} open | {n} उघडे |
+| `repair.filter.open` | Open | उघडे |
+| `repair.filter.closed` | Closed | बंद |
+| `repair.search_hint` | Scan or type board ID / MAC, then Enter | बोर्ड ID / MAC स्कॅन किंवा टाइप करा, मग Enter |
+| `repair.col.board` | Board | बोर्ड |
+| `repair.col.fault` | Fault | दोष |
+| `repair.col.status` | Status | स्थिती |
+| `repair.empty_title` | No faulty boards | कोणताही सदोष बोर्ड नाही |
+| `repair.empty_body` | Rejected boards appear here for repair. | रिजेक्ट झालेले बोर्ड दुरुस्तीसाठी येथे दिसतात. |
+| `repair.none_selected_title` | Choose a board | बोर्ड निवडा |
+| `repair.none_selected_body` | Pick a faulty board from the list, or scan its QR sticker. | यादीतून सदोष बोर्ड निवडा, किंवा त्याचे QR स्टिकर स्कॅन करा. |
+| `repair.board_info` | MAC {mac} · repair case {case} · repairs {repairs} · retests {retests} | MAC {mac} · दुरुस्ती केस {case} · दुरुस्त्या {repairs} · पुन्हा चाचण्या {retests} |
+| `repair.fault_title` | What failed | काय फेल झाले |
+| `repair.fault_again` | Failed again in the retest | पुन्हा चाचणीत परत फेल |
+| `repair.fault_line` | Box {box} · {stage} - {check} | बॉक्स {box} · {stage} - {check} |
+| `repair.fault_when` | Rejected {time} by {who} | {time} ला {who} यांनी रिजेक्ट केले |
+| `repair.steps_title` | Steps | पायऱ्या |
+| `repair.step.rejected` | Rejected | रिजेक्ट झाला |
+| `repair.step.repaired` | Repaired | दुरुस्त केला |
+| `repair.step.retested` | Tested again | पुन्हा तपासला |
+| `repair.step.decision` | Accepted or scrapped | स्वीकारला किंवा स्क्रॅप |
+| `repair.caption.when` | {time} | {time} |
+| `repair.caption.repair_now` | Repair now | आता दुरुस्त करा |
+| `repair.caption.repairs` | {n} repair(s) | {n} दुरुस्ती |
+| `repair.caption.on_line` | On the line | लाइनवर आहे |
+| `repair.caption.passed` | Passed | पास |
+| `repair.caption.failed_again` | Failed again | पुन्हा फेल |
+| `repair.caption.test_now` | Test again now | आता पुन्हा तपासा |
+| `repair.caption.accept_now` | Waiting for Accept | स्वीकारण्याची वाट |
+| `repair.entry` | {action}{note} · {time} · {who} | {action}{note} · {time} · {who} |
+| `repair.retest_failed_line` | {time} · failed at box {box}: {check} | {time} · बॉक्स {box} वर फेल: {check} |
+| `repair.retest_passed_line` | {time} · passed every stage | {time} · सर्व टप्पे पास |
+| `repair.retest_cancelled_line` | {time} · retest stopped | {time} · पुन्हा चाचणी थांबवली |
+| `repair.closing_line` | {what}{note} · {time} · {who} | {what}{note} · {time} · {who} |
+| `repair.accepted_line` | Board accepted | बोर्ड स्वीकारला |
+| `repair.form_title` | Write what you repaired | काय दुरुस्त केले ते लिहा |
+| `repair.form_help` | Save one line per repair. Then press Test again. | प्रत्येक दुरुस्तीची एक नोंद जतन करा. मग 'पुन्हा तपासा' दाबा. |
+| `repair.form.action` | What did you repair? | काय दुरुस्त केले? |
+| `repair.form.action_placeholder` | Choose the repair | दुरुस्ती निवडा |
+| `repair.form.note` | Note | टीप |
+| `repair.form.note_placeholder` | Which part, what was done (optional) | कोणता भाग, काय केले (ऐच्छिक) |
+| `repair.scrap_title` | Scrap this board | हा बोर्ड स्क्रॅप करा |
+| `repair.scrap_help` | The board is thrown away. This closes its repair case. | बोर्ड टाकून दिला जाईल. यामुळे त्याची दुरुस्ती केस बंद होईल. |
+| `repair.form.reason` | Why scrap? | स्क्रॅप का? |
+| `repair.form.reason_placeholder` | Choose the reason | कारण निवडा |
+| `repair.gate.choose_board` | Choose a board from the list | यादीतून बोर्ड निवडा |
+| `repair.gate.repair_first` | Save what you repaired first | आधी काय दुरुस्त केले ते जतन करा |
+| `repair.gate.on_line` | The board is on the line | बोर्ड लाइनवर आहे |
+| `repair.gate.already_passed` | Retest passed - accept or scrap | पुन्हा चाचणी पास - स्वीकारा किंवा स्क्रॅप करा |
+| `repair.gate.closed` | This board is closed | हा बोर्ड बंद झाला आहे |
+| `repair.gate.accept_after_pass` | Accept needs a passed retest | स्वीकारण्यासाठी पुन्हा चाचणी पास हवी |
+| `repair.gate.choose_action` | Choose what you repaired | काय दुरुस्त केले ते निवडा |
+| `repair.gate.write_note` | Write a note | टीप लिहा |
+| `repair.gate.choose_reason` | Choose a reason | कारण निवडा |
+| `repair.msg.saved` | Repair saved. | दुरुस्ती जतन झाली. |
+| `repair.msg.accepted` | Board {board} accepted. | बोर्ड {board} स्वीकारला. |
+| `repair.msg.scrapped` | Board {board} scrapped. | बोर्ड {board} स्क्रॅप केला. |
+| `repair.note_required` | Write in the note what was done. | टीपमध्ये काय केले ते लिहा. |
+| `repair.status.waiting` | Needs repair | दुरुस्ती हवी |
+| `repair.status.repaired` | Repaired | दुरुस्त केला |
+| `repair.status.retesting` | Retesting | पुन्हा चाचणी सुरू |
+| `repair.status.passed` | Retest passed | पुन्हा चाचणी पास |
+| `repair.status.accepted` | Accepted | स्वीकारला |
+| `repair.status.scrapped` | Scrapped | स्क्रॅप केला |
+| `repair.event.opened` | Rejected | रिजेक्ट झाला |
+| `repair.event.repaired` | Repaired | दुरुस्त केला |
+| `repair.event.retest_started` | Retest started | पुन्हा चाचणी सुरू |
+| `repair.event.retest_passed` | Retest passed | पुन्हा चाचणी पास |
+| `repair.event.retest_failed` | Retest failed | पुन्हा चाचणी फेल |
+| `repair.event.retest_cancelled` | Retest stopped | पुन्हा चाचणी थांबवली |
+| `repair.event.accepted` | Accepted | स्वीकारला |
+| `repair.event.scrapped` | Scrapped | स्क्रॅप केला |
+| `repair.action.sensor_replaced` | Sensor replaced | सेन्सर बदलला |
+| `repair.action.indicator_replaced` | Indicator light replaced | इंडिकेटर दिवा बदलला |
+| `repair.action.resoldered` | Joints re-soldered | जोड पुन्हा सोल्डर केले |
+| `repair.action.regulator_replaced` | Voltage regulator replaced | व्होल्टेज रेग्युलेटर बदलला |
+| `repair.action.connector_fixed` | Connector or cable fixed | कनेक्टर किंवा केबल दुरुस्त केली |
+| `repair.action.part_replaced` | Other part replaced (write which) | दुसरा भाग बदलला (कोणता ते लिहा) |
+| `repair.action.no_fault_found` | Checked - no fault found | तपासले - दोष आढळला नाही |
+| `repair.action.other` | Other (write in the note) | इतर (टीपमध्ये लिहा) |
+| `repair.scrap.not_repairable` | Cannot be repaired | दुरुस्त होऊ शकत नाही |
+| `repair.scrap.failed_again` | Failed the test again | चाचणीत पुन्हा फेल |
+| `repair.scrap.physical_damage` | Physical damage (broken / burnt) | प्रत्यक्ष नुकसान (तुटलेला / जळलेला) |
+| `repair.scrap.not_worth_it` | Repair costs too much | दुरुस्ती खूप महाग |
+| `repair.scrap.other` | Other (write in the note) | इतर (टीपमध्ये लिहा) |
+| `status.repair.scrapping` | Choose why the board is scrapped, then press Scrap board. | बोर्ड स्क्रॅप का करत आहात ते निवडा, मग 'बोर्ड स्क्रॅप करा' दाबा. |
+| `status.repair.choose` | Choose a board from the list. | यादीतून बोर्ड निवडा. |
+| `status.repair.none_open` | No faulty board is waiting. | कोणताही सदोष बोर्ड वाट पाहत नाही. |
+| `status.repair.none_closed` | No closed repair cases yet. | अजून कोणतीही बंद दुरुस्ती केस नाही. |
+| `status.repair.waiting` | Repair {board}, then write what you did. | {board} दुरुस्त करा, मग काय केले ते लिहा. |
+| `status.repair.repaired` | Press Test again, then plug in {board}. | 'पुन्हा तपासा' दाबा, मग {board} जोडा. |
+| `status.repair.retesting` | {board} is on the line. | {board} लाइनवर आहे. |
+| `status.repair.passed` | {board} passed the retest. Accept it or scrap it. | {board} पुन्हा चाचणीत पास. स्वीकारा किंवा स्क्रॅप करा. |
+| `status.repair.accepted` | {board} was accepted. | {board} स्वीकारला गेला. |
+| `status.repair.scrapped` | {board} was scrapped. | {board} स्क्रॅप केला गेला. |
+| `error.repair_wrong_board.title` | Not the board chosen for retest | पुन्हा चाचणीसाठी निवडलेला बोर्ड हा नाही |
+| `error.repair_wrong_board.cause` | The retest is for MAC {expected}, but this board is {found}. | पुन्हा चाचणी MAC {expected} साठी आहे, पण हा बोर्ड {found} आहे. |
+| `error.repair_wrong_board.action` | Plug in the repaired board and press Connect board. / Or press Cancel retest. | दुरुस्त केलेला बोर्ड जोडा आणि 'बोर्ड जोडा' दाबा. / किंवा 'पुन्हा चाचणी रद्द करा' दाबा. |
+| `test.send_to` | Measuring device sends to {url} | मापन उपकरण {url} वर पाठवते |
+| `sim.tooltip_wifi` | Simulated bench - scenario: {scenario}. The measuring device is REAL: its data comes over Wi-Fi. | सिम्युलेटेड बेंच - परिस्थिती: {scenario}. मापन उपकरण खरे आहे: त्याचा डेटा Wi-Fi वरून येतो. |
+| `sim.tooltip_bench_wifi` | Bench test ({scenario}): the real board is flashed from a local folder and the measuring device is REAL (Wi-Fi). Server, device tests and camera are simulated. | बेंच चाचणी ({scenario}): खऱ्या बोर्डवर स्थानिक फोल्डरमधून फ्लॅश होते आणि मापन उपकरण खरे आहे (Wi-Fi). सर्व्हर, डिव्हाइस चाचण्या आणि कॅमेरा सिम्युलेटेड आहेत. |
+| `settings.f.measurement.check_station` | Refuse data for other stations | इतर स्टेशनचा डेटा नाकारा |
+| `settings.f.dev.real_measuring_device` | Real measuring device (Wi-Fi) | खरे मापन उपकरण (Wi-Fi) |
+| `mail.test_subject` | Test e-mail from station {station} | स्टेशन {station} कडून चाचणी ई-मेल |
+| `mail.test_body` | This is a test e-mail from Parkomate Station {station}. If you can read it, the end-of-session reports will arrive here too. | हा Parkomate Station {station} कडून चाचणी ई-मेल आहे. हा वाचता येत असेल, तर सत्र संपल्यावरचे अहवालही येथेच येतील. |
+| `admin.out.test_sent` | Test e-mail sent to {to}. | चाचणी ई-मेल {to} ला पाठवला. |
+| `report.sheet.repairs` | Repairs | दुरुस्ती |
+| `report.col.retest_of` | Retest of case | पुन्हा चाचणी (केस) |
+| `report.col.repair_case` | Repair case | दुरुस्ती केस |
+| `report.col.repair_status` | Repair status | दुरुस्ती स्थिती |
+| `report.col.first_fault` | First fault | पहिला दोष |
+| `report.col.repair_step` | Step | पायरी |
+| `report.col.repair_detail` | Repair / reason | दुरुस्ती / कारण |
+| `report.col.note` | Note | टीप |
+| `report.col.retest_row` | Retest row | पुन्हा चाचणी ओळ |
+| `report.col.done_by` | Done by | कोणी केले |
+| `report.summary.retests` | Repaired boards tested again | पुन्हा तपासलेले दुरुस्त बोर्ड |
+| `report.summary.retests_passed` | Retests passed | पास झालेल्या पुन्हा चाचण्या |
+| `report.summary.repairs_written` | Repairs written | नोंदवलेल्या दुरुस्त्या |
+| `report.summary.repairs_accepted` | Boards accepted after repair | दुरुस्तीनंतर स्वीकारलेले बोर्ड |
+| `report.summary.repairs_scrapped` | Boards scrapped | स्क्रॅप केलेले बोर्ड |
+| `cli.help.real_measuring_device` | with --mock or --bench-test: take the measurement from the real measuring device over Wi-Fi (or its simulator) | --mock किंवा --bench-test सोबत: मापन Wi-Fi वरील खऱ्या मापन उपकरणाकडून (किंवा त्याच्या सिम्युलेटरकडून) घ्या |
+| `cli.help.measuring_device` | play the measuring device: send measurement packets to a station over the network | मापन उपकरणाची भूमिका करा: नेटवर्कवरून स्टेशनला मापन पॅकेट पाठवा |
+| `cli.help.meas_to` | IP address of the station PC (default 127.0.0.1 = this PC) | स्टेशन PC चा IP पत्ता (डीफॉल्ट 127.0.0.1 = हाच PC) |
+| `cli.help.meas_port` | station port (default: measurement.listen_port) | स्टेशन पोर्ट (डीफॉल्ट: measurement.listen_port) |
+| `cli.help.meas_station` | station name written in the packet (default: station.station_id) | पॅकेटमध्ये लिहिलेले स्टेशन नाव (डीफॉल्ट: station.station_id) |
+| `cli.help.meas_send` | send one packet of this kind and exit (no menu) | या प्रकारचे एक पॅकेट पाठवा आणि बाहेर पडा (मेनू नाही) |
+| `cli.help.doctor` | check that this PC is ready to run the station | हा PC स्टेशन चालवण्यासाठी तयार आहे का ते तपासा |
+| `cli.meas.title` | Measuring-device simulator -> {url} (station {station}) | मापन उपकरण सिम्युलेटर -> {url} (स्टेशन {station}) |
+| `cli.meas.keys` | Enter = good measurement · 1 = V_A too high · 2 = V_B too low · 3 = V_C too low · 4 = regulator too hot · q = quit | Enter = चांगले मापन · 1 = V_A जास्त · 2 = V_B कमी · 3 = V_C कमी · 4 = रेग्युलेटर जास्त गरम · q = बाहेर |
+| `cli.meas.sending` | Sending {preset}: {values} | {preset} पाठवत आहे: {values} |
+| `cli.meas.used` | OK - the station used this measurement. | OK - स्टेशनने हे मापन वापरले. |
+| `cli.meas.ignored` | Received, but the station was not waiting (start the measurement on the Testing screen first). | मिळाले, पण स्टेशन वाट पाहत नव्हते (आधी चाचणी स्क्रीनवर मापन सुरू करा). |
+| `cli.meas.refused_ip` | Refused: this PC's address is not allowed. On the station set Measuring device IP (allowed_ip) to this PC's IP or network. | नाकारले: या PC चा पत्ता परवानगीत नाही. स्टेशनवर 'मापन उपकरणाचा IP' (allowed_ip) या PC चा IP किंवा नेटवर्क ठेवा. |
+| `cli.meas.refused_station` | Refused: {message}. Use --station with the station's name. | नाकारले: {message}. स्टेशनच्या नावासह --station वापरा. |
+| `cli.meas.no_answer` | No answer: {message}. Check the IP address, that the station is running, and the Windows firewall (TCP port). | उत्तर नाही: {message}. IP पत्ता, स्टेशन चालू आहे का, आणि Windows फायरवॉल (TCP पोर्ट) तपासा. |
+| `cli.meas.other` | Station answered {status}: {message} | स्टेशनचे उत्तर {status}: {message} |
+| `cli.doctor.version` | Parkomate Station {version} (Python {python}) | Parkomate Station {version} (Python {python}) |
+| `cli.doctor.data_ok` | Data folder can be written: {path} | डेटा फोल्डरमध्ये लिहिता येते: {path} |
+| `cli.doctor.settings_default` | No settings file yet ({path}) - defaults are used | अजून सेटिंग्ज फाइल नाही ({path}) - डीफॉल्ट वापरले जातात |
+| `cli.doctor.settings_bad` | Settings file has errors: {path} - {error} | सेटिंग्ज फाइलमध्ये चुका: {path} - {error} |
+| `cli.doctor.settings_ok` | Settings file is valid: {path} | सेटिंग्ज फाइल योग्य आहे: {path} |
+| `cli.doctor.station` | Station name: {station} | स्टेशन नाव: {station} |
+| `cli.doctor.mode_mock` | Hardware: SIMULATED bench (real Wi-Fi measuring device: {wifi}) | हार्डवेअर: सिम्युलेटेड बेंच (खरे Wi-Fi मापन उपकरण: {wifi}) |
+| `cli.doctor.mode_bench` | Hardware: BENCH TEST - real board, local firmware (real Wi-Fi measuring device: {wifi}) | हार्डवेअर: बेंच चाचणी - खरा बोर्ड, स्थानिक फर्मवेअर (खरे Wi-Fi मापन उपकरण: {wifi}) |
+| `cli.doctor.mode_real` | Hardware: REAL bench (production) | हार्डवेअर: खरा बेंच (उत्पादन) |
+| `cli.doctor.db_ok` | Database OK (schema v{version}, {admins} admin account(s)) | डेटाबेस ठीक (स्कीमा v{version}, {admins} ॲडमिन खाते) |
+| `cli.doctor.no_admin` | No administrator yet (schema v{version}) - run: parkomate admin create | अजून ॲडमिन नाही (स्कीमा v{version}) - चालवा: parkomate admin create |
+| `cli.doctor.lib_esptool` | Flashing tool (esptool): {state} | फ्लॅशिंग साधन (esptool): {state} |
+| `cli.doctor.lib_serial` | Serial ports (pyserial): {state} | सिरियल पोर्ट (pyserial): {state} |
+| `cli.doctor.lib_camera` | Camera (OpenCV): {state} | कॅमेरा (OpenCV): {state} |
+| `cli.doctor.lib_qr` | QR decoder (ZBar): {state} | QR डिकोडर (ZBar): {state} |
+| `cli.doctor.lib_excel` | Excel reports (openpyxl): {state} | Excel अहवाल (openpyxl): {state} |
+| `cli.doctor.ports` | Serial ports: {ports} ({esp} ESP32 bridge(s), marked *) | सिरियल पोर्ट: {ports} ({esp} ESP32 ब्रिज, * ने दाखवलेले) |
+| `cli.doctor.no_network` | No network address found - connect this PC to the Wi-Fi / LAN | नेटवर्क पत्ता सापडला नाही - हा PC Wi-Fi / LAN ला जोडा |
+| `cli.doctor.network` | Measuring device must send to: {urls} (allowed sender: {allowed}) | मापन उपकरणाने येथे पाठवावे: {urls} (परवानगी असलेला पाठवणारा: {allowed}) |
+| `cli.doctor.port_busy` | Port {port} is in use (is the station already running?) | पोर्ट {port} वापरात आहे (स्टेशन आधीच चालू आहे का?) |
+| `cli.doctor.port_free` | Port {port} is free for the measuring device | मापन उपकरणासाठी पोर्ट {port} मोकळा आहे |
+| `cli.doctor.mail_off` | E-mail is switched off - reports stay on this PC | ई-मेल बंद आहे - अहवाल या PC वरच राहतात |
+| `cli.doctor.mail_no_password` | E-mail is on but the password is missing - run: parkomate secrets set {ref} | ई-मेल चालू आहे पण पासवर्ड नाही - चालवा: parkomate secrets set {ref} |
+| `cli.doctor.mail_ok` | E-mail: {host}:{port} -> {to} | ई-मेल: {host}:{port} -> {to} |
+| `cli.doctor.crashed` | Check failed: {error} | तपासणी अयशस्वी: {error} |
+| `cli.doctor.summary` | {failed} problem(s), {warned} warning(s). | {failed} समस्या, {warned} इशारे. |
+| `settings.f.measurement.allowed_ip` | Measuring device IP (or network) | मापन उपकरणाचा IP (किंवा नेटवर्क) |
+| `cli.meas.ask_ip` | Station PC IP address (Enter = this PC): | स्टेशन PC चा IP पत्ता (Enter = हाच PC): |
+| `repair.col.fault_cell` | {box} · {check} | {box} · {check} |
+| `cli.doctor.lib_qr_fallback` | QR decoder: ZBar missing ({state}) - the OpenCV decoder is used. For ZBar install the Microsoft Visual C++ 2013 runtime (x64). | QR डिकोडर: ZBar नाही ({state}) - OpenCV डिकोडर वापरला जातो. ZBar साठी Microsoft Visual C++ 2013 runtime (x64) इंस्टॉल करा. |

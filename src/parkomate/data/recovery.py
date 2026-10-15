@@ -4,6 +4,7 @@ Only one station process runs per PC (the UI enforces a single instance), so any
 still open at start-up belongs to a run that crashed or lost power. For each one:
 
 * every ``in_progress`` device becomes ``abandoned`` (finished at the last recorded activity);
+  a retest that was running puts its repair case back to ``repaired``;
 * the session is closed with ``end_reason = 'crash_recovered'``;
 * an audit entry is written.
 
@@ -17,6 +18,7 @@ from dataclasses import dataclass, field
 
 from parkomate.core.enums import SessionEndReason
 from parkomate.data import Repositories
+from parkomate.data.repair_links import link_finished_device
 
 log = logging.getLogger(__name__)
 
@@ -38,6 +40,10 @@ def recover_unclosed_sessions(repos: Repositories) -> RecoveryResult:
         ended_at = repos.sessions.last_activity(session.id) or repos.clock.now()
         with repos.db.transaction():
             abandoned = repos.devices.abandon_in_session(session.id, ended_at)
+            for device_row_id in abandoned:
+                link_finished_device(
+                    repos, repos.devices.require(device_row_id), session.operator_id
+                )
             repos.sessions.close(session.id, SessionEndReason.CRASH_RECOVERED, ended_at)
             repos.audit.record(
                 None,

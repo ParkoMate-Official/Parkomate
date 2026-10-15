@@ -158,6 +158,11 @@ class MeasurementSettings(_Section):
     listen_host: str = "0.0.0.0"  # noqa: S104 - the measurement device is on the bench LAN
     listen_port: int = Field(default=8765, ge=1, le=65535)
     allowed_ip: str = "192.168.4.2"
+    """Who may send: one address (``192.168.1.50``) or a whole network in CIDR form
+    (``192.168.1.0/24``) when the Wi-Fi router gives the device a changing address."""
+    check_station: bool = True
+    """Refuse packets whose ``station`` field names another station (several stations on
+    one Wi-Fi network). Packets without a ``station`` field are always accepted."""
     path: str = "/measurement"
     """HTTP path the measuring device POSTs its JSON to."""
     ambient_timeout_s: PositiveFloat = 20.0
@@ -170,11 +175,26 @@ class MeasurementSettings(_Section):
             raise PydanticCustomError("path_slash", "must start with '/'")
         return value
 
-    @field_validator("listen_host", "allowed_ip")
+    @field_validator("listen_host")
     @classmethod
     def _ip(cls, value: str) -> str:
         try:
             ipaddress.ip_address(value)
+        except ValueError as exc:
+            raise PydanticCustomError(
+                "ip_invalid", "not a valid IP address: {value}", {"value": value}
+            ) from exc
+        return value
+
+    @field_validator("allowed_ip")
+    @classmethod
+    def _ip_or_network(cls, value: str) -> str:
+        value = value.strip()
+        try:
+            if "/" in value:
+                ipaddress.ip_network(value, strict=False)
+            else:
+                ipaddress.ip_address(value)
         except ValueError as exc:
             raise PydanticCustomError(
                 "ip_invalid", "not a valid IP address: {value}", {"value": value}
@@ -326,9 +346,31 @@ class WorkflowSettings(_Section):
 class DevSettings(_Section):
     use_mock_hardware: bool = False
     """Simulated bench instead of real hardware (also ``--mock`` on the command line)."""
+    bench_test: bool = False
+    """Bench test (also ``--bench-test``): the real board on USB is flashed with the build in
+    ``firmware_dir``; server, device tests, measuring device and camera are simulated."""
+    firmware_dir: str = ""
+    """Local firmware build (folder or one ``.bin``) for the bench test - and, when set, for the
+    simulated bench. Production always downloads the firmware from the server.
+    ``PARKOMATE_FIRMWARE_DIR`` / ``--firmware-dir`` override it."""
+    real_measuring_device: bool = False
+    """With the simulated bench or the bench test: take the measurement from the REAL
+    measuring device over Wi-Fi (HTTP listener) instead of simulating it (also
+    ``--real-measuring-device``). The simulator ``python -m parkomate measuring-device`` can
+    play the device from another PC or phone on the same network."""
     mock_scenario: str = "all_pass"
     """Overridden by the PARKOMATE_MOCK_SCENARIO environment variable."""
     mock_delay_scale: float = Field(default=1.0, ge=0, le=10)
+
+    @model_validator(mode="after")
+    def _one_mode(self) -> DevSettings:
+        if self.use_mock_hardware and self.bench_test:
+            raise PydanticCustomError(
+                "dev_modes_exclusive",
+                "use_mock_hardware and bench_test cannot both be on",
+                {"keys": ["dev.use_mock_hardware", "dev.bench_test"]},
+            )
+        return self
 
 
 class Settings(BaseModel):

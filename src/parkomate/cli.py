@@ -1,6 +1,11 @@
 """Command line.
 
     python -m parkomate [--mock] [--scenario NAME] [--kiosk]   start the station UI
+    python -m parkomate --bench-test --firmware-dir DIR        real board, local firmware
+    python -m parkomate --mock --real-measuring-device         simulated bench + Wi-Fi device
+    python -m parkomate measuring-device --to IP               play the measuring device
+    python -m parkomate doctor                                 check this PC's installation
+    python -m parkomate flash [--port COM5] --firmware-dir DIR flash once, no UI (bench test)
     python -m parkomate admin create                          first-run administrator
     python -m parkomate admin unlock CODE                     unlock a locked operator
     python -m parkomate admin reset-password CODE             set a new password
@@ -19,6 +24,7 @@ from __future__ import annotations
 import argparse
 import contextlib
 import getpass
+import logging
 import os
 import sys
 from collections.abc import Sequence
@@ -28,8 +34,11 @@ from parkomate import __version__
 from parkomate.app import AppContext, build_context
 from parkomate.app_paths import ENV_DATA_DIR, ENV_SETTINGS, AppPaths
 from parkomate.config.manager import load_settings_file
-from parkomate.core.errors import ParkomateError, SettingsError
-from parkomate.core.models import Operator
+from parkomate.config.settings import Settings
+from parkomate.core.errors import HardwareError, ParkomateError, SettingsError
+from parkomate.core.models import FirmwareInfo, Operator, PortInfo
+from parkomate.hardware.local_firmware import ENV_FIRMWARE_DIR
+from parkomate.hardware.measuring_sim import PRESETS as MEASURING_PRESETS
 from parkomate.hardware.mocks.scenarios import ENV_SCENARIO, MockScenario
 from parkomate.i18n import t
 
@@ -39,7 +48,13 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     parser.add_argument("--data-dir", type=Path, help=t("cli.help.data_dir"))
     parser.add_argument("--settings", type=Path, help=t("cli.help.settings"))
-    parser.add_argument("--mock", action="store_true", help=t("cli.help.mock"))
+    modes = parser.add_mutually_exclusive_group()
+    modes.add_argument("--mock", action="store_true", help=t("cli.help.mock"))
+    modes.add_argument("--bench-test", action="store_true", help=t("cli.help.bench_test"))
+    parser.add_argument("--firmware-dir", type=Path, help=t("cli.help.firmware_dir"))
+    parser.add_argument(
+        "--real-measuring-device", action="store_true", help=t("cli.help.real_measuring_device")
+    )
     parser.add_argument(
         "--scenario",
         choices=[s.value for s in MockScenario],
@@ -75,6 +90,20 @@ def _parser() -> argparse.ArgumentParser:
     outbox = sub.add_parser("outbox", help=t("cli.help.outbox"))
     outbox_sub = outbox.add_subparsers(dest="outbox_command", required=True)
     outbox_sub.add_parser("send", help=t("cli.help.outbox_send"))
+
+    flash = sub.add_parser("flash", help=t("cli.help.flash"))
+    flash.add_argument("--port", help=t("cli.help.port"))
+    flash.add_argument(
+        "--firmware-dir", type=Path, default=argparse.SUPPRESS, help=t("cli.help.firmware_dir")
+    )
+
+    device = sub.add_parser("measuring-device", help=t("cli.help.measuring_device"))
+    device.add_argument("--to", help=t("cli.help.meas_to"))
+    device.add_argument("--port", type=int, help=t("cli.help.meas_port"))
+    device.add_argument("--station", help=t("cli.help.meas_station"))
+    device.add_argument("--send", choices=list(MEASURING_PRESETS), help=t("cli.help.meas_send"))
+
+    sub.add_parser("doctor", help=t("cli.help.doctor"))
 
     report = sub.add_parser("report", help=t("cli.help.report"))
     report.add_argument("session_id", type=int)
@@ -133,6 +162,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         os.environ[ENV_SETTINGS] = str(args.settings)
     if args.scenario:
         os.environ[ENV_SCENARIO] = args.scenario
+    if args.firmware_dir is not None:
+        os.environ[ENV_FIRMWARE_DIR] = str(args.firmware_dir.expanduser().resolve())
 
     if args.gallery:
         from parkomate.ui.gallery import run_gallery
@@ -141,7 +172,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.command is None:
         from parkomate.ui.main import run_ui
 
-        return run_ui(mock=True if args.mock else None, kiosk=args.kiosk)
+        return run_ui(
+            mock=True if args.mock else None,
+            kiosk=args.kiosk,
+            bench_test=True if args.bench_test else (False if args.mock else None),
+            real_measuring_device=True if args.real_measuring_device else None,
+        )
 
     try:
         if args.command == "settings":
@@ -149,6 +185,12 @@ def main(argv: Sequence[str] | None = None) -> int:
             load_settings_file(paths.settings_file)
             print(t("cli.settings_ok", path=str(paths.settings_file)))
             return 0
+        if args.command == "flash":
+            return _flash(args.port)
+        if args.command == "measuring-device":
+            return _measuring_device(args)
+        if args.command == "doctor":
+            return _doctor()
         ctx = build_context(mock=True, configure_logging=False)
         try:
             return _run_command(ctx, args)
@@ -157,6 +199,126 @@ def main(argv: Sequence[str] | None = None) -> int:
     except ParkomateError as exc:
         _print_error(exc)
         return 1
+
+
+def _print_ports(ports: list[PortInfo]) -> None:
+    print(t("cli.flash.ports"), file=sys.stderr)
+    for port in ports:
+        mark = f"  ({t('cli.flash.esp_mark')})" if port.is_esp_candidate else ""
+        print(f"  {port.name}  {port.description}{mark}", file=sys.stderr)
+
+
+def _flash(wanted_port: str | None) -> int:
+    """Flash the board once with the local build - bench test without the UI."""
+    from parkomate.hardware.bench import flash_folder, list_ports, pick_port
+    from parkomate.hardware.firmware import FirmwareImage
+    from parkomate.hardware.flasher import ChipInfo
+    from parkomate.hardware.local_firmware import LocalFirmwareSource
+
+    logging.getLogger("parkomate").addHandler(logging.NullHandler())  # console = t() texts only
+    settings_file = AppPaths.default().settings_file
+    settings = load_settings_file(settings_file) if settings_file.exists() else Settings()
+    LocalFirmwareSource(lambda: settings).plan()  # a wrong folder fails before the board is touched
+    ports = list_ports()
+    try:
+        port = pick_port(ports, wanted_port)
+    except HardwareError:
+        _print_ports(ports)
+        raise
+
+    def ready(chip: ChipInfo, info: FirmwareInfo, images: list[FirmwareImage]) -> None:
+        print(t("cli.flash.chip", port=port, chip=chip.description, mac=chip.mac))
+        print(t("cli.flash.firmware", name=info.name, version=info.version, size=info.size))
+        for image in images:
+            print(
+                t(
+                    "cli.flash.image",
+                    name=image.name,
+                    offset=f"0x{image.offset:X}",
+                    size=len(image.data),
+                )
+            )
+
+    def progress(percent: int) -> None:
+        print("\r" + t("cli.flash.progress", percent=percent), end="", flush=True)
+
+    print(t("cli.flash.start", port=port))
+    report = flash_folder(lambda: settings, port, progress, on_ready=ready)
+    print()
+    if report.result.success:
+        print(t("cli.flash.done", seconds=report.result.duration_s))
+        return 0
+    print(t("cli.flash.failed", message=report.result.message), file=sys.stderr)
+    return 1
+
+
+def _current_settings() -> Settings:
+    settings_file = AppPaths.default().settings_file
+    return load_settings_file(settings_file) if settings_file.exists() else Settings()
+
+
+def _measuring_device(args: argparse.Namespace) -> int:
+    """Play the measuring device: POST measurement packets to a station over the network."""
+    import itertools
+
+    from parkomate.hardware.measuring_sim import make_packet, send_packet, station_url
+
+    settings = _current_settings()
+    host = args.to
+    if host is None:  # the Start-menu shortcut: ask (Enter = this PC)
+        host = "127.0.0.1" if args.send else (input(t("cli.meas.ask_ip")).strip() or "127.0.0.1")
+    url = station_url(
+        host, args.port or settings.measurement.listen_port, settings.measurement.path
+    )
+    station = args.station or settings.station.station_id
+    seq = itertools.count(1)
+
+    def send(preset: str) -> int:
+        packet = make_packet(preset, station=station, seq=next(seq))
+        values = ", ".join(f"{k}={packet[k]}" for k in ("v_a", "v_b", "v_c", "t_reg_c", "t_amb_c"))
+        print(t("cli.meas.sending", preset=preset, values=values))
+        result = send_packet(url, packet)
+        key = {
+            200: "cli.meas.used",
+            202: "cli.meas.ignored",
+            403: "cli.meas.refused_ip",
+            409: "cli.meas.refused_station",
+        }.get(result.status, "cli.meas.no_answer" if result.status == 0 else "cli.meas.other")
+        print("  " + t(key, status=result.status, message=result.message))
+        return 0 if result.status in (200, 202) else 1
+
+    print(t("cli.meas.title", url=url, station=station))
+    if args.send:
+        return send(args.send)
+    keys = dict(zip(("", "1", "2", "3", "4"), MEASURING_PRESETS, strict=True))
+    print(t("cli.meas.keys"))
+    while True:
+        try:
+            choice = input("> ").strip().lower()
+        except (EOFError, KeyboardInterrupt):
+            print()
+            return 0
+        if choice in ("q", "quit", "exit"):
+            return 0
+        preset = keys.get(choice)
+        if preset is None:
+            print(t("cli.meas.keys"))
+            continue
+        send(preset)
+
+
+def _doctor() -> int:
+    from parkomate.doctor import Level, run_checks
+
+    marks = {Level.OK: "OK  ", Level.WARN: "WARN", Level.FAIL: "FAIL"}
+    findings = run_checks()
+    for finding in findings:
+        print(f"[{marks[finding.level]}] {t(finding.key, **finding.params)}")
+    failed = sum(1 for f in findings if f.level is Level.FAIL)
+    warned = sum(1 for f in findings if f.level is Level.WARN)
+    print()
+    print(t("cli.doctor.summary", failed=failed, warned=warned))
+    return 1 if failed else 0
 
 
 def _run_command(ctx: AppContext, args: argparse.Namespace) -> int:

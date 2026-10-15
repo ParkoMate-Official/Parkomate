@@ -86,7 +86,7 @@ def test_excel_report_sheets_and_cells(
     assert len(paths) == 1 and paths[0].suffix == ".xlsx"
     assert paths[0].name.startswith(f"session-{finished_session}_ST-TEST_")
     wb = load_workbook(paths[0])
-    assert wb.sheetnames == ["Summary", "Devices", "Checks", "Rejections"]
+    assert wb.sheetnames == ["Summary", "Devices", "Checks", "Rejections", "Repairs"]
 
     summary = {row[0]: row[1] for row in _rows(wb["Summary"])[1:]}
     assert summary["Operator"] == "OP1 - Omkar Operator"
@@ -154,6 +154,7 @@ def test_csv_report_utf8_bom_marathi(
         "checks.csv",
         "devices.csv",
         "rejections.csv",
+        "repairs.csv",
         "summary.csv",
     ]
     rejections = next(p for p in paths if p.name.endswith("_rejections.csv"))
@@ -172,7 +173,7 @@ def test_both_formats(
     open_session: ProductionRecords, finished_session: int, tmp_path: Path
 ) -> None:
     paths = _exporter(open_session, tmp_path, fmt="both").export_session(finished_session)
-    assert len(paths) == 5
+    assert len(paths) == 6  # one workbook + one CSV per sheet
 
 
 def test_device_report(

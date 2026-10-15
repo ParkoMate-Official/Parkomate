@@ -83,14 +83,28 @@ The screen is also in Marathi: press **मराठी** at the top. The app rem
 2. Put the board in **that reject box**.
 3. Press **Device placed in box** (Enter).
 
-## 8. Something went wrong
+## 8. Repair a faulty board
+
+1. Top bar: switch **Production | Repair** to **Repair**. The rejected boards are listed. Scan
+   the board's QR sticker or type its ID / MAC to find it.
+2. Read **What failed** (box, check, value).
+3. Repair the board. Under **Write what you repaired** choose what you did, add a note if
+   needed, press **Save repair**.
+4. Press **Test again** (Enter). Plug in the **same** board and press **Connect board**. The
+   board goes through Programming, Testing, Labeling and Packaging again.
+5. Passed? The station comes back to the Repair tab: press **Accept board**.
+   Failed again? It is back in the list - repair it again, or **Scrap board** and choose why.
+
+**Cancel retest** (yellow bar) stops a retest; the board goes back to the list.
+
+## 9. Something went wrong
 
 ![Error](screenshots/en_19_error_measurement_timeout.png)
 
 Do the numbered steps, then press the button on the right (**Try again**, **Measure again**,
 **Scan again** …). If it keeps happening, call the supervisor and show the screen.
 
-## 9. End of shift
+## 10. End of shift
 
 1. Click your initials (top right) → **Log out** (or **Session details** → **End session**),
    then **End session** again to confirm.

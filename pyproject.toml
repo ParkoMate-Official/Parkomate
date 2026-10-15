@@ -134,3 +134,8 @@ warn_required_dynamic_aliases = true
 [[tool.mypy.overrides]]
 module = ["keyring", "keyring.*"]
 ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+# hardware libraries without type information (esptool, ZBar, pyserial)
+module = ["esptool", "esptool.*", "pyzbar", "pyzbar.*", "serial", "serial.*"]
+ignore_missing_imports = true

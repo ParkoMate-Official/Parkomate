@@ -27,6 +27,8 @@ from parkomate.core.enums import (
 )
 from parkomate.core.errors import SettingsError
 from parkomate.data.records import ProductionRecords
+from parkomate.hardware import RealHardwareService
+from parkomate.hardware.hybrid import RealMeasuringDevice
 from parkomate.hardware.mocks import MockHardwareService, MockScenario
 
 PASSWORD = "secret-pass-1"
@@ -247,11 +249,25 @@ def test_email_outbox_survives_offline_and_recovery(data_dir: Path) -> None:
     restarted.close()
 
 
-def test_real_hardware_not_available_yet() -> None:
-    with pytest.raises(SettingsError):
-        create_hardware(Settings(), mock=False)
-    hardware, mocked = create_hardware(Settings(), mock=None)
-    assert mocked and isinstance(hardware, MockHardwareService)
+def test_hardware_selection() -> None:
+    """Real bench by default; --mock simulates it; --real-measuring-device puts the Wi-Fi
+    measuring device on top of a simulated mode only."""
+    settings = Settings()
+    secrets = MemorySecretStore()
+    real, simulated = create_hardware(lambda: settings, secrets, mock=None)
+    assert not simulated and isinstance(real, RealHardwareService)
+    wifi_real, _ = create_hardware(lambda: settings, secrets, mock=None, real_measuring_device=True)
+    assert isinstance(wifi_real, RealHardwareService)  # already real: nothing to add
+    mock, simulated = create_hardware(lambda: settings, secrets, mock=True)
+    assert simulated and isinstance(mock, MockHardwareService)
+    hybrid, simulated = create_hardware(
+        lambda: settings, secrets, mock=True, real_measuring_device=True
+    )
+    assert simulated and isinstance(hybrid, RealMeasuringDevice)
+    assert isinstance(hybrid.inner, MockHardwareService)
+    assert hybrid.real_measuring_device
+    for hardware in (real, wifi_real, mock, hybrid):
+        hardware.shutdown()
 
 
 def test_invalid_settings_refuse_start(data_dir: Path) -> None:
@@ -299,7 +315,7 @@ def test_cli_settings_outbox_report(
     assert "switched off" in capsys.readouterr().out
     out_dir = data_dir / "export"
     assert cli_main(["report", str(session.id), "--format", "csv", "--out", str(out_dir)]) == 0
-    assert len(list(out_dir.glob("*.csv"))) == 4
+    assert len(list(out_dir.glob("*.csv"))) == 5  # one per sheet
     assert cli_main(["report", "999"]) == 1
 
     stored: dict[str, str] = {}
@@ -333,3 +349,21 @@ def test_records_station_follows_settings(ctx: AppContext) -> None:
     ctx.settings_manager.save(raw, admin)
     assert ctx.records.station_id == "BENCH-9"
     assert isinstance(ctx.records, ProductionRecords)
+
+
+def test_cli_measuring_device_and_doctor(
+    data_dir: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    import socket
+
+    with socket.socket() as sock:
+        sock.bind(("127.0.0.1", 0))
+        port = sock.getsockname()[1]
+    # nobody listens on that port: the simulator explains instead of crashing
+    code = cli_main(["measuring-device", "--port", str(port), "--send", "v_c_low"])
+    out = capsys.readouterr().out
+    assert code == 1
+    assert "v_c=3.1" in out and "No answer" in out
+    assert cli_main(["doctor"]) == 1  # fresh data folder: no administrator yet
+    out = capsys.readouterr().out
+    assert "[FAIL] No administrator yet" in out and "problem(s)" in out

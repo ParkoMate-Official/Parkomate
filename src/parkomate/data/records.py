@@ -15,7 +15,6 @@ Counters are never stored: they are computed from ``counter_events``.
 from __future__ import annotations
 
 import logging
-import re
 import threading
 from collections.abc import Mapping
 from typing import Any
@@ -26,12 +25,13 @@ from parkomate.core.enums import (
     CounterEvent,
     DeviceStatus,
     IdEntryMethod,
+    RepairEventKind,
+    RepairStatus,
     Role,
     SessionEndReason,
     Stage,
 )
-from parkomate.core.errors import InputError, PermissionDeniedError, RecordStateError
-from parkomate.core.mac import normalise_mac
+from parkomate.core.errors import ErrorCode, InputError, PermissionDeniedError, RecordStateError
 from parkomate.core.events import (
     AmbientMeasured,
     CountersChanged,
@@ -40,6 +40,7 @@ from parkomate.core.events import (
     SessionEnded,
     SessionStarted,
 )
+from parkomate.core.mac import normalise_mac
 from parkomate.core.models import (
     AmbientReading,
     CheckResult,
@@ -53,12 +54,14 @@ from parkomate.core.models import (
     StageTransition,
 )
 from parkomate.data import Repositories
+from parkomate.data.repair_links import link_finished_device
 from parkomate.i18n import tr_message
 
 log = logging.getLogger(__name__)
 
 RECORD_LANGUAGE = "en"
 """Language of the human-readable ``reject_reason`` stored with a device."""
+
 
 class ProductionRecords:
     def __init__(
@@ -106,6 +109,10 @@ class ProductionRecords:
             raise RecordStateError("no open session")
         return session
 
+    def _operator_id(self) -> int | None:
+        with self._lock:
+            return self._operator.id if self._operator is not None else None
+
     def require_operator(self) -> Operator:
         with self._lock:
             if self._operator is None:
@@ -139,6 +146,10 @@ class ProductionRecords:
             now = self._repos.clock.now()
             with self._repos.db.transaction():
                 abandoned = self._repos.devices.abandon_in_session(session.id, now)
+                for device_row_id in abandoned:
+                    link_finished_device(
+                        self._repos, self._repos.devices.require(device_row_id), operator.id
+                    )
                 self._repos.sessions.close(session.id, reason, now)
                 self._repos.audit.record(
                     operator.id,
@@ -180,19 +191,55 @@ class ProductionRecords:
         return self._repos.sessions.latest_ambient(session.id)
 
     # ------------------------------------------------------------------ devices
-    def start_device(self, mac: str, *, firmware_version: str | None = None) -> int:
-        """Register a new board on the bench. Returns the device row id."""
+    def start_device(
+        self,
+        mac: str,
+        *,
+        firmware_version: str | None = None,
+        repair_case_id: int | None = None,
+    ) -> int:
+        """Register a new board on the bench. Returns the device row id.
+
+        With ``repair_case_id`` the run is the retest of a repaired board: the case must be
+        ``repaired`` and the board on the bench must have the case's MAC
+        (``REPAIR_WRONG_BOARD`` otherwise).
+        """
         normalised = normalise_mac(mac)
         with self._lock:
             session = self.require_session()
+            operator = self.require_operator()
             active = self._repos.devices.active_for_session(session.id)
             if active is not None:
                 raise RecordStateError(
                     f"device row {active.id} is still in progress; finish it first",
                     context={"device_row_id": active.id},
                 )
-            device = self._repos.devices.create(session.id, normalised, firmware_version)
-        log.info("device %s started (row %d)", normalised, device.id)
+            if repair_case_id is None:
+                device = self._repos.devices.create(session.id, normalised, firmware_version)
+            else:
+                case = self._repos.repairs.require(repair_case_id)
+                if case.mac_address != normalised:
+                    raise RecordStateError(
+                        f"board {normalised} is not the board of repair case {case.id}",
+                        code=ErrorCode.REPAIR_WRONG_BOARD,
+                        params={"expected": case.mac_address, "found": normalised},
+                    )
+                with self._repos.db.transaction():
+                    self._repos.repairs.set_status(
+                        case.id, RepairStatus.RETESTING, expected=(RepairStatus.REPAIRED,)
+                    )
+                    device = self._repos.devices.create(
+                        session.id, normalised, firmware_version, repair_case_id=case.id
+                    )
+                    self._repos.repairs.add_event(
+                        case.id,
+                        RepairEventKind.RETEST_STARTED,
+                        session_id=session.id,
+                        operator_id=operator.id,
+                        device_row_id=device.id,
+                    )
+        retest = f", retest of repair case {repair_case_id}" if repair_case_id else ""
+        log.info("device %s started (row %d%s)", normalised, device.id, retest)
         return device.id
 
     def get_device(self, device_row_id: int) -> Device:
@@ -285,10 +332,12 @@ class ProductionRecords:
     def complete_device(self, device_row_id: int) -> Device:
         with self._lock:
             self._require_in_progress(device_row_id)
-            self._repos.devices.finish(
-                device_row_id, DeviceStatus.COMPLETE, self._repos.clock.now()
-            )
-            device = self._repos.devices.require(device_row_id)
+            with self._repos.db.transaction():
+                self._repos.devices.finish(
+                    device_row_id, DeviceStatus.COMPLETE, self._repos.clock.now()
+                )
+                device = self._repos.devices.require(device_row_id)
+                link_finished_device(self._repos, device, self._operator_id())
         self._publish_counters()
         return device
 
@@ -311,16 +360,18 @@ class ProductionRecords:
         reason_text = tr_message(RECORD_LANGUAGE, reason_key, params)
         with self._lock:
             self._require_in_progress(device_row_id)
-            self._repos.devices.reject(
-                device_row_id,
-                stage=stage,
-                check_code=check_code,
-                reason=reason_text,
-                reason_key=reason_key,
-                reason_params=params,
-                finished_at=self._repos.clock.now(),
-            )
-            device = self._repos.devices.require(device_row_id)
+            with self._repos.db.transaction():
+                self._repos.devices.reject(
+                    device_row_id,
+                    stage=stage,
+                    check_code=check_code,
+                    reason=reason_text,
+                    reason_key=reason_key,
+                    reason_params=params,
+                    finished_at=self._repos.clock.now(),
+                )
+                device = self._repos.devices.require(device_row_id)
+                link_finished_device(self._repos, device, self._operator_id())
         log.info(
             "device row %d rejected at %s (%s): %s",
             device_row_id,
@@ -350,10 +401,12 @@ class ProductionRecords:
     def abandon_device(self, device_row_id: int) -> Device:
         with self._lock:
             self._require_in_progress(device_row_id)
-            self._repos.devices.finish(
-                device_row_id, DeviceStatus.ABANDONED, self._repos.clock.now()
-            )
-            device = self._repos.devices.require(device_row_id)
+            with self._repos.db.transaction():
+                self._repos.devices.finish(
+                    device_row_id, DeviceStatus.ABANDONED, self._repos.clock.now()
+                )
+                device = self._repos.devices.require(device_row_id)
+                link_finished_device(self._repos, device, self._operator_id())
         self._bus.publish(DeviceAbandoned(device_row_id))
         return device
 

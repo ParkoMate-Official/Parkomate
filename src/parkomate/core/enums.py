@@ -245,6 +245,78 @@ PACKAGING_CHECKLIST: tuple[CheckCode, ...] = (
 VOLTAGE_CHECKS: tuple[CheckCode, ...] = (CheckCode.B3_V_A, CheckCode.B3_V_B, CheckCode.B3_V_C)
 
 
+class RepairStatus(StrEnum):
+    """Where a faulty board is: repair → test again → accept or scrap."""
+
+    WAITING = "waiting"  # rejected (or failed its retest): needs repair
+    REPAIRED = "repaired"  # repair written: ready to test again
+    RETESTING = "retesting"  # on the line again
+    PASSED = "passed"  # retest passed every stage: waiting for Accept
+    ACCEPTED = "accepted"  # closed - good board
+    SCRAPPED = "scrapped"  # closed - thrown away
+
+    @property
+    def label_key(self) -> str:
+        return f"repair.status.{self.value}"
+
+    @property
+    def is_open(self) -> bool:
+        return self not in (RepairStatus.ACCEPTED, RepairStatus.SCRAPPED)
+
+
+class RepairEventKind(StrEnum):
+    OPENED = "opened"
+    REPAIRED = "repaired"
+    RETEST_STARTED = "retest_started"
+    RETEST_PASSED = "retest_passed"
+    RETEST_FAILED = "retest_failed"
+    RETEST_CANCELLED = "retest_cancelled"
+    ACCEPTED = "accepted"
+    SCRAPPED = "scrapped"
+
+    @property
+    def label_key(self) -> str:
+        return f"repair.event.{self.value}"
+
+
+class RepairAction(StrEnum):
+    """What the technician did to the board (list to be confirmed with the client)."""
+
+    SENSOR_REPLACED = "sensor_replaced"
+    INDICATOR_REPLACED = "indicator_replaced"
+    RESOLDERED = "resoldered"
+    REGULATOR_REPLACED = "regulator_replaced"
+    CONNECTOR_FIXED = "connector_fixed"
+    PART_REPLACED = "part_replaced"
+    NO_FAULT_FOUND = "no_fault_found"
+    OTHER = "other"
+
+    @property
+    def label_key(self) -> str:
+        return f"repair.action.{self.value}"
+
+    @property
+    def needs_note(self) -> bool:
+        """The technician must write which part / what was done."""
+        return self in (RepairAction.PART_REPLACED, RepairAction.OTHER)
+
+
+class ScrapReason(StrEnum):
+    NOT_REPAIRABLE = "not_repairable"
+    FAILED_AGAIN = "failed_again"
+    PHYSICAL_DAMAGE = "physical_damage"
+    NOT_WORTH_IT = "not_worth_it"
+    OTHER = "other"
+
+    @property
+    def label_key(self) -> str:
+        return f"repair.scrap.{self.value}"
+
+    @property
+    def needs_note(self) -> bool:
+        return self is ScrapReason.OTHER
+
+
 class IdentityStatus(StrEnum):
     """Result of comparing the QR ID with the ID stored in the device."""
 

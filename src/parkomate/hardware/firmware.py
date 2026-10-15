@@ -22,6 +22,7 @@ import os
 import sys
 import threading
 from dataclasses import dataclass
+from typing import Protocol
 
 from parkomate.core.models import FirmwareInfo
 
@@ -37,6 +38,12 @@ class FirmwareImage:
     locked: bool = False
 
 
+class FirmwareSource(Protocol):
+    """Where the firmware comes from: the server (production) or a local build (bench test)."""
+
+    def fetch_firmware(self) -> tuple[FirmwareInfo, list[FirmwareImage]]: ...
+
+
 def _address(buf: bytearray) -> int:
     return ctypes.addressof((ctypes.c_char * len(buf)).from_buffer(buf))
 
@@ -46,7 +53,7 @@ def lock_memory(buf: bytearray) -> bool:
     if os.name != "nt" or not buf:
         return False
     try:
-        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)  # type: ignore[attr-defined]
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)  # type: ignore[attr-defined,unused-ignore]
         ok = bool(kernel32.VirtualLock(ctypes.c_void_p(_address(buf)), ctypes.c_size_t(len(buf))))
     except (OSError, AttributeError, ValueError):
         return False
@@ -59,7 +66,7 @@ def unlock_memory(buf: bytearray) -> None:
     if os.name != "nt" or not buf:
         return
     try:
-        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)  # type: ignore[attr-defined]
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)  # type: ignore[attr-defined,unused-ignore]
         kernel32.VirtualUnlock(ctypes.c_void_p(_address(buf)), ctypes.c_size_t(len(buf)))
     except (OSError, AttributeError, ValueError):
         log.debug("VirtualUnlock failed", exc_info=True)

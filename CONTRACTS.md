@@ -63,7 +63,9 @@ The brain: stage order, stage gates, limit checks, reject / retry / complete. It
 result through `ProductionRecords` (Yugant) and publishes events on the shared `EventBus`.
 
 ```python
-start_device(mac) -> DeviceState                      # new device at PROGRAMMING
+start_device(mac, *, repair_case_id=None) -> DeviceState   # new device at PROGRAMMING;
+                                                      # with repair_case_id: retest of a
+                                                      # repaired board (same MAC required)
 current_device() -> DeviceState | None                # None = bench idle
 current_stage() -> Stage                              # PROGRAMMING when idle
 abandon_device() -> None                              # session ends with a board on the bench

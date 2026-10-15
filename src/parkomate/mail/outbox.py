@@ -119,6 +119,20 @@ class OutboxService:
             log.info("outbox item %d sent", item.id)
             return True
 
+    def send_test(self, actor: Operator, *, station_id: str, lang: str) -> list[str]:
+        """Admin action: send a test message now (not queued). Returns the recipients;
+        raises ``MailError`` / ``SecretMissingError`` with the reason when it fails."""
+        from parkomate.mail.compose import compose_test_email
+
+        require_admin(actor)
+        settings = self._settings()
+        if not settings.enabled or not settings.host:
+            raise MailError("e-mail is disabled or has no host", code=ErrorCode.MAIL_NOT_CONFIGURED)
+        with self._send_lock:
+            self._mailer.send(compose_test_email(settings, station_id=station_id, lang=lang))
+        self._repos.audit.record(actor.id, "mail.test", {"recipients": settings.recipients})
+        return list(settings.recipients)
+
     def resend(self, actor: Operator, item_id: int) -> bool:
         """Admin action: put a (failed or pending) item back in the queue and send now."""
         require_admin(actor)

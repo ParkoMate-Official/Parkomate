@@ -384,6 +384,7 @@ class SettingsTab(QWidget):
     def _field_row(self, dotted: str, info: Any) -> _FieldRow:
         editor, dot, error = self._field_parts(dotted, info)
         label = Text("", "body")
+        label.set_key(f"settings.f.{dotted}")  # wraps to as many lines as its longest translation
         self.labels[dotted] = label
         return _FieldRow(label, [editor], [dot], [error])
 
@@ -1015,8 +1016,13 @@ class ReportsTab(QWidget):
             "action.send_pending", variant="outlined", size="compact", icon="mail"
         )
         self.send_now.clicked.connect(self._send_now)
+        self.test_mail = AppButton(
+            "action.send_test_mail", variant="outlined", size="compact", icon="send"
+        )
+        self.test_mail.clicked.connect(self._send_test)
         buttons.addWidget(self.open_folder)
         buttons.addStretch(1)
+        buttons.addWidget(self.test_mail)
         buttons.addWidget(self.resend)
         buttons.addWidget(self.send_now)
         card.body.addLayout(buttons)
@@ -1147,6 +1153,23 @@ class ReportsTab(QWidget):
             on_success=done,
             on_error=self.result.fail,
             name="resend",
+        )
+
+    def _send_test(self) -> None:
+        operator = self.c.operator
+        if operator is None:
+            return
+        outbox = self.c.ctx.outbox
+        station = self.c.settings.station.station_id
+        lang = self.c.settings.reports.language
+        self.result.info(t("admin.rep.working"))
+        self.c.bg.submit(
+            lambda: outbox.send_test(operator, station_id=station, lang=lang),
+            on_success=lambda to: self.result.ok(
+                t("admin.out.test_sent", to=", ".join(str(a) for a in to))
+            ),
+            on_error=self.result.fail,
+            name="test_mail",
         )
 
     def _send_now(self) -> None:

@@ -25,6 +25,8 @@ from parkomate.core.enums import (
     IdentityStatus,
     IdEntryMethod,
     OutboxStatus,
+    RepairEventKind,
+    RepairStatus,
     Role,
     SessionEndReason,
     Stage,
@@ -104,6 +106,12 @@ class Device(_Frozen):
     reject_reason_params: dict[str, Any] = Field(default_factory=dict)
     programming_attempts: int = 0
     id_entry_method: IdEntryMethod | None = None
+    repair_case_id: int | None = None
+    """Set on a retest: the repair case this run belongs to."""
+
+    @property
+    def is_retest(self) -> bool:
+        return self.repair_case_id is not None
 
 
 class CheckResult(_Frozen):
@@ -170,6 +178,31 @@ class OutboxItem(_Frozen):
     next_attempt_at: datetime | None = None
 
 
+class RepairCase(_Frozen):
+    """One faulty board: opened by its reject, closed by Accept or Scrap."""
+
+    id: int
+    device_row_id: int
+    """The devices row whose reject opened the case."""
+    mac_address: str
+    status: RepairStatus
+    opened_at: datetime
+    closed_at: datetime | None = None
+
+
+class RepairEventRecord(_Frozen):
+    id: int
+    case_id: int
+    event: RepairEventKind
+    session_id: int | None = None
+    operator_id: int | None = None
+    device_row_id: int | None = None
+    action: str | None = None
+    """``RepairAction`` value (repaired) or ``ScrapReason`` value (scrapped)."""
+    note: str | None = None
+    created_at: datetime
+
+
 class AuditEntry(_Frozen):
     id: int
     operator_id: int | None = None
@@ -196,6 +229,14 @@ class SessionSummary(_Frozen):
     counter_resets: int = 0
     first_pass_complete: int = 0
     """Completed devices that never had an upload failure (numerator of first-pass yield)."""
+    first_pass_finished: int | None = None
+    """Finished first runs (complete + rejected, retests excluded); ``None`` = all finished."""
+    retests: int = 0
+    """Repaired boards that ran through the line again in this session."""
+    retests_passed: int = 0
+    repairs_written: int = 0
+    repairs_accepted: int = 0
+    repairs_scrapped: int = 0
 
     @property
     def rejected_total(self) -> int:
@@ -211,9 +252,14 @@ class SessionSummary(_Frozen):
 
         ``devices completed without any upload failure / devices that finished
         (complete + rejected)``. Abandoned and in-progress devices are excluded because they
-        never reached a pass/fail verdict. ``None`` when no device finished.
+        never reached a pass/fail verdict, and so are retests of repaired boards (not a first
+        pass). ``None`` when no device finished.
         """
-        finished = self.complete + self.rejected_total
+        finished = (
+            self.complete + self.rejected_total
+            if self.first_pass_finished is None
+            else self.first_pass_finished
+        )
         if finished == 0:
             return None
         return round(100.0 * self.first_pass_complete / finished, 1)
@@ -351,6 +397,8 @@ class DeviceState(_Frozen):
 
     device_row_id: int
     mac_address: str
+    repair_case_id: int | None = None
+    """Set when this run is the retest of a repaired board."""
     device_id: str | None = None
     qr_id: str | None = None
     stage: Stage

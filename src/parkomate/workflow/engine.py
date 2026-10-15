@@ -82,6 +82,7 @@ class _Active:
     device_row_id: int
     mac_address: str
     started_at: datetime
+    repair_case_id: int | None = None
     stage: Stage = Stage.PROGRAMMING
     status: DeviceStatus = DeviceStatus.IN_PROGRESS
     attempts: dict[CheckCode, int] = field(default_factory=dict)
@@ -122,13 +123,15 @@ class WorkflowEngine:
         return RetryPolicy(self._settings())
 
     # ================================================================== lifecycle
-    def start_device(self, mac: str) -> DeviceState:
+    def start_device(self, mac: str, *, repair_case_id: int | None = None) -> DeviceState:
         with self._lock:
             if self._active is not None and self._active.status is DeviceStatus.IN_PROGRESS:
                 raise RecordStateError("a device is already on the bench")
-            row_id = self._records.start_device(mac)
+            row_id = self._records.start_device(mac, repair_case_id=repair_case_id)
             device = self._records.get_device(row_id)
-            self._active = _Active(row_id, device.mac_address, device.started_at)
+            self._active = _Active(
+                row_id, device.mac_address, device.started_at, device.repair_case_id
+            )
             self._records.record_transition(row_id, None, Stage.PROGRAMMING)
             snapshot = self._snapshot()
         self._bus.publish(DeviceStarted(row_id, device.mac_address))
@@ -191,9 +194,7 @@ class WorkflowEngine:
             active = self._active
             if active is None or active.status is not DeviceStatus.IN_PROGRESS:
                 return []
-            return [
-                c for c in self.required_checks(active.stage) if not self._satisfied(active, c)
-            ]
+            return [c for c in self.required_checks(active.stage) if not self._satisfied(active, c)]
 
     def is_stage_complete(self, stage: Stage) -> bool:
         with self._lock:
@@ -285,7 +286,11 @@ class WorkflowEngine:
             reason_key=None if success else "reject.reason.upload_failed",
         )
         if not success and not retry:
-            key = "reject.reason.upload_failed_max" if max_attempts > 1 else "reject.reason.upload_failed"
+            key = (
+                "reject.reason.upload_failed_max"
+                if max_attempts > 1
+                else "reject.reason.upload_failed"
+            )
             return self._fail(active, outcome, key, {"attempts": attempt})
         return outcome
 
@@ -467,9 +472,7 @@ class WorkflowEngine:
                     value_num=float(quantize(measurement.t_amb_c, settings.limits.decimals)),
                 )
             if any_failed and not retry:
-                index, first = next(
-                    (i, o) for i, o in enumerate(outcomes) if o.passed is False
-                )
+                index, first = next((i, o) for i, o in enumerate(outcomes) if o.passed is False)
                 verdict = verdicts[index]
                 assert verdict.reason_key is not None
                 outcomes[index] = self._fail(active, first, verdict.reason_key, verdict.params)
@@ -637,6 +640,7 @@ class WorkflowEngine:
         return DeviceState(
             device_row_id=active.device_row_id,
             mac_address=active.mac_address,
+            repair_case_id=active.repair_case_id,
             device_id=active.device_id,
             qr_id=active.qr_id,
             stage=active.stage,

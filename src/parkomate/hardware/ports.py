@@ -46,7 +46,8 @@ def _natural_key(name: str) -> tuple[str, int]:
 def _default_comports() -> Iterable[Any]:
     from serial.tools import list_ports
 
-    return list_ports.comports()
+    ports: Iterable[Any] = list_ports.comports()
+    return ports
 
 
 class PortScanner:

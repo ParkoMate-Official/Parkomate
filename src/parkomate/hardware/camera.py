@@ -17,6 +17,7 @@ import re
 import threading
 import time
 from collections.abc import Callable
+from functools import partial
 from typing import Any, Protocol
 
 from parkomate.config.settings import CameraSettings, Settings
@@ -205,6 +206,10 @@ class CameraService:
         with self._cond:
             return self._preview
 
+    def _frame_or_stop(self, seen_seq: int) -> bool:
+        """A newer frame arrived, or the camera stopped (called with the lock held)."""
+        return self._seq != seen_seq or self._lost or not self._running
+
     def read_qr(self, timeout_s: float) -> str | None:
         if not self._running:
             raise CameraError("camera is not open", code=ErrorCode.CAM_NOT_FOUND)
@@ -215,7 +220,7 @@ class CameraService:
         while self._monotonic() < deadline:
             with self._cond:
                 self._cond.wait_for(
-                    lambda: self._seq != seen_seq or self._lost or not self._running,
+                    partial(self._frame_or_stop, seen_seq),
                     timeout=max(0.0, min(0.3, deadline - self._monotonic())),
                 )
                 if self._lost or not self._running:

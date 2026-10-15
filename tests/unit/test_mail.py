@@ -346,3 +346,31 @@ def test_compose_marathi(open_session: ProductionRecords, tmp_path: Path) -> Non
     plain = message.get_body(preferencelist=("plain",))
     assert plain is not None and "सुरू केलेली डिव्हाइसेस" in plain.get_content()
     assert next(message.iter_attachments()).get_content_type() == "text/csv"
+
+
+# ------------------------------------------------------------------ test e-mail
+
+
+def test_send_test_mail(
+    outbox: tuple[OutboxService, FakeMailer],
+    email_settings: dict[str, EmailSettings],
+    admin: Operator,
+    operator: Operator,
+    repos: Repositories,
+) -> None:
+    service, mailer = outbox
+    with pytest.raises(PermissionDeniedError):
+        service.send_test(operator, station_id="ST-1", lang="en")
+    assert service.send_test(admin, station_id="ST-1", lang="mr") == ["qa@parkomate.example"]
+    message = mailer.sent[0]
+    assert message["To"] == "qa@parkomate.example"
+    assert "ST-1" in message["Subject"] and "चाचणी" in message["Subject"]
+    assert service.list_items() == []  # a check, never queued
+    assert repos.audit.list_entries(action="mail.test")
+    mailer.fail_with = MailError("auth failed")
+    with pytest.raises(MailError):
+        service.send_test(admin, station_id="ST-1", lang="en")
+    email_settings["value"] = EMAIL.model_copy(update={"enabled": False})
+    with pytest.raises(MailError) as off:
+        service.send_test(admin, station_id="ST-1", lang="en")
+    assert off.value.code is ErrorCode.MAIL_NOT_CONFIGURED

@@ -143,7 +143,9 @@ class ProgrammingViewModel(StageViewModel):
 
     def _connected(self, result: tuple[str, str]) -> None:
         mac, chip = result
-        state = self.guard(lambda: self.c.ctx.workflow.start_device(mac))
+        retest = self.c.retest
+        case_id = retest.case_id if retest is not None else None
+        state = self.guard(lambda: self.c.ctx.workflow.start_device(mac, repair_case_id=case_id))
         if state is None:
             self.connect_state = StepState.ERROR
             self.notify()

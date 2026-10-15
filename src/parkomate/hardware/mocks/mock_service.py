@@ -8,7 +8,13 @@ The simulated "board" is created on the first :meth:`connect` after a :meth:`dis
 which mirrors the operator unplugging one board and plugging in the next.
 
 The firmware image is generated in RAM (``bytearray``) and zeroed by :meth:`shutdown`; it
-is never written anywhere.
+is never written anywhere. With a ``firmware_source`` (``dev.firmware_dir`` set) the
+simulated server hands out that local build instead, so the screens show its real name,
+size and SHA-256 (flashing stays simulated).
+
+The bench test (:mod:`parkomate.hardware.bench`) uses this class for everything except the
+board itself: :meth:`attach` accepts any port and :meth:`firmware_written` tells the
+simulated board that the real one was flashed.
 """
 
 from __future__ import annotations
@@ -28,6 +34,7 @@ from parkomate.core.errors import (
     MeasurementError,
 )
 from parkomate.core.interfaces import ProgressCallback
+from parkomate.core.mac import normalise_mac
 from parkomate.core.models import (
     FirmwareInfo,
     FlashResult,
@@ -37,6 +44,7 @@ from parkomate.core.models import (
     SensorReading,
     WhitelistResult,
 )
+from parkomate.hardware.firmware import FirmwareImage, FirmwareSource, zero
 from parkomate.hardware.mocks.scenarios import MockScenario
 
 log = logging.getLogger(__name__)
@@ -91,6 +99,7 @@ class MockHardwareService:
         delay_scale: float = 1.0,
         seed: int | None = None,
         first_label: int = 519,
+        firmware_source: FirmwareSource | None = None,
     ) -> None:
         self._scenario = scenario
         self._scale = max(0.0, delay_scale)
@@ -100,9 +109,12 @@ class MockHardwareService:
         self._board: _Board | None = None
         self._firmware: bytearray | None = None
         self._firmware_info: FirmwareInfo | None = None
+        self._source = firmware_source
+        self._local_images: list[FirmwareImage] = []
         self._camera_open = False
         self._ambient_c = 27.0
         self._next_label = first_label
+        self._expected_mac: str | None = None
         self._closed = False
 
     # ------------------------------------------------------------------ helpers
@@ -128,15 +140,27 @@ class MockHardwareService:
                 raise HardwareError("board not connected", code=ErrorCode.HW_COM_DISCONNECTED)
             return self._board
 
+    def expect_board(self, mac: str) -> None:
+        """Simulation only: the next board plugged in is the repaired board ``mac`` (retest
+        from the Repair tab). It was repaired, so it passes - except in the ``mixed``
+        scenario, where it is as random as any other board."""
+        with self._lock:
+            self._expected_mac = normalise_mac(mac)
+
     def _new_board(self) -> _Board:
         scenario = self._scenario
+        repaired, self._expected_mac = self._expected_mac, None
+        if repaired is not None and scenario is not MockScenario.MIXED:
+            scenario = MockScenario.ALL_PASS
         if scenario is MockScenario.MIXED:
             scenario = (
                 MockScenario.ALL_PASS
                 if self._rng.random() < 0.6
                 else self._rng.choice(_MIXED_FAILURES)
             )
-        mac = "24:6F:28:" + ":".join(f"{self._rng.randrange(256):02X}" for _ in range(3))
+        mac = repaired or (
+            "24:6F:28:" + ":".join(f"{self._rng.randrange(256):02X}" for _ in range(3))
+        )
         label = f"PKM-{self._next_label:06d}"
         self._next_label += 1
         differs = scenario in (MockScenario.ID_DIFFERS, MockScenario.ID_WRITE_FAILS)
@@ -151,11 +175,15 @@ class MockHardwareService:
 
     def connect(self, port: str) -> None:
         self._jitter(0.1, 0.3)
+        if port not in {p.name for p in _PORTS}:
+            raise HardwareError(
+                f"port {port} not found", code=ErrorCode.HW_NO_PORT, params={"port": port}
+            )
+        self.attach(port)
+
+    def attach(self, port: str) -> None:
+        """Put a simulated board on ``port`` without checking the port list (bench test)."""
         with self._lock:
-            if port not in {p.name for p in _PORTS}:
-                raise HardwareError(
-                    f"port {port} not found", code=ErrorCode.HW_NO_PORT, params={"port": port}
-                )
             self._port = port
             if self._board is None:
                 self._board = self._new_board()
@@ -194,7 +222,9 @@ class MockHardwareService:
     def fetch_firmware(self) -> FirmwareInfo:
         self._jitter(0.4, 0.8)
         with self._lock:
-            if self._firmware is None or self._firmware_info is None:
+            if self._firmware_info is None and self._source is not None:
+                self._firmware_info, self._local_images = self._source.fetch_firmware()
+            if self._firmware_info is None:
                 image = bytearray(self._rng.randbytes(FIRMWARE_SIZE))
                 self._firmware = image
                 self._firmware_info = FirmwareInfo(
@@ -214,7 +244,7 @@ class MockHardwareService:
     def flash(self, progress_cb: ProgressCallback) -> FlashResult:
         board = self._require_board()
         with self._lock:
-            if self._firmware is None or self._firmware_info is None:
+            if self._firmware_info is None:
                 raise HardwareError("firmware not loaded", code=ErrorCode.FW_NOT_LOADED)
             size = self._firmware_info.size
             board.flash_attempts += 1
@@ -253,6 +283,10 @@ class MockHardwareService:
             duration_s=round(time.monotonic() - started, 2),
             bytes_written=size,
         )
+
+    def firmware_written(self) -> None:
+        """The real board was flashed (bench test): the simulated one now runs firmware."""
+        self._require_board().firmware_running = True
 
     # ------------------------------------------------------------------ device link
     def ping(self) -> bool:
@@ -349,6 +383,9 @@ class MockHardwareService:
         with self._lock:
             if self._firmware is not None:
                 self._firmware[:] = bytes(len(self._firmware))  # zero in place
+            for image in self._local_images:
+                zero(image.data)
+            self._local_images = []
             self._firmware = None
             self._firmware_info = None
             self._camera_open = False

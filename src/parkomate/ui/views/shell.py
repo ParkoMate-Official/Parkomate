@@ -1,9 +1,11 @@
 """Production shell, top to bottom:
 
 1. SimulationBand (amber, only on the simulated bench)
-2. AppBar 72 px: mark + title | stage Stepper (centre) | SimulationChip · EN/मराठी · account
+2. AppBar 72 px: mark + Production | Repair switch (in place of the title) | stage Stepper
+   (centre) | SimulationChip · EN/मराठी · account
 3. ContextBar 48 px: device · operator · session timer | counter chips
-4. Content: error banner + the stage screen (12-column grid, max 1600 px, centred)
+4. Content: error banner + retest banner + the stage screen or the Repair tab (12-column
+   grid, max 1600 px, centred)
 5. ActionBar 88 px: status (icon + text) | secondary + THE primary action (+ reason)
 
 Overlays: session drawer (with scrim), reject takeover, success toast.
@@ -41,12 +43,12 @@ from parkomate.core.enums import PRODUCTION_STAGES, DeviceStatus, Stage
 from parkomate.i18n import t
 from parkomate.ui.components.base import Divider, add_shadow, qcolor
 from parkomate.ui.components.buttons import AppButton
-from parkomate.ui.components.cards import InlineConfirm, KpiTile
+from parkomate.ui.components.cards import Banner, InlineConfirm, KpiTile
 from parkomate.ui.components.chips import SimulationChip, StatusChip
 from parkomate.ui.components.icons import Icon, qicon
 from parkomate.ui.components.overlays import ErrorBanner, RejectTakeover, Toast
 from parkomate.ui.components.popup import Menu, MenuItem
-from parkomate.ui.components.segmented import LanguageSwitch
+from parkomate.ui.components.segmented import LanguageSwitch, SegmentedControl
 from parkomate.ui.components.shellparts import (
     AccountButton,
     ContextBar,
@@ -59,7 +61,8 @@ from parkomate.ui.components.text import Text, TrText
 from parkomate.ui.qt_i18n import language_notifier
 from parkomate.ui.theme.tokens import ALPHA, COLORS, SIZES, SPACE
 from parkomate.ui.viewmodels.base import Action, StatusLine
-from parkomate.ui.viewmodels.station import Page, StationController
+from parkomate.ui.viewmodels.station import Mode, Page, StationController
+from parkomate.ui.views.repair import RepairView
 from parkomate.ui.views.stages import LabelingView, PackagingView, ProgrammingView, TestingView
 
 # status tone -> (icon, graphic colour, text tone)
@@ -163,11 +166,20 @@ class AppBar(QFrame):
         grid.setHorizontalSpacing(SPACE.l)
         left = QHBoxLayout()
         left.setSpacing(SPACE.m)
-        left.addWidget(ProductMark())
-        self.brand = TrText("app.brand", "body_lg_strong")
-        left.addWidget(self.brand)
+        mark = ProductMark()
+        mark.setToolTip(t("app.brand"))
+        left.addWidget(mark)
+        self.mode = SegmentedControl(
+            [(Mode.PRODUCTION, "mode.production"), (Mode.REPAIR, "mode.repair")]
+        )
+        self.mode.changed.connect(self._mode_chosen)
+        left.addSpacing(SPACE.s)
+        left.addWidget(self.mode)
         left.addStretch(1)
         self.stepper = Stepper([stage.label_key for stage in PRODUCTION_STAGES])
+        stepper_policy = self.stepper.sizePolicy()
+        stepper_policy.setRetainSizeWhenHidden(True)
+        self.stepper.setSizePolicy(stepper_policy)
         right = QHBoxLayout()
         right.setSpacing(SPACE.m)
         right.addStretch(1)
@@ -213,6 +225,9 @@ class AppBar(QFrame):
     def _open_drawer(self) -> None:
         self.c.toggle_drawer(True)
 
+    def _mode_chosen(self, mode: object) -> None:
+        self.c.set_mode(Mode(str(mode)))
+
     def _menu_closed(self) -> None:
         self.account.set_open(False)
 
@@ -229,13 +244,26 @@ class AppBar(QFrame):
 
     def set_wide(self, wide: bool) -> None:
         self.account.set_compact(not wide)
+        # below 1600 px the simulation chip shows only its icon (the amber band already says
+        # "simulated"; the tooltip keeps the details)
+        self.mock.set_icon_only(not wide)
 
     def refresh(self) -> None:
         c = self.c
         self.stepper.set_states(stage_states(c))
+        self.stepper.setVisible(c.mode is Mode.PRODUCTION)
+        self.mode.set_value(c.mode, animate=False)
+        repair_allowed = c.mode is Mode.REPAIR or c.can_open_repair()
+        self.mode.button(Mode.REPAIR).setEnabled(repair_allowed)
+        self.mode.setToolTip("" if repair_allowed else t("gate.repair_device_busy"))
         self.language.sync(c.language())
         self.mock.setVisible(c.ctx.using_mocks)
-        self.mock.set_scenario(str(getattr(c.ctx.hardware, "scenario", "")))
+        hardware = c.ctx.hardware
+        self.mock.set_scenario(
+            str(getattr(hardware, "scenario", "")),
+            real_board=bool(getattr(hardware, "real_board", False)),
+            wifi=bool(getattr(hardware, "real_measuring_device", False)),
+        )
         operator = c.operator
         name = operator.full_name if operator else ""
         self.account.set_name(name)
@@ -338,8 +366,12 @@ class ActionBar(QFrame):
         self.primary.setVisible(True)
         self.primary.set_text_key(action.key, **action.params)
         self.primary.set_hint_key(action.hint_key)
-        success = action.variant == "success" and action.enabled
-        self.primary.set_variant("success_filled" if success else "filled")
+        variant = "filled"
+        if action.enabled and action.variant == "success":
+            variant = "success_filled"
+        elif action.enabled and action.variant == "danger":
+            variant = "danger_filled"
+        self.primary.set_variant(variant)
         self.primary.setEnabled(action.enabled)
         self.primary.setObjectName(f"primary_{action.name}")
         reason = ""
@@ -565,6 +597,12 @@ class ProductionShell(QWidget):
         self.banner = ErrorBanner()
         self.banner.retry_requested.connect(controller.retry_error)
         self.body.addWidget(self.banner)
+        self.retest_banner = Banner("warning")
+        self.retest_cancel = AppButton("action.cancel_retest", variant="outlined", size="compact")
+        self.retest_cancel.clicked.connect(controller.request_cancel_retest)
+        self.retest_banner.add_action(self.retest_cancel)
+        self.retest_banner.setVisible(False)
+        self.body.addWidget(self.retest_banner)
         self.stack = QStackedWidget()
         self.views = {
             Stage.PROGRAMMING: ProgrammingView(controller),
@@ -574,6 +612,8 @@ class ProductionShell(QWidget):
         }
         for view in self.views.values():
             self.stack.addWidget(view)
+        self.repair_view = RepairView(controller)
+        self.stack.addWidget(self.repair_view)
         self.body.addWidget(self.stack, 1)
         layout.addLayout(self.body, 1)
         self.bottom = ActionBar(controller)
@@ -601,6 +641,9 @@ class ProductionShell(QWidget):
         ):
             signal.connect(self._refresh_bars)
         controller.drawer_changed.connect(self._drawer_changed)
+        controller.mode_changed.connect(self._stage_changed)
+        controller.retest_changed.connect(self._retest_changed)
+        language_notifier().changed.connect(self._retest_changed)
         controller.counters_changed.connect(self.drawer.refresh)
         controller.ambient_changed.connect(self.drawer.refresh)
         controller.session_changed.connect(self.drawer.refresh)
@@ -646,11 +689,15 @@ class ProductionShell(QWidget):
             action.trigger()
 
     # ------------------------------------------------------------------ refresh
-    def _stage_changed(self) -> None:
-        view = self.views.get(self.c.stage)
-        if view is not None:
-            self.stack.setCurrentWidget(view)
-            view.update_view()
+    def _stage_changed(self, *_args: object) -> None:
+        if self.c.mode is Mode.REPAIR:
+            self.stack.setCurrentWidget(self.repair_view)
+            self.repair_view.update_view()
+        else:
+            view = self.views.get(self.c.stage)
+            if view is not None:
+                self.stack.setCurrentWidget(view)
+                view.update_view()
         self._refresh_bars()
         self.bottom.refresh()
         if self.c.reject is None and self.bottom.primary.isEnabled():
@@ -679,6 +726,15 @@ class ProductionShell(QWidget):
                 counters.net_upload_failure,
                 counters.completed,
                 counters.rejected,
+            )
+
+    def _retest_changed(self, *_args: object) -> None:
+        retest = self.c.retest
+        self.retest_banner.setVisible(retest is not None)
+        if retest is not None:
+            self.retest_banner.set_texts(
+                t("retest.banner_title", board=retest.board_id),
+                t("retest.banner_body", mac=retest.mac_address, case=retest.case_id),
             )
 
     def _error_changed(self) -> None:

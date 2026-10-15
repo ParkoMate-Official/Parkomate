@@ -29,7 +29,7 @@ from parkomate.config.manager import settings_to_toml, validate_settings
 from parkomate.config.secrets import MemorySecretStore
 from parkomate.core.enums import CheckCode, Stage
 from parkomate.core.errors import SettingsError
-from parkomate.core.interfaces import ProgressCallback
+from parkomate.core.interfaces import HardwareService, ProgressCallback
 from parkomate.core.models import FlashResult
 from parkomate.hardware.mocks import MockHardwareService, MockScenario
 from parkomate.i18n import set_language
@@ -74,7 +74,9 @@ class StationDriver:
         data_dir: Path | None = None,
         size: tuple[int, int] = (1366, 768),
         delay_scale: float = 0.0,
+        hardware: HardwareService | None = None,
     ) -> None:
+        """``hardware`` replaces the gated mock (e.g. a bench test with a fake flasher)."""
         self.app = create_application()
         motion.force(False)  # deterministic screenshots and tests: every animation at its end
         self.data_dir = data_dir or Path(tempfile.mkdtemp(prefix="parkomate-ui-"))
@@ -88,7 +90,7 @@ class StationDriver:
             paths,
             mock=True,
             secrets=MemorySecretStore(),
-            hardware=self.hardware,
+            hardware=hardware or self.hardware,
             configure_logging=False,
         )
         auth = self.ctx.auth

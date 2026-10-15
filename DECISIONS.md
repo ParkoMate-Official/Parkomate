@@ -5,6 +5,27 @@ also listed as open questions in the last section.
 
 ## Contract changes (read first - Aditya and Piyush)
 
+**October 2026 - Repair tab and Wi-Fi measuring device**
+* `WorkflowService.start_device(mac, *, repair_case_id=None)` - a run with `repair_case_id` is
+  the **retest** of a repaired board: the case must be `repaired` and the board must have the
+  case's MAC (`ErrorCode.REPAIR_WRONG_BOARD` otherwise). `DeviceState.repair_case_id` tells
+  the UI that the run is a retest.
+* New `RepairService` (`workflow/repair.py`, Piyush's folder): list / detail of faulty boards,
+  `record_repair`, `accept`, `scrap`, and the gates (`retest_blocker`, `accept_blocker`,
+  `scrap_blocker`, `repair_blocker` return the i18n reason or `None`). Publishes
+  `RepairCaseChanged`.
+* Database (migration `0003_repairs`): `repair_cases` (one per rejected board),
+  append-only `repair_events` (who did what in which session) and `devices.repair_case_id`.
+  Existing rejected boards get a `waiting` case. Cases follow their device runs inside the same
+  transaction (`data/repair_links.py`): reject → case opens; retest completes → `passed`;
+  retest rejected → `waiting`; retest abandoned (cancel, logout, crash) → `repaired`.
+* Optional hardware extras (read with `getattr`, not part of the Protocol):
+  `expect_board(mac)` - **simulation only**, the next board plugged in is the repaired one;
+  `real_measuring_device` + `listen_urls()` - the measuring device is the real Wi-Fi one, and
+  where it must send.
+* `SessionSummary`: `retests`, `retests_passed`, `repairs_written`, `repairs_accepted`,
+  `repairs_scrapped`, `first_pass_finished`.
+
 Relative to the interface list in the build prompt:
 
 **HardwareService - added**
@@ -161,11 +182,51 @@ See `docs/design/DESIGN_SYSTEM.md` and `docs/design/CHANGES.md` for the full lis
 | K2 | "Transient" scenarios fail only the first time per board (upload, measurement timeout, QR unreadable, cable pulled) so the recovery path is demonstrable; extra scenarios: `upload_always_fails`, `id_write_fails`, `comm_fail`, `camera_missing`, `mixed` | demos of every branch |
 | K3 | `PARKOMATE_MOCK_DELAY` scales all delays (0 = instant, tests); `PARKOMATE_MOCK_SEED` makes runs repeatable | tests and demos |
 | K4 | Mock sensor readings are distances in cm (142–158) **(client)** | sensor type not specified |
+| K5 | **Bench test** (`--bench-test` / `dev.bench_test`): real ports, MAC, chip and esptool flashing; firmware from a **local build folder** (`--firmware-dir` / `PARKOMATE_FIRMWARE_DIR` / `dev.firmware_dir`); whitelist, link, measuring device and camera simulated. The communication test passes if the last flash of that board succeeded and it is still plugged in. Simulation band stays on. `python -m parkomate flash` does the same without screens. Production always downloads from the server | flash a real ESP32 (Blink test build) before the server and the production firmware are available |
+| K6 | A local build is read straight into `bytearray`s (same `FirmwareStore` zeroing). `hash_verified=False` (no trusted hash); ESP image / partition-table headers are checked instead. Arduino names map to `programming.*_offset`; `*.merged.bin` and `boot_app0.bin` are ignored (a board that ran an OTA update from app1 needs `programming.erase_all = true` once). New error `FW_LOCAL_INVALID` | rule "firmware only in RAM" is about not *writing* firmware anywhere; a test build the team put on disk is read, never written |
+
+## Client answers (13 October 2026) and what was done
+
+| Question | Answer | Done |
+|---|---|---|
+| Measuring device data | Format is OK. Sent over Wi-Fi, both devices on the same network. | Real HTTP listener kept; `allowed_ip` also takes a network (`192.168.1.0/24`) for changing Wi-Fi addresses; packets naming another station are refused (409); the Testing screen shows where to send; a simulator plays the device. |
+| One person or many? | The same software on different PCs. A person logs in and works; their work becomes an Excel sheet, mailed at the end of the session. | Already the design (one session = one person = one report + e-mail). Installer asks each PC's station name. Repair work goes into the person's own report (Repairs sheet). |
+| Rejected boards | Repaired, then tested, then scrapped or accepted. A new tab for faulty boards, their steps, accept or scrap. | **Repair** tab (below). |
+
+## Repair tab, Wi-Fi measuring device, demo build (October 2026)
+
+Choices confirmed by the user (all four "recommended" options).
+
+| # | Decision | Why |
+|---|---|---|
+| RP1 | **Retest = the whole line again (A → D)** as a new device run linked to the case; re-flashed, nothing skipped; the station checks it is the same board (MAC) | a repaired board gets exactly the checks of a new board |
+| RP2 | **Accept only after a passed retest**; Scrap at any time except while the board is on the line, always with a reason; a failed retest puts the board back to *Needs repair* | the client: "repaired, then tested, then scrapped or accepted" |
+| RP3 | Everyone who is logged in may repair; every step is stored with the session and operator | each person's work is in their own Excel / e-mail |
+| RP4 | **Production \| Repair** switch in the top bar, locked while a board is on the line. It takes the place of the "Parkomate Station" title (the mark's tooltip and the window title still name the app); below 1600 px the simulation chip shows only its icon (the amber band stays) | one click; the bar fits 1366 px without anything overlapping |
+| RP5 | "Save repair" needs an action from a fixed list; *Other part replaced* and *Other* need a note; scrap reasons are a fixed list **(client)** | comparable reports in both languages; lists to be confirmed |
+| RP6 | One case per rejected first run; a retest never opens a second case | the board's whole history in one place |
+| RP7 | Report: new **Repairs** sheet (each step done in the session: repair, retest started / passed / failed / stopped, accepted, scrapped), *Repair case* + *Repair status* on Rejections, *Retest of case* on Devices, five repair counts on the Summary | the client asked for the person's work in the Excel |
+| RP8 | **First-pass yield excludes retests** (numerator and denominator) | a retest is not a first pass |
+| RP9 | Repairs are per PC (each station has its own database) **(client)** | repairing on another PC needs a shared database or the server |
+| RP10 | Simulated bench: `expect_board(mac)` makes the next board the repaired one (it passes, except in `mixed`) | the retest can be shown without hardware |
+| MW1 | `measurement.allowed_ip` accepts one address **or a CIDR network**; this PC itself (loopback) is always accepted | DHCP on a shared Wi-Fi; simulator next to the station |
+| MW2 | `measurement.check_station` (default on): a packet whose `station` names another station gets HTTP 409 and is ignored; no `station` field = accepted | several stations on one network |
+| MW3 | `--real-measuring-device` / `dev.real_measuring_device`: the simulated bench or bench test with the **real** HTTP listener (`hardware/hybrid.py`) | demo the real Wi-Fi link before the full bench exists |
+| MW4 | `python -m parkomate measuring-device [--to IP] [--send PRESET]`: sends the agreed JSON (good, or one value out of limits) and prints the station's answer | plays the device from any PC / the same PC |
+| MW5 | The Testing screen shows "Measuring device sends to http://<this PC>:8765/measurement" while it waits (real listener only) | setting up the device |
+| PK1 | `python -m parkomate doctor`: read-only checks (data folder, settings, database + admin, libraries, serial ports, network address, port 8765, e-mail password) | first start on a new PC / before a demo |
+| PK2 | Admin → Reports & e-mail → **Send test e-mail** (admin only, audited, not queued) | prove the SMTP settings before the first session ends |
+| PK3 | Installer: PyInstaller one-folder (`ParkomateStation.exe` without console + `parkomate.exe` for commands, one `launch.py`) + Inno Setup (`packaging/`): Program Files, ProgramData with modify rights for Users, firewall TCP 8765, station name + measuring-device address on first install (written to `settings.toml`; kept on update), demo shortcuts optional, `admin create` / `doctor` at the end | the client installs the same software on several PCs |
+| PK4 | `packaging/build.ps1` builds, self-checks the built program and makes the Setup.exe - or a portable zip when Inno Setup is missing | one command |
+| PK5 | `Select` no longer uses Qt's *AdjustToContents* (it resized itself 20 ms after its items changed and could stay narrow after a language switch) | a flaky "layout moved" failure |
+| PK6 | The spec pins **Python's own OpenSSL** (`libssl` / `libcrypto` from `sys.base_prefix\DLLs`) | built from Git Bash, PyInstaller took Git's MinGW copies from PATH and the program failed with "DLL load failed while importing _ssl" |
+| PK7 | ZBar (`libzbar-64.dll`) needs the Visual C++ 2013 runtime; without it the station uses OpenCV's QR decoder and `doctor` shows a WARN. The installer installs the runtime when `packaging\redist\vcredist_x64.exe` is present | QR reading works either way; the runtime is optional |
 
 ## Open questions for the client
 
-1. **Measuring device**: transport (HTTP POST vs. MQTT), exact JSON fields and units, does it
-   also report ambient, and which device measures the session-start ambient?
+1. **Measuring device**: ~~transport, JSON fields~~ answered (Wi-Fi, same network, format OK).
+   Still open: does it send by itself after each measurement (we assume yes, HTTP POST), and
+   which packet gives the session-start ambient (we take the first packet with `t_amb_c`)?
 2. **Device link**: serial command set (`PING`, `READ_SENSOR`, `GET_ID`, `SET_ID`, `GET_MAC`?),
    baud rate, response format, does a fresh board have an ID at all?
 3. **Server API**: base URL, authentication (token / mTLS), whitelist request and response,
@@ -175,8 +236,8 @@ See `docs/design/DESIGN_SYSTEM.md` and `docs/design/CHANGES.md` for the full lis
 5. **Retry policy**: may the communication test or the measurement be repeated after a
    failure, or is the first failure final (W1, W3)?
 6. **First-pass yield** definition (D11).
-7. **Report format**: required columns, Excel vs. CSV, recipients, language, one e-mail per
-   session or one per shift/day?
+7. **Report format**: ~~one e-mail per session~~ answered (Excel per person per session, mailed
+   at the end). Still open: required columns, recipients, language.
 8. **E-mail provider**: Microsoft 365 / Gmail? An OAuth app registration will be needed (M6).
 9. **Device ID format** (regular expression for `camera.id_pattern`) and QR content.
 10. **Duplicate boards**: what to do when a MAC or QR ID was already completed earlier.
@@ -184,3 +245,10 @@ See `docs/design/DESIGN_SYSTEM.md` and `docs/design/CHANGES.md` for the full lis
 12. **Marathi texts**: native-speaker review (`src/parkomate/i18n/REVIEW.md`).
 13. Retention period for sent e-mail files (90 days) and whether the database needs a
     scheduled backup / export to a server.
+14. **Repair lists**: are our repair actions (sensor / indicator / regulator replaced,
+    re-soldered, connector fixed, other part, no fault found) and scrap reasons right?
+15. **Repair on another PC**: is a faulty board always repaired on the PC that rejected it? If
+    not, the stations need a shared database or the Parkomate server.
+16. **Installer licence**: Inno Setup 6.4+ prints "Non-commercial use only" - for Parkomate's
+    production use, buy an Inno Setup commercial licence or switch the installer tool
+    (the PyInstaller program folder does not depend on it).

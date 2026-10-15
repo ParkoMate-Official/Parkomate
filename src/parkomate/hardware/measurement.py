@@ -6,7 +6,10 @@ The device on the bench network POSTs one JSON packet per measurement to
     {"station": "STATION-01", "seq": 41, "ts": "2026-10-08T10:15:02+05:30",
      "v_a": 24.01, "v_b": 5.01, "v_c": 3.31, "t_reg_c": 28.4, "t_amb_c": 27.1}
 
-* Only packets from ``measurement.allowed_ip`` are accepted (others: HTTP 403).
+* Only packets from ``measurement.allowed_ip`` (one address or a CIDR network) or from this
+  PC itself are accepted (others: HTTP 403). With several stations on one Wi-Fi network, a
+  packet whose ``station`` names another station is refused with HTTP 409
+  (``measurement.check_station``).
 * Packets are delivered only inside a *listening window* opened by :meth:`measure`
   (or :meth:`measure_ambient`); packets outside a window are acknowledged (202) and ignored,
   so a stale reading can never be attributed to the next board.
@@ -18,16 +21,18 @@ The transport sits behind :class:`MeasurementTransport` so MQTT can be added lat
 
 from __future__ import annotations
 
+import contextlib
 import ipaddress
 import json
 import logging
 import math
+import socket
 import threading
 import time
 from collections.abc import Callable
 from datetime import UTC, datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from typing import Any, Protocol
+from typing import Any, Protocol, cast
 
 from pydantic import BaseModel, ConfigDict, ValidationError, field_validator
 
@@ -126,6 +131,13 @@ class HttpMeasurementListener:
         host, port = self._server.server_address[:2]
         return str(host), int(port)
 
+    def listen_urls(self) -> list[str]:
+        """Where the measuring device must send its JSON (one URL per address of this PC)."""
+        settings = self._settings().measurement
+        host = settings.listen_host
+        hosts = local_ipv4_addresses() if host in ("0.0.0.0", "::") else [host]  # noqa: S104
+        return [f"http://{h}:{settings.listen_port}{settings.path}" for h in hosts]
+
     # ------------------------------------------------------------------ lifecycle
     def start(self) -> None:
         if self._server is not None:
@@ -137,7 +149,7 @@ class HttpMeasurementListener:
             def do_POST(self) -> None:
                 listener._handle(self)
 
-            def log_message(self, format: str, *args: Any) -> None:  # noqa: A002
+            def log_message(self, format: str, *args: Any) -> None:
                 log.debug("measurement http: " + format, *args)
 
         try:
@@ -173,15 +185,16 @@ class HttpMeasurementListener:
         if request.path.split("?")[0] != settings.path:
             self._reply(request, 404, "unknown path")
             return
-        if not _same_ip(client, settings.allowed_ip):
+        if not ip_allowed(client, settings.allowed_ip):
             log.warning("measurement from %s refused (allowed: %s)", client, settings.allowed_ip)
             self._reply(request, 403, "address not allowed")
             return
         length = int(request.headers.get("Content-Length") or 0)
         if length <= 0 or length > MAX_BODY:
             self._reply(request, 400, "body missing or too large")
-            self._deliver(MeasurementError("empty or oversized packet",
-                                           code=ErrorCode.MEAS_BAD_DATA))
+            self._deliver(
+                MeasurementError("empty or oversized packet", code=ErrorCode.MEAS_BAD_DATA)
+            )
             return
         raw = request.rfile.read(length)
         try:
@@ -190,19 +203,28 @@ class HttpMeasurementListener:
             self._reply(request, 400, "invalid measurement")
             self._deliver(exc)
             return
+        station = self._station()
+        if (
+            settings.check_station
+            and packet.station
+            and station
+            and packet.station.strip().casefold() != station.casefold()
+        ):
+            log.warning("measurement for station %r refused - this is %r", packet.station, station)
+            self._reply(request, 409, f"this is station {station}, not {packet.station}")
+            return
         used = self._deliver(packet.to_measurement())
         self._reply(request, 200 if used else 202, "used" if used else "ignored")
+
+    def _station(self) -> str:
+        return self._settings().station.station_id
 
     def _deliver(self, item: Measurement | ParkomateError) -> bool:
         with self._cond:
             if self._window is None or self._result is not None:
                 log.info("measurement packet outside a listening window - ignored")
                 return False
-            if (
-                self._window == "ambient"
-                and isinstance(item, Measurement)
-                and item.t_amb_c is None
-            ):
+            if self._window == "ambient" and isinstance(item, Measurement) and item.t_amb_c is None:
                 return False  # waiting for an ambient value specifically
             self._result = item
             self._cond.notify_all()
@@ -224,7 +246,8 @@ class HttpMeasurementListener:
             self._window = window
             self._result = None
             self._cond.wait_for(lambda: self._result is not None, timeout=timeout_s)
-            result = self._result
+            # set by the HTTP thread while we waited (mypy only saw the None above)
+            result = cast("Measurement | ParkomateError | None", self._result)
             self._window = None
             self._result = None
         if result is None:
@@ -246,12 +269,34 @@ class HttpMeasurementListener:
         return measurement.t_amb_c
 
 
-def _same_ip(client: str, allowed: str) -> bool:
+def local_ipv4_addresses() -> list[str]:
+    """IPv4 addresses of this PC on the local network, the main one first (no loopback)."""
+    found: list[str] = []
+    # UDP "connect" sends nothing; it only asks Windows which interface it would use.
+    with contextlib.suppress(OSError), socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as probe:
+        probe.connect(("10.255.255.255", 1))
+        found.append(str(probe.getsockname()[0]))
+    with contextlib.suppress(OSError):
+        for info in socket.getaddrinfo(socket.gethostname(), None, socket.AF_INET):
+            found.append(str(info[4][0]))
+    addresses: list[str] = []
+    for address in found:
+        if address not in addresses and not address.startswith(("127.", "0.", "169.254.")):
+            addresses.append(address)
+    return addresses
+
+
+def ip_allowed(client: str, allowed: str) -> bool:
+    """``client`` is ``allowed`` (one address) or inside it (a CIDR network). This PC itself
+    (loopback) is always allowed: the simulator may run next to the station."""
     try:
-        a = ipaddress.ip_address(client)
-        b = ipaddress.ip_address(allowed)
+        address = ipaddress.ip_address(client)
+        if isinstance(address, ipaddress.IPv6Address) and address.ipv4_mapped is not None:
+            address = address.ipv4_mapped
+        if address.is_loopback:
+            return True
+        if "/" in allowed:
+            return address in ipaddress.ip_network(allowed.strip(), strict=False)
+        return address == ipaddress.ip_address(allowed.strip())
     except ValueError:
         return False
-    if isinstance(a, ipaddress.IPv6Address) and a.ipv4_mapped is not None:
-        a = a.ipv4_mapped
-    return a == b

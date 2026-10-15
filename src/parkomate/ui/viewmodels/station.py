@@ -1,8 +1,13 @@
 """StationController: the shell's view model.
 
-Owns the page (starting / login / production / session end / admin), the current stage,
-the error banner, inline confirmations, the reject takeover, the success toast, counters,
-the session drawer data and the four stage view models.
+Owns the page (starting / login / production / session end / admin), the mode inside the
+production page (the line, or the Repair tab), the current stage, the error banner, inline
+confirmations, the reject takeover, the success toast, counters, the session drawer data,
+the four stage view models and the repair view model.
+
+A **retest** (Repair tab -> "Test again") runs the repaired board through the whole line in
+the normal stage screens; ``retest`` names the board, and when its run ends the station
+returns to the Repair tab on that board.
 
 Business rules stay in the WorkflowService; hardware runs in ``self.hw`` (one worker thread,
 so calls never overlap); slow non-hardware work (password hashing, reports, e-mail) runs in
@@ -13,6 +18,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Callable
+from dataclasses import dataclass
 from enum import StrEnum
 from typing import Any
 
@@ -58,6 +64,22 @@ class Page(StrEnum):
     ADMIN = "admin"
 
 
+class Mode(StrEnum):
+    """The production page shows the line (stages A-D) or the Repair tab."""
+
+    PRODUCTION = "production"
+    REPAIR = "repair"
+
+
+@dataclass(frozen=True, slots=True)
+class RetestTarget:
+    """The repaired board that the line is testing again."""
+
+    case_id: int
+    mac_address: str
+    board_id: str
+
+
 class LoginPhase(StrEnum):
     FORM = "form"
     CHECKING = "checking"
@@ -91,6 +113,8 @@ class StationController(QObject):
     firmware_changed = Signal()
     ambient_changed = Signal()
     drawer_changed = Signal()
+    mode_changed = Signal()
+    retest_changed = Signal()
     tick = Signal()
 
     def __init__(
@@ -113,6 +137,8 @@ class StationController(QObject):
         self.bridge.counters_changed.connect(lambda _sid: self.refresh_counters())
 
         self.page = Page.STARTING
+        self.mode = Mode.PRODUCTION
+        self.retest: RetestTarget | None = None
         self.stage = Stage.PROGRAMMING
         self.error: ErrorState | None = None
         self.confirm: ConfirmState | None = None
@@ -137,13 +163,15 @@ class StationController(QObject):
 
         from parkomate.ui.viewmodels.labeling import LabelingViewModel, PackagingViewModel
         from parkomate.ui.viewmodels.programming import ProgrammingViewModel
+        from parkomate.ui.viewmodels.repair import RepairViewModel
         from parkomate.ui.viewmodels.testing import TestingViewModel
 
         self.programming = ProgrammingViewModel(self)
         self.testing = TestingViewModel(self)
         self.labeling = LabelingViewModel(self)
         self.packaging = PackagingViewModel(self)
-        for vm in self.stage_vms():
+        self.repair = RepairViewModel(self)
+        for vm in [*self.stage_vms(), self.repair]:
             vm.changed.connect(self.bottom_bar_changed.emit)
 
         self._clock = QTimer(self)
@@ -167,6 +195,8 @@ class StationController(QObject):
 
     @property
     def current_vm(self) -> StageViewModel | None:
+        if self.mode is Mode.REPAIR:
+            return self.repair
         return self.vm_for(self.stage)
 
     @property
@@ -270,6 +300,8 @@ class StationController(QObject):
             self.answer(False)
         elif self.drawer_open:
             self.toggle_drawer(False)
+        elif self.mode is Mode.REPAIR:
+            self.repair.cancel_scrap()
         else:
             vm = self.current_vm
             if vm is not None and getattr(vm, "choosing_reject", False):
@@ -339,9 +371,13 @@ class StationController(QObject):
         self.login_phase = LoginPhase.FORM
         self.login_changed.emit()
         self.stage = Stage.PROGRAMMING
-        for vm in self.stage_vms():
+        self.mode = Mode.PRODUCTION
+        self.retest = None
+        for vm in [*self.stage_vms(), self.repair]:
             vm.reset()
         self.set_page(Page.PRODUCTION)
+        self.mode_changed.emit()
+        self.retest_changed.emit()
         self.stage_changed.emit()
         self.load_firmware()
         self.programming.enter()
@@ -455,8 +491,7 @@ class StationController(QObject):
             QApplication.beep()
         self._next_device()
 
-    def _next_device(self) -> None:
-        """Clean Programming screen for the next board."""
+    def _release_board(self) -> None:
         hardware = self.ctx.hardware
 
         def release() -> None:
@@ -464,6 +499,11 @@ class StationController(QObject):
             hardware.disconnect()
 
         self.hw.submit(release, name="release_board", on_error=lambda e: log.warning("%r", e))
+
+    def _next_device(self) -> None:
+        """Clean Programming screen for the next board - or, after a retest, back to the
+        Repair tab on the retested board."""
+        self._release_board()
         try:
             self.ctx.workflow.clear_finished()
         except ParkomateError as exc:
@@ -472,12 +512,137 @@ class StationController(QObject):
             vm.reset()
         self.stage = Stage.PROGRAMMING
         self.clear_error()
+        retest = self.retest
+        self.retest = None
         self.stage_changed.emit()
         self.device_changed.emit()
         self.refresh_counters()
         self.refresh_session_devices()
+        if retest is not None:
+            self.retest_changed.emit()
+            self._show_repair(retest.case_id)
+        else:
+            self.programming.enter()
+        self.bottom_bar_changed.emit()
+
+    # ================================================================== repair tab
+    def can_open_repair(self) -> bool:
+        return (
+            self.page is Page.PRODUCTION
+            and not self.device_in_progress
+            and self.reject is None
+            and self.confirm is None
+        )
+
+    def set_mode(self, mode: Mode) -> None:
+        """Top-bar switch: the line or the Repair tab (not while a board is on the line)."""
+        if mode is self.mode:
+            return
+        if mode is Mode.REPAIR:
+            if not self.can_open_repair():
+                self.mode_changed.emit()  # puts the switch back
+                return
+            self.programming.leave()
+            if self.retest is not None:  # a retest that never started is simply dropped
+                self.retest = None
+                self.retest_changed.emit()
+            self._release_board()
+            self.clear_error()
+            self._show_repair(None)
+            return
+        self.repair.leave()
+        self.mode = Mode.PRODUCTION
+        self.stage = Stage.PROGRAMMING
+        self.clear_error()
+        self.programming.reset()
+        self.mode_changed.emit()
+        self.stage_changed.emit()
         self.programming.enter()
         self.bottom_bar_changed.emit()
+
+    def _show_repair(self, case_id: int | None) -> None:
+        self.mode = Mode.REPAIR
+        self.toggle_drawer(False)
+        self.mode_changed.emit()
+        if case_id is None:
+            self.repair.enter()
+        else:
+            try:
+                self.repair.show(case_id)
+            except ParkomateError as exc:
+                self.show_error(exc)
+                self.repair.enter()
+        self.bottom_bar_changed.emit()
+
+    def start_retest(self, case_id: int, board_id: str) -> None:
+        """Repair tab -> "Test again": the board runs the whole line again."""
+        if self.device_in_progress or self.page is not Page.PRODUCTION:
+            return
+        try:
+            case = self.ctx.repairs.get(case_id)
+        except ParkomateError as exc:
+            self.show_error(exc)
+            return
+        self.retest = RetestTarget(case.id, case.mac_address, board_id)
+        expect = getattr(self.ctx.hardware, "expect_board", None)
+        if callable(expect):  # simulated bench: the repaired board is plugged back in
+            mac = case.mac_address
+            self.hw.submit(lambda: expect(mac), name="expect_board")
+        self.repair.leave()
+        self.mode = Mode.PRODUCTION
+        self.stage = Stage.PROGRAMMING
+        self.clear_error()
+        self.programming.reset()
+        self.retest_changed.emit()
+        self.mode_changed.emit()
+        self.stage_changed.emit()
+        self.programming.enter()
+        self.bottom_bar_changed.emit()
+
+    def request_cancel_retest(self) -> None:
+        if self.retest is None:
+            return
+        if not self.device_in_progress:
+            self.cancel_retest()
+            return
+        self.ask(
+            ConfirmState(
+                "confirm.cancel_retest",
+                self.cancel_retest,
+                yes_key="action.cancel_retest",
+                params={"board": self.retest.board_id},
+            )
+        )
+
+    def cancel_retest(self) -> None:
+        """Stop the retest: the board goes back to the repair list (case: repaired)."""
+        retest = self.retest
+        if retest is None:
+            return
+        vm = self.vm_for(self.stage)
+        if vm is not None:
+            vm.leave()
+        if self.device_in_progress:
+            try:
+                self.ctx.workflow.abandon_device()
+            except ParkomateError as exc:
+                self.show_error(exc)
+        else:
+            try:
+                self.ctx.workflow.clear_finished()
+            except ParkomateError:
+                log.debug("nothing to clear after the retest")
+        self._release_board()
+        self.retest = None
+        for stage_vm in self.stage_vms():
+            stage_vm.reset()
+        self.stage = Stage.PROGRAMMING
+        self.clear_error()
+        self.retest_changed.emit()
+        self.stage_changed.emit()
+        self.device_changed.emit()
+        self.refresh_session_devices()
+        self._show_repair(retest.case_id)
 
     # ================================================================== counters / drawer
     def refresh_counters(self) -> None:
@@ -524,7 +689,7 @@ class StationController(QObject):
     def function_key(self, number: int) -> None:
         if self.page is not Page.PRODUCTION or self.reject is not None:
             return
-        if number == 9:
+        if number == 9 and self.mode is Mode.PRODUCTION:
             self.remeasure_ambient()
             return
         vm = self.current_vm
@@ -628,7 +793,9 @@ class StationController(QObject):
         self.login_phase = LoginPhase.FORM
         self.login_error = None
         self.startup = None
-        for vm in self.stage_vms():
+        self.mode = Mode.PRODUCTION
+        self.retest = None
+        for vm in [*self.stage_vms(), self.repair]:
             vm.reset()
         set_language(self.settings.station.language)
         self.set_page(Page.LOGIN)

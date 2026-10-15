@@ -53,7 +53,13 @@ def _log_unhandled(
     )
 
 
-def run_ui(*, mock: bool | None = None, kiosk: bool = False) -> int:
+def run_ui(
+    *,
+    mock: bool | None = None,
+    kiosk: bool = False,
+    bench_test: bool | None = None,
+    real_measuring_device: bool | None = None,
+) -> int:
     app = create_application()
     sys.excepthook = _log_unhandled
     paths = AppPaths.default().ensure()
@@ -71,7 +77,9 @@ def run_ui(*, mock: bool | None = None, kiosk: bool = False) -> int:
         return app.exec() or 3
 
     try:
-        ctx: AppContext = build_context(paths, mock=mock)
+        ctx: AppContext = build_context(
+            paths, mock=mock, bench_test=bench_test, real_measuring_device=real_measuring_device
+        )
     except (SettingsError, ParkomateError) as exc:
         from parkomate.ui.views.pages import FatalView
 

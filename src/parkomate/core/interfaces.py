@@ -163,8 +163,12 @@ class WorkflowService(Protocol):
     """
 
     # -- device lifecycle ---------------------------------------------------------------
-    def start_device(self, mac: str) -> DeviceState:
-        """Begin a new device at PROGRAMMING. Raises ``INVALID_STATE`` if one is active."""
+    def start_device(self, mac: str, *, repair_case_id: int | None = None) -> DeviceState:
+        """Begin a new device at PROGRAMMING. Raises ``INVALID_STATE`` if one is active.
+
+        ``repair_case_id``: this run is the retest of a repaired board (full line again). The
+        board's MAC must be the case's MAC (``REPAIR_WRONG_BOARD``) and the case ``repaired``.
+        """
         ...
 
     def current_device(self) -> DeviceState | None:

@@ -162,6 +162,7 @@ class SessionRepo:
                 UNION ALL SELECT created_at FROM counter_events WHERE session_id = :s
                 UNION ALL SELECT c.created_at FROM check_results c
                           JOIN devices d ON d.id = c.device_row_id WHERE d.session_id = :s
+                UNION ALL SELECT created_at FROM repair_events WHERE session_id = :s
             )
             """,
             {"s": session_id},
