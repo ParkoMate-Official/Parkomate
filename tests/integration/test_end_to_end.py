@@ -15,7 +15,7 @@ from parkomate.app_paths import AppPaths
 from parkomate.cli import main as cli_main
 from parkomate.config.manager import settings_to_toml, validate_settings
 from parkomate.config.secrets import MemorySecretStore
-from parkomate.config.settings import Settings
+from parkomate.config.settings import DevSettings, Settings
 from parkomate.core.enums import (
     AmbientReason,
     CheckCode,
@@ -27,6 +27,7 @@ from parkomate.core.enums import (
 )
 from parkomate.core.errors import SettingsError
 from parkomate.data.records import ProductionRecords
+from parkomate.hardware import RealHardwareService
 from parkomate.hardware.mocks import MockHardwareService, MockScenario
 
 PASSWORD = "secret-pass-1"
@@ -247,11 +248,19 @@ def test_email_outbox_survives_offline_and_recovery(data_dir: Path) -> None:
     restarted.close()
 
 
-def test_real_hardware_not_available_yet() -> None:
-    with pytest.raises(SettingsError):
-        create_hardware(Settings(), mock=False)
-    hardware, mocked = create_hardware(Settings(), mock=None)
-    assert mocked and isinstance(hardware, MockHardwareService)
+def test_create_hardware_selects_real_bench_or_mock(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("PARKOMATE_REPLAY", raising=False)
+    monkeypatch.delenv("PARKOMATE_RECORD", raising=False)
+    secrets = MemorySecretStore()
+    for mock in (False, None):  # None = follow dev.use_mock_hardware (off by default)
+        hardware, simulated = create_hardware(Settings, secrets, mock=mock)
+        assert isinstance(hardware, RealHardwareService) and not simulated
+        hardware.shutdown()  # nothing opened yet: must still be safe
+    dev_mock = Settings(dev=DevSettings(use_mock_hardware=True))
+    hardware, simulated = create_hardware(lambda: dev_mock, secrets, mock=None)
+    assert simulated and isinstance(hardware, MockHardwareService)
+    hardware, simulated = create_hardware(Settings, secrets, mock=True)
+    assert simulated and isinstance(hardware, MockHardwareService)
 
 
 def test_invalid_settings_refuse_start(data_dir: Path) -> None:

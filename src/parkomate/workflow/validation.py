@@ -100,8 +100,7 @@ def check_regulator(
             value=None if t_reg is None else float(quantize(t_reg, decimals)),
             unit="°C",
             reason_key=(
-                "reject.reason.value_missing" if t_reg is None
-                else "reject.reason.ambient_missing"
+                "reject.reason.value_missing" if t_reg is None else "reject.reason.ambient_missing"
             ),
             params={"check_key": code.label_key},
         )
@@ -134,8 +133,13 @@ def measurement_verdicts(
 ) -> list[Verdict]:
     """V_A, V_B, V_C then T_REG, in that order."""
     verdicts = [
-        check_range(code, getattr(measurement, f"v_{point}"), *limits.voltage_range(point),
-                    limits.decimals, "V")
+        check_range(
+            code,
+            getattr(measurement, f"v_{point}"),
+            *limits.voltage_range(point),
+            limits.decimals,
+            "V",
+        )
         for point, code in VOLTAGE_POINTS
     ]
     verdicts.append(

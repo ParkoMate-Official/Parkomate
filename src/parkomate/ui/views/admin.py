@@ -141,6 +141,7 @@ class SettingsTab(QWidget):
         self.editors: dict[str, Editor] = {}
         self.errors: dict[str, QLabel] = {}
         self.labels: dict[str, QLabel] = {}
+        self.list_fields: set[str] = set()  # list[str] settings, edited as comma-separated text
         self.groups: dict[str, QGroupBox] = {}
         self._build()
         self._build_secrets()
@@ -199,6 +200,8 @@ class SettingsTab(QWidget):
         self.editors[dotted] = editor
         self.errors[dotted] = error
         self.labels[dotted] = label
+        if get_origin(info.annotation) is list:
+            self.list_fields.add(dotted)
 
     @staticmethod
     def _bounds(info: Any) -> tuple[float | None, float | None]:
@@ -302,7 +305,7 @@ class SettingsTab(QWidget):
                 value = editor.currentData()
             else:
                 value = editor.text().strip()
-                if dotted == "email.recipients":
+                if dotted in self.list_fields:
                     value = [part.strip() for part in value.split(",") if part.strip()]
             target = data
             parts = dotted.split(".")

@@ -191,9 +191,7 @@ class WorkflowEngine:
             active = self._active
             if active is None or active.status is not DeviceStatus.IN_PROGRESS:
                 return []
-            return [
-                c for c in self.required_checks(active.stage) if not self._satisfied(active, c)
-            ]
+            return [c for c in self.required_checks(active.stage) if not self._satisfied(active, c)]
 
     def is_stage_complete(self, stage: Stage) -> bool:
         with self._lock:
@@ -285,7 +283,7 @@ class WorkflowEngine:
             reason_key=None if success else "reject.reason.upload_failed",
         )
         if not success and not retry:
-            key = "reject.reason.upload_failed_max" if max_attempts > 1 else "reject.reason.upload_failed"
+            key = "reject.reason.upload_failed" + ("_max" if max_attempts > 1 else "")
             return self._fail(active, outcome, key, {"attempts": attempt})
         return outcome
 
@@ -352,8 +350,12 @@ class WorkflowEngine:
                 reason_key="identity.qr_bad_format",
                 reason_params={"value": qr},
             )
+        # A new scan starts identity over: an earlier match must not carry over to this QR.
         active.qr_id = qr
         active.identity = None
+        active.outcomes.pop(CheckCode.C_ID_SYNC, None)
+        if active.device_id != qr:
+            active.device_id = None
         return self._record(active, CheckCode.C_QR_READ, passed=True, value_text=qr)
 
     # ================================================================== stage flow
@@ -467,9 +469,7 @@ class WorkflowEngine:
                     value_num=float(quantize(measurement.t_amb_c, settings.limits.decimals)),
                 )
             if any_failed and not retry:
-                index, first = next(
-                    (i, o) for i, o in enumerate(outcomes) if o.passed is False
-                )
+                index, first = next((i, o) for i, o in enumerate(outcomes) if o.passed is False)
                 verdict = verdicts[index]
                 assert verdict.reason_key is not None
                 outcomes[index] = self._fail(active, first, verdict.reason_key, verdict.params)
