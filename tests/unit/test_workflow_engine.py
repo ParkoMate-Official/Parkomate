@@ -6,7 +6,12 @@ from datetime import UTC, datetime
 
 import pytest
 
-from parkomate.config.settings import LimitsSettings, ProgrammingSettings, Settings
+from parkomate.config.settings import (
+    LimitsSettings,
+    ProgrammingSettings,
+    Settings,
+    WorkflowSettings,
+)
 from parkomate.core.enums import (
     AmbientReason,
     CheckCode,
@@ -29,6 +34,7 @@ from parkomate.core.events import (
 from parkomate.core.interfaces import WorkflowService
 from parkomate.core.models import Measurement
 from parkomate.data.records import ProductionRecords
+from parkomate.i18n import t
 from parkomate.workflow import WorkflowEngine, quantize, within
 
 MAC = "24:6F:28:AA:BB:01"
@@ -198,9 +204,7 @@ def test_testing_order_enforced(wf: WorkflowEngine) -> None:
         wf.submit_check(CheckCode.B2_SENSOR_OK, "yes")
 
 
-def test_configurable_reading_count(
-    wf: WorkflowEngine, settings_box: dict[str, Settings]
-) -> None:
+def test_configurable_reading_count(wf: WorkflowEngine, settings_box: dict[str, Settings]) -> None:
     settings_box["value"] = Settings(limits=LimitsSettings(sensor_reading_count=2))
     _programming(wf)
     wf.submit_check(CheckCode.B1_COMM, True)
@@ -248,9 +252,7 @@ def test_upload_retry_then_success_and_adjust(wf: WorkflowEngine) -> None:
     )
 
 
-def test_upload_max_retries_rejects(
-    wf: WorkflowEngine, settings_box: dict[str, Settings]
-) -> None:
+def test_upload_max_retries_rejects(wf: WorkflowEngine, settings_box: dict[str, Settings]) -> None:
     settings_box["value"] = Settings(programming=ProgrammingSettings(max_retries=2))
     wf.start_device(MAC)
     wf.submit_check(CheckCode.A_WHITELIST, True)
@@ -431,3 +433,163 @@ def test_abandon_and_clear(wf: WorkflowEngine) -> None:
         wf.submit_check(CheckCode.A_WHITELIST, True)
     assert wf.required_checks(Stage.COMPLETE) == []
     assert not wf.is_stage_complete(Stage.PROGRAMMING)
+
+
+# ------------------------------------------------------------------ configurable retries
+
+
+def _retriable(*groups: str, max_attempts: int = 2) -> Settings:
+    return Settings(
+        workflow=WorkflowSettings(retriable_checks=list(groups), max_attempts=max_attempts)
+    )
+
+
+def test_comm_retry_when_configured(wf: WorkflowEngine, settings_box: dict[str, Settings]) -> None:
+    settings_box["value"] = _retriable("A_UPLOAD", "B1_COMM")
+    _programming(wf)
+    first = wf.submit_check(CheckCode.B1_COMM, False)
+    assert first.passed is False and first.retry_allowed and first.reject is None
+    assert (first.attempt, first.max_attempts) == (1, 2)
+    assert wf.current_stage() is Stage.TESTING
+    assert CheckCode.B1_COMM in wf.missing_checks()
+    with pytest.raises(RecordStateError):  # readings still need a passing B1
+        wf.submit_check(CheckCode.reading(1), 150.0)
+    second = wf.submit_check(CheckCode.B1_COMM, True)
+    assert second.passed and second.attempt == 2
+    wf.submit_check(CheckCode.reading(1), 150.0)  # unblocked
+
+
+def test_comm_retry_exhausted_rejects(
+    wf: WorkflowEngine, settings_box: dict[str, Settings]
+) -> None:
+    settings_box["value"] = _retriable("A_UPLOAD", "B1_COMM")
+    _programming(wf)
+    assert wf.submit_check(CheckCode.B1_COMM, False).retry_allowed
+    last = wf.submit_check(CheckCode.B1_COMM, False)
+    assert not last.retry_allowed and last.reject is not None
+    assert last.reject.stage is Stage.TESTING and last.reject.check_code is CheckCode.B1_COMM
+
+
+def test_measurement_retry_when_configured(
+    wf: WorkflowEngine, settings_box: dict[str, Settings]
+) -> None:
+    settings_box["value"] = _retriable("A_UPLOAD", "B3_ELECTRICAL")
+    _programming(wf)
+    _testing_until_measure(wf)
+    failed = {o.check_code: o for o in wf.evaluate_measurement(_measurement(v_b=5.2))}
+    assert failed[CheckCode.B3_V_B].passed is False and failed[CheckCode.B3_V_B].retry_allowed
+    assert failed[CheckCode.B3_V_A].passed and not failed[CheckCode.B3_V_A].retry_allowed
+    assert all(o.reject is None for o in failed.values())
+    assert wf.missing_checks() == [CheckCode.B3_V_B]
+    passed = wf.evaluate_measurement(_measurement())
+    assert all(o.passed for o in passed) and passed[0].attempt == 2
+    assert wf.submit_and_next() is Stage.LABELING
+
+
+def test_measurement_retry_exhausted_rejects_first_failure(
+    wf: WorkflowEngine, settings_box: dict[str, Settings]
+) -> None:
+    settings_box["value"] = _retriable("A_UPLOAD", "B3_ELECTRICAL")
+    _programming(wf)
+    _testing_until_measure(wf)
+    wf.evaluate_measurement(_measurement(v_c=3.4))
+    outcomes = wf.evaluate_measurement(_measurement(v_c=3.4, t_reg_c=40.0))
+    rejected = [o for o in outcomes if o.reject is not None]
+    assert [o.check_code for o in rejected] == [CheckCode.B3_V_C]  # the first failing check
+    assert rejected[0].reject is not None and rejected[0].reject.box_letter == "B"
+
+
+def test_default_policy_comm_and_measurement_not_retriable(wf: WorkflowEngine) -> None:
+    _programming(wf)
+    _testing_until_measure(wf)
+    outcomes = wf.evaluate_measurement(_measurement(v_a=23.0))
+    assert outcomes[0].reject is not None and not outcomes[0].retry_allowed
+
+
+# ------------------------------------------------------------------ identity
+
+
+def test_rescan_after_match_needs_new_identity(wf: WorkflowEngine) -> None:
+    _to_labeling(wf)
+    wf.submit_check(CheckCode.C_QR_READ, "PKM-000519")
+    assert wf.reconcile_identity("PKM-000519", "PKM-000519").status is IdentityStatus.MATCH
+    assert CheckCode.C_ID_SYNC not in wf.missing_checks()
+    wf.submit_check(CheckCode.C_QR_READ, "PKM-000777")  # a different sticker is scanned
+    assert CheckCode.C_ID_SYNC in wf.missing_checks()
+    state = wf.current_device()
+    assert state is not None and state.identity is None and state.device_id is None
+    with pytest.raises(RecordStateError):  # the old QR is no longer the one on the bench
+        wf.reconcile_identity("PKM-000519", "PKM-000519")
+    assert wf.reconcile_identity("PKM-000777", "PKM-000519").status is (
+        IdentityStatus.WRITE_REQUIRED
+    )
+    wf.reconcile_identity("PKM-000777", "PKM-000777", after_write=True)
+    for code in (CheckCode.C1, CheckCode.C2, CheckCode.C3, CheckCode.C4):
+        wf.submit_check(code, True)
+    assert wf.submit_and_next() is Stage.PACKAGING
+    device = wf._records.get_device(state.device_row_id)
+    assert device.device_id == "PKM-000777"
+
+
+def test_identity_outside_labeling(wf: WorkflowEngine) -> None:
+    _programming(wf)
+    with pytest.raises(RecordStateError):
+        wf.reconcile_identity("PKM-000519", "PKM-000519")
+
+
+# ------------------------------------------------------------------ reject box per stage
+
+
+def _reject_at(wf: WorkflowEngine, stage: Stage) -> CheckCode:
+    wf.start_device(MAC)
+    if stage is Stage.PROGRAMMING:
+        return CheckCode.A_UPLOAD
+    wf.submit_check(CheckCode.A_WHITELIST, True)
+    wf.submit_check(CheckCode.A_UPLOAD, True)
+    wf.submit_and_next()
+    if stage is Stage.TESTING:
+        return CheckCode.B2_INDICATOR_OK
+    _testing_until_measure(wf)
+    wf.evaluate_measurement(_measurement())
+    wf.submit_and_next()
+    if stage is Stage.LABELING:
+        return CheckCode.C3
+    wf.submit_check(CheckCode.C_QR_READ, "PKM-000519")
+    wf.reconcile_identity("PKM-000519", "PKM-000519")
+    for code in (CheckCode.C1, CheckCode.C2, CheckCode.C3, CheckCode.C4):
+        wf.submit_check(code, True)
+    wf.submit_and_next()
+    return CheckCode.D2
+
+
+@pytest.mark.parametrize(
+    ("stage", "box", "text"),
+    [
+        (Stage.PROGRAMMING, "A", "Place device in the Programming reject box (A)"),
+        (Stage.TESTING, "B", "Place device in the Testing reject box (B)"),
+        (Stage.LABELING, "C", "Place device in the Labeling reject box (C)"),
+        (Stage.PACKAGING, "D", "Place device in the Packaging reject box (D)"),
+    ],
+)
+def test_reject_box_instruction_per_stage(
+    wf: WorkflowEngine, stage: Stage, box: str, text: str
+) -> None:
+    code = _reject_at(wf, stage)
+    instruction = wf.reject(code)
+    assert instruction.stage is stage and instruction.check_code is code
+    assert instruction.box_letter == box
+    message = t(instruction.message_key, stage=t(stage.label_key), box=instruction.box_letter)
+    assert message == text
+    device = wf._records.get_device(instruction.device_row_id)
+    assert device.status is DeviceStatus.REJECTED
+    assert (device.reject_stage, device.reject_check_code) == (stage, code)
+    assert not wf.is_stage_complete(stage) and wf.current_stage() is Stage.REJECTED
+
+
+def test_one_device_at_a_time_next_board_after_finish(wf: WorkflowEngine) -> None:
+    wf.start_device(MAC)
+    with pytest.raises(RecordStateError):
+        wf.start_device("24:6F:28:AA:BB:02")
+    wf.submit_check(CheckCode.A_WHITELIST, False)  # rejected → finished
+    nxt = wf.start_device("24:6F:28:AA:BB:02")
+    assert nxt.stage is Stage.PROGRAMMING and nxt.mac_address == "24:6F:28:AA:BB:02"

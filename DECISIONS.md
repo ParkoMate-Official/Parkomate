@@ -70,7 +70,7 @@ Relative to the interface list in the build prompt:
 | D12 | Crash recovery closes stale sessions at their **last recorded activity** (not "now"), marks in-progress devices `abandoned`, queues the report, and the login screen tells the operator | accurate times; operator knows to set the board aside |
 | D13 | Retention purge deletes only payload files of **sent** e-mails older than `retention_days` (default 90); rows kept | prompt rule |
 
-## Workflow stub (Piyush replaces it)
+## Workflow (Piyush - `WorkflowEngine`)
 
 | # | Decision | Why |
 |---|---|---|
@@ -83,6 +83,9 @@ Relative to the interface list in the build prompt:
 | W7 | Testing order enforced: B1 before readings; exactly N readings in order; sensor/indicator marks before measuring; measurement starts automatically when both are OK | gates exactly as specified |
 | W8 | Checklist ticks can be unticked; they are written to the database when the stage is submitted | no false "pass" rows for accidental taps |
 | W9 | Manual reject in Programming/Testing is attributed to the stage's first missing check; in Labeling/Packaging the operator chooses the failing item | always a concrete check code |
+| W10 | Communication test and measurement can be made retriable (`workflow.retriable_checks` + `workflow.max_attempts`); a retried measurement re-checks all four values and, when attempts run out, rejects on the **first** failing value | default stays "only programming retries" (W1); first failure = the reason printed on the box |
+| W11 | A new valid QR scan in Labeling clears an earlier identity result: the ID must be reconciled again for the sticker now on the bench | a match for an old sticker must never complete a board with a different label |
+| W12 | Real-bench tests live in `tests/hil/`, are skipped unless `PARKOMATE_HIL=1`, use a golden board and a scratch database; flashing only with `PARKOMATE_HIL_FULL=1` | a plain `pytest` never touches hardware or the station data |
 
 ## E-mail, reports, logs, secrets
 
