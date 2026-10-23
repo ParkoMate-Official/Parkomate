@@ -20,29 +20,27 @@ from dataclasses import dataclass, field
 
 @dataclass(frozen=True, slots=True)
 class Colors:
-    # ---- neutrals (slightly cool, blue-biased)
-    bg: str = "#F4F6FA"  # page background
+    # ---- neutrals (warm, parkomate.com brand-aligned)
+    bg: str = "#F5F5F3"  # page background
     surface: str = "#FFFFFF"  # cards
-    surface_2: str = "#F0F3F8"  # inset areas, table header, input fill
-    surface_3: str = "#E6EAF1"  # hover on surface_2, disabled fill
-    outline: str = "#D5DBE5"  # card / input borders (1 px)
-    outline_soft: str = "#E6EAF1"  # dividers
-    outline_strong: str = "#7D8798"  # unselected controls (>= 3:1 on surface and surface_2)
-    text: str = "#111827"  # primary text
-    text_2: str = "#4B5565"  # secondary text
-    # Spec value #7A8494 is 3.8:1 on white - below AA for text. Darkened to pass on bg too.
-    text_3: str = "#636E7F"  # captions, placeholders
-    # ---- accent (Parkomate blue)
-    primary: str = "#1F56D6"
-    primary_hov: str = "#1A49B8"
-    primary_pressed: str = "#163E9C"
-    primary_cont: str = "#E3EBFD"  # tonal buttons, active card surface
-    primary_cont_hov: str = "#D4E0FC"
+    surface_2: str = "#EFEEEC"  # inset areas, table header, input fill
+    surface_3: str = "#E6E5E3"  # hover on surface_2, disabled fill
+    outline: str = "#D8D6D2"  # card / input borders (1 px)
+    outline_soft: str = "#E6E5E3"  # dividers
+    outline_strong: str = "#727782"  # unselected controls (>= 3:1 on surface and surface_2)
+    text: str = "#191817"  # primary text
+    text_2: str = "#555555"  # secondary text
+    text_3: str = "#6B6B6B"  # captions, placeholders
+    # ---- accent (Parkomate smart parking safety orange)
+    primary: str = "#BA4010"
+    primary_hov: str = "#A3360B"
+    primary_pressed: str = "#8C2E09"
+    primary_cont: str = "#FCEEE8"  # tonal buttons, active card surface
+    primary_cont_hov: str = "#F8DDD3"
     on_primary: str = "#FFFFFF"
-    on_primary_cont: str = "#1A49B8"
+    on_primary_cont: str = "#993308"
     # ---- status (never decorative). "<x>" = icons, bars and fills; "on_<x>_cont" = text on
-    # the <x>_cont container and on white, and the fill behind white text. The spec's
-    # #1E8E4E / #B26A00 are 3.7:1 on their containers, so text uses the darker on_* values.
+    # the <x>_cont container and on white, and the fill behind white text.
     success: str = "#1E8E4E"
     success_cont: str = "#E3F4EA"
     on_success_cont: str = "#146B3A"
@@ -54,9 +52,9 @@ class Colors:
     warning: str = "#B26A00"
     warning_cont: str = "#FFF2DA"
     on_warning_cont: str = "#8A5300"
-    info: str = "#1F56D6"
-    info_cont: str = "#E3EBFD"
-    on_info_cont: str = "#1A49B8"
+    info: str = "#166885"
+    info_cont: str = "#E0EFF4"
+    on_info_cont: str = "#10526B"
     on_status: str = "#FFFFFF"  # text and icons on filled status colours
     takeover: str = "#B3261E"  # reject takeover background
     takeover_glow: str = "#C93A2F"  # its soft lighter centre
@@ -67,9 +65,9 @@ class Colors:
     reject_d: str = "#F5B8B0"
     # ---- misc
     camera_bg: str = "#0B0F17"
-    camera_line: str = "#7FA6FF"  # scan line on the camera preview
+    camera_line: str = "#7FBBDD"  # scan line on the camera preview
     shadow: str = "#000000"
-    scrim: str = "#111827"
+    scrim: str = "#191817"
 
     def status(self, tone: str) -> tuple[str, str, str]:
         """(graphic, container, text-on-container) for a tone name."""
@@ -187,6 +185,7 @@ class Sizes:
     text_field_max: int = 480
     select_max: int = 520
     checkbox: int = 32
+    stage_checkbox_width: int = 120
     list_row: int = 64
     table_row: int = 48
     tab: int = 48

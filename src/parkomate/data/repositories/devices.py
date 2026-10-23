@@ -181,6 +181,9 @@ class DeviceRepo:
             )
         return ids
 
+    def reassign_session(self, device_row_id: int, target_session_id: int) -> None:
+        self._update(device_row_id, "session_id = ?", (target_session_id,))
+
     def _update(
         self,
         device_row_id: int,

@@ -30,10 +30,11 @@ from parkomate.core.enums import (
     AmbientReason,
     DeviceStatus,
     OutboxStatus,
+    PRODUCTION_STAGES,
     SessionEndReason,
     Stage,
 )
-from parkomate.core.errors import ParkomateError
+from parkomate.core.errors import ErrorCode, ParkomateError
 from parkomate.core.models import (
     Counters,
     Device,
@@ -43,8 +44,9 @@ from parkomate.core.models import (
     RejectInstruction,
     Session,
     SessionSummary,
+    WorkQueueItem,
 )
-from parkomate.i18n import get_language, set_language
+from parkomate.i18n import get_language, set_language, t
 from parkomate.mail.outbox import SendReport
 from parkomate.station import LoginResult, LogoutResult, StartupResult
 from parkomate.ui.viewmodels.base import ConfirmState, ErrorState, StageViewModel
@@ -115,6 +117,7 @@ class StationController(QObject):
     drawer_changed = Signal()
     mode_changed = Signal()
     retest_changed = Signal()
+    queue_changed = Signal()
     tick = Signal()
 
     def __init__(
@@ -158,6 +161,8 @@ class StationController(QObject):
         self.send_state: SendState | None = None
         self.drawer_open = False
         self.session_devices: list[Device] = []
+        self.queue_items: list[WorkQueueItem] = []
+        self.queue_count: int = 0
         self._outbox_busy = False
         self._shut_down = False
 
@@ -370,7 +375,8 @@ class StationController(QObject):
             return  # only ever from the login page (the ambient-result timer may fire late)
         self.login_phase = LoginPhase.FORM
         self.login_changed.emit()
-        self.stage = Stage.PROGRAMMING
+        first_stage = self.operator.effective_stages[0] if self.operator else Stage.PROGRAMMING
+        self.stage = first_stage
         self.mode = Mode.PRODUCTION
         self.retest = None
         for vm in [*self.stage_vms(), self.repair]:
@@ -379,8 +385,14 @@ class StationController(QObject):
         self.mode_changed.emit()
         self.retest_changed.emit()
         self.stage_changed.emit()
-        self.load_firmware()
-        self.programming.enter()
+        self.refresh_queue_count()
+        if first_stage is Stage.PROGRAMMING:
+            self.load_firmware()
+            self.programming.enter()
+        else:
+            vm = self.vm_for(first_stage)
+            if vm is not None:
+                vm.enter()
 
     def set_language(self, language: str) -> None:
         set_language(language)
@@ -449,6 +461,22 @@ class StationController(QObject):
             old_vm.leave()
         if new is Stage.COMPLETE:
             return  # DeviceCompleted arrives through the event bridge
+
+        operator = self.operator
+        if operator is not None and new not in operator.effective_stages:
+            state = self.device
+            if state is not None and self.session is not None:
+                self.ctx.repos.work_queue.enqueue(
+                    device_row_id=state.device_row_id,
+                    mac_address=state.mac_address,
+                    device_id=state.device_id,
+                    stage=new.value,
+                    source_session_id=self.session.id,
+                )
+            self.toast.emit(t("queue.handoff"))
+            self._next_device()
+            return
+
         self.stage = new
         self.stage_changed.emit()
         self.device_changed.emit()
@@ -510,7 +538,8 @@ class StationController(QObject):
             self.show_error(exc)
         for vm in self.stage_vms():
             vm.reset()
-        self.stage = Stage.PROGRAMMING
+        first_stage = self.operator.effective_stages[0] if self.operator else Stage.PROGRAMMING
+        self.stage = first_stage
         self.clear_error()
         retest = self.retest
         self.retest = None
@@ -518,12 +547,65 @@ class StationController(QObject):
         self.device_changed.emit()
         self.refresh_counters()
         self.refresh_session_devices()
+        self.refresh_queue_count()
         if retest is not None:
             self.retest_changed.emit()
             self._show_repair(retest.case_id)
         else:
-            self.programming.enter()
+            vm = self.vm_for(first_stage)
+            if vm is not None:
+                vm.enter()
         self.bottom_bar_changed.emit()
+
+
+    # ================================================================== work queue
+    def refresh_queue_count(self) -> None:
+        try:
+            stages = (
+                tuple(s.value for s in self.operator.effective_stages)
+                if self.operator
+                else tuple(s.value for s in PRODUCTION_STAGES)
+            )
+            self.queue_items = self.ctx.repos.work_queue.list_for_operator(stages)
+            self.queue_count = len(self.queue_items)
+        except Exception:
+            self.queue_items = []
+            self.queue_count = 0
+        self.queue_changed.emit()
+
+    def pick_queue_item(self, queue_id: int) -> None:
+        if self.session is None or self.operator is None:
+            return
+        if self.device_in_progress:
+            self.show_error(
+                ParkomateError(t("confirm.end_session_device"), code=ErrorCode.RECORD_STATE)
+            )
+            return
+        try:
+            item = self.ctx.repos.work_queue.pick(queue_id, self.operator.id, self.session.id)
+            target_stage = item.current_stage
+            self.ctx.workflow.resume_device(item.device_row_id, target_stage)
+            self.stage = target_stage
+            self.clear_error()
+            self.stage_changed.emit()
+            self.device_changed.emit()
+            vm = self.current_vm
+            if vm is not None:
+                vm.enter()
+            self.bottom_bar_changed.emit()
+            self.toast.emit(t("queue.pickup_success"))
+            self.refresh_queue_count()
+        except ParkomateError as exc:
+            self.show_error(exc)
+
+    def pick_next_queue_item(self) -> None:
+        if not self.queue_items:
+            return
+        for item in self.queue_items:
+            if item.current_stage == self.stage:
+                self.pick_queue_item(item.id)
+                return
+        self.pick_queue_item(self.queue_items[0].id)
 
     # ================================================================== repair tab
     def can_open_repair(self) -> bool:

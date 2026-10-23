@@ -6,7 +6,7 @@ from argon2 import PasswordHasher
 from parkomate.auth.service import AuthService, require_admin
 from parkomate.config.settings import AuthSettings, Settings
 from parkomate.core.clock import FakeClock
-from parkomate.core.enums import Role, SessionEndReason
+from parkomate.core.enums import Role, SessionEndReason, Stage
 from parkomate.core.errors import (
     AuthError,
     ErrorCode,
@@ -196,3 +196,22 @@ def test_corrupt_hash_is_a_failed_login(
 
 def test_list_operators(auth: AuthService, admin: Operator, operator: Operator) -> None:
     assert [o.operator_code for o in auth.list_operators()] == ["ADM1", "OP1"]
+
+
+def test_set_assigned_stages(
+    auth: AuthService, admin: Operator, operator: Operator, repos: Repositories
+) -> None:
+    # Non-admin cannot assign stages
+    with pytest.raises(PermissionDeniedError):
+        auth.set_assigned_stages(operator, operator.id, [Stage.PROGRAMMING])
+
+    # Admin assigns stages
+    auth.set_assigned_stages(admin, operator.id, [Stage.PROGRAMMING, Stage.TESTING])
+    updated = repos.operators.require(operator.id)
+    assert updated.assigned_stages == (Stage.PROGRAMMING, Stage.TESTING)
+
+    # Admin assigns None (all stages)
+    auth.set_assigned_stages(admin, operator.id, None)
+    cleared = repos.operators.require(operator.id)
+    assert cleared.assigned_stages is None
+    assert "operator.stages" in _actions(repos)

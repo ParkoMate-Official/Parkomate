@@ -52,11 +52,20 @@ class Operator(_Frozen):
     failed_attempts: int = 0
     locked_until: datetime | None = None
     language: str | None = None
+    assigned_stages: tuple[Stage, ...] | None = None
+    """Stages this operator is allowed to work on. `None` means all stages."""
     created_at: datetime
 
     @property
     def is_admin(self) -> bool:
         return self.role is Role.ADMIN
+
+    @property
+    def effective_stages(self) -> tuple[Stage, ...]:
+        """Stages this operator can work on. `None` means all production stages."""
+        from parkomate.core.enums import PRODUCTION_STAGES
+
+        return self.assigned_stages if self.assigned_stages is not None else PRODUCTION_STAGES
 
 
 class Session(_Frozen):
@@ -416,3 +425,23 @@ class DeviceState(_Frozen):
     def display_id(self) -> str:
         """Best human identifier: QR/device ID when known, else MAC."""
         return self.device_id or self.qr_id or self.mac_address
+
+
+# --------------------------------------------------------------------------- work queue
+
+
+class WorkQueueItem(_Frozen):
+    """A board waiting in the work queue for the next operator to pick up."""
+
+    id: int
+    device_row_id: int
+    mac_address: str
+    device_id: str | None = None
+    current_stage: Stage
+    ready_at: datetime
+    picked_by: int | None = None
+    picked_at: datetime | None = None
+    completed_at: datetime | None = None
+    source_session_id: int | None = None
+    target_session_id: int | None = None
+    status: str = "waiting"

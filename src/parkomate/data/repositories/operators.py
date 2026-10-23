@@ -6,7 +6,7 @@ import sqlite3
 from datetime import datetime
 
 from parkomate.core.clock import Clock
-from parkomate.core.enums import Role
+from parkomate.core.enums import Role, Stage
 from parkomate.core.errors import NotFoundError
 from parkomate.core.models import Operator
 from parkomate.data.db import Database
@@ -14,11 +14,20 @@ from parkomate.data.repositories._rows import iso, last_id, ts, ts_req
 
 _COLUMNS = (
     "id, operator_code, full_name, role, is_active, failed_attempts, locked_until, language, "
-    "created_at"
+    "assigned_stages, created_at"
 )
 
 
+def _parse_stages(val: str | None) -> tuple[Stage, ...] | None:
+    if not val:
+        return None
+    return tuple(Stage(s.strip()) for s in val.split(",") if s.strip())
+
+
 def _to_model(row: sqlite3.Row) -> Operator:
+    assigned = None
+    if "assigned_stages" in row.keys() and row["assigned_stages"]:
+        assigned = _parse_stages(row["assigned_stages"])
     return Operator(
         id=row["id"],
         operator_code=row["operator_code"],
@@ -28,6 +37,7 @@ def _to_model(row: sqlite3.Row) -> Operator:
         failed_attempts=row["failed_attempts"],
         locked_until=ts(row["locked_until"]),
         language=row["language"],
+        assigned_stages=assigned,
         created_at=ts_req(row["created_at"]),
     )
 
@@ -120,6 +130,10 @@ class OperatorRepo:
             "failed_attempts = ?, locked_until = ?",
             (failed_attempts, iso(locked_until)),
         )
+
+    def set_assigned_stages(self, operator_id: int, stages: list[str] | None) -> None:
+        value = ",".join(stages) if stages else None
+        self._update(operator_id, "assigned_stages = ?", (value,))
 
     def _update(self, operator_id: int, assignments: str, params: tuple[object, ...]) -> None:
         with self._db.transaction() as conn:

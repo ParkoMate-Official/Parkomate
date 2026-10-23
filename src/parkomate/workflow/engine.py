@@ -138,6 +138,44 @@ class WorkflowEngine:
         assert snapshot is not None
         return snapshot
 
+    def resume_device(self, device_row_id: int, target_stage: Stage) -> DeviceState:
+        with self._lock:
+            if self._active is not None and self._active.status is DeviceStatus.IN_PROGRESS:
+                raise RecordStateError("a device is already on the bench")
+            device = self._records.resume_device(device_row_id)
+            active = _Active(
+                device_row_id,
+                device.mac_address,
+                device.started_at,
+                device.repair_case_id,
+                stage=target_stage,
+                qr_id=device.device_id,
+                device_id=device.device_id,
+            )
+            checks = self._records.checks_for_device(device_row_id)
+            for c in checks:
+                outcome = CheckOutcome(
+                    check_code=c.check_code,
+                    stage=c.stage,
+                    passed=c.passed,
+                    value_num=c.value_num,
+                    value_text=c.value_text,
+                    unit=c.unit,
+                    limit_low=c.limit_low,
+                    limit_high=c.limit_high,
+                )
+                active.outcomes[c.check_code] = outcome
+                if c.passed is not None:
+                    active.marks[c.check_code] = c.passed
+                if c.check_code.reading_index is not None and c.value_num is not None:
+                    active.readings.append(c.value_num)
+            self._active = active
+            snapshot = self._snapshot()
+        self._bus.publish(DeviceStarted(device_row_id, device.mac_address))
+        self._bus.publish(StageChanged(device_row_id, None, target_stage))
+        assert snapshot is not None
+        return snapshot
+
     def current_device(self) -> DeviceState | None:
         with self._lock:
             return self._snapshot()

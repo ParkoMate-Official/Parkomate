@@ -242,6 +242,18 @@ class ProductionRecords:
         log.info("device %s started (row %d%s)", normalised, device.id, retest)
         return device.id
 
+    def resume_device(self, device_row_id: int) -> Device:
+        with self._lock:
+            session = self.require_session()
+            active = self._repos.devices.active_for_session(session.id)
+            if active is not None and active.id != device_row_id:
+                raise RecordStateError(
+                    f"device row {active.id} is still in progress; finish it first",
+                    context={"device_row_id": active.id},
+                )
+            self._repos.devices.reassign_session(device_row_id, session.id)
+            return self._repos.devices.require(device_row_id)
+
     def get_device(self, device_row_id: int) -> Device:
         return self._repos.devices.require(device_row_id)
 

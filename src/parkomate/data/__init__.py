@@ -18,6 +18,7 @@ from parkomate.data.repositories import (
     RepairRepo,
     SessionRepo,
     TransitionRepo,
+    WorkQueueRepo,
 )
 
 
@@ -36,6 +37,7 @@ class Repositories:
     audit: AuditRepo
     transitions: TransitionRepo
     repairs: RepairRepo
+    work_queue: WorkQueueRepo
 
     @classmethod
     def create(cls, db: Database, clock: Clock) -> Repositories:
@@ -51,6 +53,7 @@ class Repositories:
             audit=AuditRepo(db, clock),
             transitions=TransitionRepo(db, clock),
             repairs=RepairRepo(db, clock),
+            work_queue=WorkQueueRepo(db, clock),
         )
 
 

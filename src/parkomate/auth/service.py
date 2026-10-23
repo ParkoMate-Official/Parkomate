@@ -22,7 +22,7 @@ from argon2 import PasswordHasher
 from argon2.exceptions import InvalidHashError, VerificationError, VerifyMismatchError
 
 from parkomate.config.settings import AuthSettings
-from parkomate.core.enums import Role, SessionEndReason
+from parkomate.core.enums import Role, SessionEndReason, Stage
 from parkomate.core.errors import (
     AuthError,
     ErrorCode,
@@ -237,6 +237,20 @@ class AuthService:
                 actor.id,
                 "operator.activate" if active else "operator.deactivate",
                 {"operator_id": operator_id},
+            )
+
+    def set_assigned_stages(
+        self, actor: Operator, operator_id: int, stages: list[Stage] | tuple[Stage, ...] | None
+    ) -> None:
+        self._require_admin(actor)
+        self._repos.operators.require(operator_id)
+        stage_strs = [s.value for s in stages] if stages is not None else None
+        with self._repos.db.transaction():
+            self._repos.operators.set_assigned_stages(operator_id, stage_strs)
+            self._repos.audit.record(
+                actor.id,
+                "operator.stages",
+                {"operator_id": operator_id, "stages": stage_strs},
             )
 
     def set_role(self, actor: Operator, operator_id: int, role: Role) -> None:

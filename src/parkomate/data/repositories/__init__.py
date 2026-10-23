@@ -9,6 +9,7 @@ from parkomate.data.repositories.outbox import OutboxRepo
 from parkomate.data.repositories.repairs import RepairRepo
 from parkomate.data.repositories.sessions import SessionRepo
 from parkomate.data.repositories.transitions import TransitionRepo
+from parkomate.data.repositories.work_queue import WorkQueueRepo
 
 __all__ = [
     "AuditRepo",
@@ -20,4 +21,5 @@ __all__ = [
     "RepairRepo",
     "SessionRepo",
     "TransitionRepo",
+    "WorkQueueRepo",
 ]

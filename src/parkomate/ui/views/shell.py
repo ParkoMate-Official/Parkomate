@@ -47,7 +47,7 @@ from parkomate.ui.components.cards import Banner, InlineConfirm, KpiTile
 from parkomate.ui.components.chips import SimulationChip, StatusChip
 from parkomate.ui.components.icons import Icon, qicon
 from parkomate.ui.components.overlays import ErrorBanner, RejectTakeover, Toast
-from parkomate.ui.components.popup import Menu, MenuItem
+from parkomate.ui.components.popup import Menu, MenuItem, Popup
 from parkomate.ui.components.segmented import LanguageSwitch, SegmentedControl
 from parkomate.ui.components.shellparts import (
     AccountButton,
@@ -155,6 +155,75 @@ class _Avatar(QWidget):
         painter.end()
 
 
+class WorkQueuePopup(Popup):
+    def __init__(self, controller: StationController, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.c = controller
+        self.setFixedWidth(SIZES.empty_state)
+        self.content.setContentsMargins(SPACE.m, SPACE.m, SPACE.m, SPACE.m)
+        self.content.setSpacing(SPACE.s)
+
+        header = QHBoxLayout()
+        header.setSpacing(SPACE.s)
+        header.addWidget(Icon("inbox", SIZES.icon_m, COLORS.primary))
+        header.addWidget(TrText("queue.title", "title"), 1)
+        self.chip = StatusChip("info", compact=True)
+        header.addWidget(self.chip)
+        self.content.addLayout(header)
+        self.content.addWidget(Divider())
+
+        self.list_layout = QVBoxLayout()
+        self.list_layout.setSpacing(SPACE.s)
+        self.content.addLayout(self.list_layout)
+
+        self.empty_label = Text("", "body", "tertiary", align=Qt.AlignmentFlag.AlignCenter)
+        self.content.addWidget(self.empty_label)
+
+    def populate(self) -> None:
+        while self.list_layout.count():
+            item = self.list_layout.takeAt(0)
+            if item.widget() is not None:
+                item.widget().deleteLater()
+            elif item.layout() is not None:
+                while item.layout().count():
+                    child = item.layout().takeAt(0)
+                    if child.widget() is not None:
+                        child.widget().deleteLater()
+
+        items = self.c.queue_items
+        count = len(items)
+        self.chip.setText(str(count))
+        self.empty_label.setVisible(count == 0)
+        if count == 0:
+            self.empty_label.setText(t("queue.empty"))
+            return
+
+        for q_item in items:
+            row_widget = QWidget()
+            row = QHBoxLayout(row_widget)
+            row.setContentsMargins(SPACE.xs, SPACE.xs, SPACE.xs, SPACE.xs)
+            row.setSpacing(SPACE.s)
+
+            info = QVBoxLayout()
+            info.setSpacing(0)
+            board_label = Text(q_item.device_id or q_item.mac_address, "mono")
+            stage_name = t(q_item.current_stage.label_key)
+            stage_label = Text(f"{q_item.current_stage.letter} · {stage_name}", "caption", "secondary")
+            info.addWidget(board_label)
+            info.addWidget(stage_label)
+            row.addLayout(info, 1)
+
+            btn = AppButton("queue.pick_up", variant="tonal", size="compact")
+            qid = q_item.id
+            btn.clicked.connect(lambda _c=False, i=qid: self._pick(i))
+            row.addWidget(btn)
+            self.list_layout.addWidget(row_widget)
+
+    def _pick(self, qid: int) -> None:
+        self.close()
+        self.c.pick_queue_item(qid)
+
+
 class AppBar(QFrame):
     def __init__(self, controller: StationController, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -185,6 +254,9 @@ class AppBar(QFrame):
         right.addStretch(1)
         self.mock = SimulationChip()
         right.addWidget(self.mock)
+        self.queue_btn = AppButton("queue.title", variant="outlined", size="compact", icon="inbox")
+        self.queue_btn.clicked.connect(self.open_queue_popup)
+        right.addWidget(self.queue_btn)
         self.language = LanguageSwitch()
         self.language.language_selected.connect(controller.set_language)
         right.addWidget(self.language)
@@ -197,6 +269,7 @@ class AppBar(QFrame):
         grid.setColumnStretch(0, 1)
         grid.setColumnStretch(2, 1)
         self.menu = self._build_menu()
+        self.queue_popup = WorkQueuePopup(controller, self)
 
     def _build_menu(self) -> Menu:
         menu = Menu(self)
@@ -236,6 +309,10 @@ class AppBar(QFrame):
         """The Admin entry of the account menu."""
         return self.admin_item
 
+    def open_queue_popup(self) -> None:
+        self.queue_popup.populate()
+        self.queue_popup.open_at(self.queue_btn, align_right=True)
+
     def open_menu(self) -> None:
         self.refresh()
         self.account.set_open(True)
@@ -266,6 +343,13 @@ class AppBar(QFrame):
         )
         operator = c.operator
         name = operator.full_name if operator else ""
+        qcount = c.queue_count
+        if qcount > 0:
+            self.queue_btn.set_text_key("queue.waiting", n=qcount)
+            self.queue_btn.set_variant("tonal")
+        else:
+            self.queue_btn.set_text_key("queue.title")
+            self.queue_btn.set_variant("outlined")
         self.account.set_name(name)
         self.account.setAccessibleName(t("menu.account"))
         self.menu_avatar.setText(initials(name))
@@ -636,6 +720,7 @@ class ProductionShell(QWidget):
             controller.device_changed,
             controller.counters_changed,
             controller.session_changed,
+            controller.queue_changed,
             controller.tick,
             controller.page_changed,
         ):

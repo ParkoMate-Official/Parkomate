@@ -219,3 +219,56 @@ def test_audit_repo(repos: Repositories) -> None:
     repos.audit.record(None, "other")
     assert [e.action for e in repos.audit.list_entries()] == ["other", "test.action"]
     assert repos.audit.list_entries(action="test.action") == [entry]
+
+
+def test_operator_assigned_stages(repos: Repositories) -> None:
+    op = repos.operators.create("op_stage", "Stage Op", "hash", Role.OPERATOR)
+    assert op.assigned_stages is None
+    assert len(op.effective_stages) == 4
+
+    repos.operators.set_assigned_stages(op.id, ["programming", "testing"])
+    updated = repos.operators.require(op.id)
+    assert updated.assigned_stages == (Stage.PROGRAMMING, Stage.TESTING)
+    assert updated.effective_stages == (Stage.PROGRAMMING, Stage.TESTING)
+
+    repos.operators.set_assigned_stages(op.id, None)
+    cleared = repos.operators.require(op.id)
+    assert cleared.assigned_stages is None
+    assert len(cleared.effective_stages) == 4
+
+
+def test_work_queue_repo(repos: Repositories, clock: FakeClock) -> None:
+    op_id = _operator(repos, "OP_Q")
+    session = repos.sessions.create(op_id, 'station-1', 'en')
+    device = repos.devices.create(session.id, "11:22:33:44:55:66", "station-1")
+
+    # Enqueue to work queue
+    item_id = repos.work_queue.enqueue(
+        device_row_id=device.id,
+        mac_address=device.mac_address,
+        device_id=None,
+        stage="testing",
+        source_session_id=session.id,
+    )
+    assert repos.work_queue.count_waiting() == 1
+    assert repos.work_queue.count_waiting("testing") == 1
+    assert repos.work_queue.count_waiting("packaging") == 0
+
+    waiting = repos.work_queue.list_waiting()
+    assert len(waiting) == 1
+    assert waiting[0].id == item_id
+    assert waiting[0].status == "waiting"
+    assert waiting[0].current_stage == Stage.TESTING
+
+    # Pick
+    op2_id = _operator(repos, "OP_Q2")
+    session2 = repos.sessions.create(op2_id, 'station-1', 'en')
+    picked = repos.work_queue.pick(item_id, op2_id, session2.id)
+    assert picked.status == "in_progress"
+    assert picked.picked_by == op2_id
+    assert repos.work_queue.count_waiting() == 0
+
+    # Complete
+    repos.work_queue.complete(item_id)
+    waiting_after = repos.work_queue.list_waiting()
+    assert len(waiting_after) == 0

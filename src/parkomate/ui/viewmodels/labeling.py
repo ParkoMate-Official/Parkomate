@@ -112,7 +112,7 @@ class LabelingViewModel(ChecklistMixin):
         return self.identity in (IdentityStatus.MATCH, IdentityStatus.CONFIRMED)
 
     def enter(self) -> None:
-        if self.qr_id is None and self.camera_state is StepState.PENDING:
+        if self.c.device is not None and self.qr_id is None and self.camera_state is StepState.PENDING:
             self.scan()  # automatic on entering Labeling
         self.notify()
 
@@ -292,6 +292,16 @@ class LabelingViewModel(ChecklistMixin):
     # ------------------------------------------------------------------ bottom bar
     def primary(self) -> Action:
         enter = "key.enter"
+        if self.c.device is None:
+            has_queue = bool(self.c.queue_items)
+            return Action(
+                "queue.pick_up",
+                self.c.pick_next_queue_item,
+                enabled=has_queue,
+                reason_key=None if has_queue else "queue.empty",
+                hint_key=enter,
+                name="pick_queue",
+            )
         if self.camera_state is StepState.WORKING:
             return Action(
                 "action.submit_next",
@@ -372,6 +382,17 @@ class PackagingViewModel(ChecklistMixin):
         self.reset_checklist()
 
     def primary(self) -> Action:
+        enter = "key.enter"
+        if self.c.device is None:
+            has_queue = bool(self.c.queue_items)
+            return Action(
+                "queue.pick_up",
+                self.c.pick_next_queue_item,
+                enabled=has_queue,
+                reason_key=None if has_queue else "queue.empty",
+                hint_key=enter,
+                name="pick_queue",
+            )
         missing = self.missing_ticks
         if missing:
             key, params = missing_reason(len(missing), len(self.checklist))

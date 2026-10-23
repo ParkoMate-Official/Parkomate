@@ -32,7 +32,7 @@ from PySide6.QtWidgets import (
 )
 
 from parkomate.config.settings import Settings
-from parkomate.core.enums import OutboxStatus, Role
+from parkomate.core.enums import OutboxStatus, Role, Stage
 from parkomate.core.errors import ErrorCode, ParkomateError, SettingsError
 from parkomate.core.models import Operator
 from parkomate.i18n import LANGUAGES, t, translator
@@ -683,6 +683,7 @@ class OperatorsTab(QWidget):
         "admin.op.code",
         "admin.op.name",
         "admin.op.role",
+        "admin.op.stages",
         "admin.op.active",
         "admin.op.locked",
     )
@@ -703,7 +704,7 @@ class OperatorsTab(QWidget):
         self.table = DataTable(
             self.COLUMNS, mono=(0,), empty=("group", "admin.op.empty_title", None)
         )
-        for column in (3, 4):
+        for column in (4, 5):
             self.table.setItemDelegateForColumn(column, ChipDelegate({}, self.table))
         self.table.itemSelectionChanged.connect(self._selection_changed)
         self.table.setMinimumHeight(SIZES.table_row * 5)
@@ -724,6 +725,36 @@ class OperatorsTab(QWidget):
             actions.addWidget(button)
         actions.addStretch(1)
         selected.body.addLayout(actions)
+
+        stages_box = QVBoxLayout()
+        stages_box.setSpacing(SPACE.xs)
+        self.stages_title = TrText("admin.op.stages", "body_strong")
+        stages_box.addWidget(self.stages_title)
+        stages_row = QHBoxLayout()
+        stages_row.setSpacing(SPACE.m)
+        self.chk_prog = QCheckBox()
+        self.chk_test = QCheckBox()
+        self.chk_label = QCheckBox()
+        self.chk_pack = QCheckBox()
+        self.stage_checkboxes = {
+            Stage.PROGRAMMING: self.chk_prog,
+            Stage.TESTING: self.chk_test,
+            Stage.LABELING: self.chk_label,
+            Stage.PACKAGING: self.chk_pack,
+        }
+        for chk in self.stage_checkboxes.values():
+            chk.setFixedWidth(SIZES.stage_checkbox_width)
+            chk.setFixedHeight(SIZES.checkbox)
+            stages_row.addWidget(chk)
+        self.save_stages_btn = AppButton(
+            "action.save_stages", variant="tonal", size="compact", icon="task_alt"
+        )
+        self.save_stages_btn.clicked.connect(self._save_stages)
+        stages_row.addWidget(self.save_stages_btn)
+        stages_row.addStretch(1)
+        stages_box.addLayout(stages_row)
+        selected.body.addLayout(stages_box)
+
         reset_row = QHBoxLayout()
         reset_row.setSpacing(SPACE.s)
         self.reset_pw = PasswordField("admin.op.new_password")
@@ -756,6 +787,32 @@ class OperatorsTab(QWidget):
             ("admin.op.password_again", self.new_pw2),
         ):
             add_card.body.addWidget(FormField(key, widget))
+
+        new_stages_box = QVBoxLayout()
+        new_stages_box.setSpacing(SPACE.xs)
+        self.new_stages_title = TrText("admin.op.stages", "body_strong")
+        new_stages_box.addWidget(self.new_stages_title)
+        new_stages_row = QHBoxLayout()
+        new_stages_row.setSpacing(SPACE.s)
+        self.new_chk_prog = QCheckBox()
+        self.new_chk_test = QCheckBox()
+        self.new_chk_label = QCheckBox()
+        self.new_chk_pack = QCheckBox()
+        self.new_stage_checkboxes = {
+            Stage.PROGRAMMING: self.new_chk_prog,
+            Stage.TESTING: self.new_chk_test,
+            Stage.LABELING: self.new_chk_label,
+            Stage.PACKAGING: self.new_chk_pack,
+        }
+        for chk in self.new_stage_checkboxes.values():
+            chk.setChecked(True)
+            chk.setFixedWidth(SIZES.stage_checkbox_width)
+            chk.setFixedHeight(SIZES.checkbox)
+            new_stages_row.addWidget(chk)
+        new_stages_row.addStretch(1)
+        new_stages_box.addLayout(new_stages_row)
+        add_card.body.addLayout(new_stages_box)
+
         self.add_button = AppButton("action.add_operator", variant="filled", icon="person_add")
         self.add_button.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         self.add_button.clicked.connect(self._add)
@@ -772,11 +829,17 @@ class OperatorsTab(QWidget):
         rows = []
         for op in operators:
             locked = op.locked_until is not None and op.locked_until > self.c.ctx.repos.clock.now()
+            stages_str = (
+                t("admin.op.stages_all")
+                if op.assigned_stages is None
+                else ", ".join(s.letter for s in op.assigned_stages)
+            )
             rows.append(
                 [
                     op.operator_code,
                     op.full_name,
                     t(op.role.label_key),
+                    stages_str,
                     t("common.yes" if op.is_active else "common.no"),
                     t("common.yes" if locked else "common.no"),
                 ]
@@ -786,7 +849,7 @@ class OperatorsTab(QWidget):
 
     def _chip_tones(self) -> None:
         yes, no = t("common.yes").upper(), t("common.no").upper()
-        for column, yes_tone in ((3, "success"), (4, "warning")):
+        for column, yes_tone in ((4, "success"), (5, "warning")):
             delegate = self.table.itemDelegateForColumn(column)
             if isinstance(delegate, ChipDelegate):
                 delegate.tones = {yes: yes_tone, no: "neutral"}
@@ -797,8 +860,10 @@ class OperatorsTab(QWidget):
 
     def _selection_changed(self) -> None:
         selected = self._selected()
-        for button in (self.toggle_active, self.unlock, self.toggle_role, self.reset_button):
+        for button in (self.toggle_active, self.unlock, self.toggle_role, self.reset_button, self.save_stages_btn):
             button.setEnabled(selected is not None)
+        for chk in self.stage_checkboxes.values():
+            chk.setEnabled(selected is not None)
         if selected is not None:
             self.toggle_active.set_text_key(
                 "action.deactivate" if selected.is_active else "action.activate"
@@ -806,6 +871,24 @@ class OperatorsTab(QWidget):
             self.toggle_role.set_text_key(
                 "action.make_operator" if selected.is_admin else "action.make_admin"
             )
+            eff = selected.assigned_stages
+            for stage, chk in self.stage_checkboxes.items():
+                chk.setChecked(eff is None or stage in eff)
+
+    def _save_stages(self) -> None:
+        op = self._selected()
+        if op is None:
+            return
+        chosen = [s for s, chk in self.stage_checkboxes.items() if chk.isChecked()]
+        if not chosen:
+            self.result.fail(ParkomateError(t("admin.op.stages_help"), code=ErrorCode.VALIDATION_FAILED))
+            return
+        stages = None if len(chosen) == 4 else chosen
+        self._run(
+            lambda a: self.c.ctx.auth.set_assigned_stages(a, op.id, stages),
+            "admin.op.updated",
+            code=op.operator_code,
+        )
 
     def _run(self, fn: Any, ok_key: str, **params: Any) -> None:
         actor = self.c.operator
@@ -882,9 +965,22 @@ class OperatorsTab(QWidget):
         if self.result.property("status") == "pass":
             for field in (self.new_code, self.new_name, self.new_pw, self.new_pw2):
                 field.clear()
+            chosen = [s for s, chk in self.new_stage_checkboxes.items() if chk.isChecked()]
+            if len(chosen) < 4 and len(chosen) > 0:
+                created_op = self.c.ctx.repos.operators.get_by_code(code.strip())
+                if created_op:
+                    actor = self.c.operator
+                    if actor:
+                        self.c.ctx.auth.set_assigned_stages(actor, created_op.id, chosen)
+            for chk in self.new_stage_checkboxes.values():
+                chk.setChecked(True)
 
     def retranslate(self, *_args: object) -> None:
         self.table.setAccessibleName(t("admin.tab.operators"))
+        for stage, chk in self.stage_checkboxes.items():
+            chk.setText(f"{stage.letter}: {t(f'stage.{stage.value}.short')}")
+        for stage, chk in self.new_stage_checkboxes.items():
+            chk.setText(f"{stage.letter}: {t(f'stage.{stage.value}.short')}")
         for field, key in (
             (self.new_code, "admin.op.code"),
             (self.new_name, "admin.op.name"),

@@ -52,7 +52,7 @@ class TestingViewModel(StageViewModel):
         return all(self.marks[code] is True for code in MARK_CODES)
 
     def enter(self) -> None:
-        if self.comm_state is StepState.PENDING:
+        if self.c.device is not None and self.comm_state is StepState.PENDING:
             self.test_comm()  # automatic on entering Testing
         self.notify()
 
@@ -196,6 +196,16 @@ class TestingViewModel(StageViewModel):
     # ------------------------------------------------------------------ bottom bar
     def primary(self) -> Action:
         enter = "key.enter"
+        if self.c.device is None:
+            has_queue = bool(self.c.queue_items)
+            return Action(
+                "queue.pick_up",
+                self.c.pick_next_queue_item,
+                enabled=has_queue,
+                reason_key=None if has_queue else "queue.empty",
+                hint_key=enter,
+                name="pick_queue",
+            )
         if self.comm_state is StepState.WORKING:
             return Action(
                 "action.read_sensor_n",
