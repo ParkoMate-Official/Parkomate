@@ -40,6 +40,21 @@ class ChipDelegate(QStyledItemDelegate):
         super().__init__(parent)
         self.tones = tones
 
+    def sizeHint(
+        self,
+        option: QStyleOptionViewItem,
+        index: QModelIndex | QPersistentModelIndex,
+    ) -> QSize:
+        text = str(index.data(Qt.ItemDataRole.DisplayRole) or "")
+        font = font_for(TYPE.caption)
+        width = (
+            QFontMetricsF(font).horizontalAdvance(text)
+            + SIZES.icon_s
+            + 3 * SPACE.s
+            + 2 * SPACE.l
+        )
+        return QSize(int(width), SIZES.table_row)
+
     def paint(
         self,
         painter: QPainter,

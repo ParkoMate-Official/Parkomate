@@ -216,7 +216,7 @@ class Sizes:
     # components
     stepper_dot: int = 32
     stepper_line: int = 2
-    stepper_segment: int = 24  # connector length between two stage labels
+    stepper_segment: int = 14  # connector length between two stage labels
     step_dot: int = 28
     progress_bar: int = 8
     ring: int = 168

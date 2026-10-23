@@ -43,6 +43,9 @@ TONES = {
     "info": COLORS.on_info_cont,
     "on_status": COLORS.on_status,
     "on_primary": COLORS.on_primary,
+    "hero_gold": COLORS.hero_gold,
+    "hero_sub": COLORS.primary_cont,
+    "on_primary_cont": COLORS.on_primary_cont,
 }
 _STATUS_TONES = {"pass": "success", "fail": "danger", "warn": "warning", "pending": "tertiary"}
 

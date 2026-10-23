@@ -155,9 +155,7 @@ class Stepper(QWidget):
             if index:
                 connector = _Connector()
                 self._connectors.append(connector)
-                layout.addSpacing(SPACE.xs)
                 layout.addWidget(connector)
-                layout.addSpacing(SPACE.xs)
             dot = _StageDot(index + 1)
             label = TrText(key, "body", "secondary")
             # reserve the semibold width of the longest translation: never moves (T1)
