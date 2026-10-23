@@ -20,25 +20,25 @@ from dataclasses import dataclass, field
 
 @dataclass(frozen=True, slots=True)
 class Colors:
-    # ---- neutrals (warm, parkomate.com brand-aligned)
-    bg: str = "#F5F5F3"  # page background
+    # ---- neutrals (warm olive/sage brand-aligned from parkomate.com dashboard)
+    bg: str = "#F7F8F5"  # page background
     surface: str = "#FFFFFF"  # cards
-    surface_2: str = "#EFEEEC"  # inset areas, table header, input fill
-    surface_3: str = "#E6E5E3"  # hover on surface_2, disabled fill
-    outline: str = "#D8D6D2"  # card / input borders (1 px)
-    outline_soft: str = "#E6E5E3"  # dividers
-    outline_strong: str = "#727782"  # unselected controls (>= 3:1 on surface and surface_2)
-    text: str = "#191817"  # primary text
-    text_2: str = "#555555"  # secondary text
-    text_3: str = "#6B6B6B"  # captions, placeholders
-    # ---- accent (Parkomate smart parking safety orange)
-    primary: str = "#BA4010"
-    primary_hov: str = "#A3360B"
-    primary_pressed: str = "#8C2E09"
-    primary_cont: str = "#FCEEE8"  # tonal buttons, active card surface
-    primary_cont_hov: str = "#F8DDD3"
+    surface_2: str = "#EFF2EA"  # inset areas, table header, input fill
+    surface_3: str = "#E4E8DE"  # hover on surface_2, disabled fill
+    outline: str = "#D6DBCF"  # card / input borders (1 px)
+    outline_soft: str = "#E4E8DE"  # dividers
+    outline_strong: str = "#6D7563"  # unselected controls (>= 3:1 on surface and surface_2)
+    text: str = "#181C13"  # primary text
+    text_2: str = "#4A5241"  # secondary text
+    text_3: str = "#626A5A"  # captions, placeholders
+    # ---- accent (Parkomate Olive Green from brand dashboard)
+    primary: str = "#5A7928"
+    primary_hov: str = "#4D6722"
+    primary_pressed: str = "#40561C"
+    primary_cont: str = "#E6ECE0"  # tonal buttons, active card surface, badge container
+    primary_cont_hov: str = "#DCE3D4"
     on_primary: str = "#FFFFFF"
-    on_primary_cont: str = "#993308"
+    on_primary_cont: str = "#344617"
     # ---- status (never decorative). "<x>" = icons, bars and fills; "on_<x>_cont" = text on
     # the <x>_cont container and on white, and the fill behind white text.
     success: str = "#1E8E4E"
@@ -52,9 +52,9 @@ class Colors:
     warning: str = "#B26A00"
     warning_cont: str = "#FFF2DA"
     on_warning_cont: str = "#8A5300"
-    info: str = "#166885"
-    info_cont: str = "#E0EFF4"
-    on_info_cont: str = "#10526B"
+    info: str = "#286A7B"
+    info_cont: str = "#E2F0F4"
+    on_info_cont: str = "#1B4E5B"
     on_status: str = "#FFFFFF"  # text and icons on filled status colours
     takeover: str = "#B3261E"  # reject takeover background
     takeover_glow: str = "#C93A2F"  # its soft lighter centre
@@ -65,9 +65,16 @@ class Colors:
     reject_d: str = "#F5B8B0"
     # ---- misc
     camera_bg: str = "#0B0F17"
-    camera_line: str = "#7FBBDD"  # scan line on the camera preview
+    camera_line: str = "#8DC48D"  # scan line on the camera preview
     shadow: str = "#000000"
-    scrim: str = "#191817"
+    scrim: str = "#181C13"
+    # ---- hero / showcase panel (Parkomate brand dashboard)
+    hero_bg_start: str = "#243214"
+    hero_bg_mid: str = "#435922"
+    hero_bg_end: str = "#5E7930"
+    hero_card_bg: str = "#4F6827"
+    hero_card_border: str = "#7A9848"
+    hero_gold: str = "#C5D49A"
 
     def status(self, tone: str) -> tuple[str, str, str]:
         """(graphic, container, text-on-container) for a tone name."""
@@ -192,6 +199,7 @@ class Sizes:
     tab_indicator: int = 3
     chip: int = 32
     chip_compact: int = 24
+    chip_hero: int = 40
     segmented: int = 44
     switch_w: int = 52
     switch_h: int = 32

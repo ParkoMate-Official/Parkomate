@@ -1056,5 +1056,22 @@
   "gate.stage_not_assigned": "This stage is not assigned to you",
   "gate.no_queue_items": "No boards waiting for your stages",
   "status.queue_count": "{n} in queue",
-  "confirm.pick_board": "Pick up board {mac} for {stage}?"
+  "confirm.pick_board": "Pick up board {mac} for {stage}?",
+  "login.welcome_back": "Welcome back",
+  "login.welcome_sub": "Sign in with the credentials provided for your parking site.",
+  "login.badge": "PARKOMATE DASHBOARD",
+  "login.showcase_title": "See every parking slot, from entry to exit.",
+  "login.showcase_sub": "Live occupancy, floor-wise analytics, and detection insights across your sites in one sleek Parkomate dashboard.",
+  "login.showcase_tag": "PARKING GUIDANCE SYSTEM",
+  "login.showcase_subtag": "FLOOR-WISE ANALYTICS",
+  "login.card1_title": "Live Occupancy",
+  "login.card1_sub": "Available slots vs occupied slots per floor, updated live with gauges and donuts.",
+  "login.card2_title": "Floor-wise Analytics",
+  "login.card2_sub": "Detailed views and table breakdowns across every level and vehicle type.",
+  "login.card3_title": "Detection & Camera Logs",
+  "login.card3_sub": "Entry / exit detection with camera snapshots and EECS 2W / 4W counts.",
+  "login.card4_title": "Reports & History",
+  "login.card4_sub": "Historical trends and exportable PDF / Excel summary reports.",
+  "login.footer_tag": "Parkomate Parking Solutions & Analytics",
+  "login.visit_link": "Visit parkomate.com ↗"
 }

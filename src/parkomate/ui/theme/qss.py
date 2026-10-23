@@ -203,4 +203,36 @@ QCalendarWidget QAbstractItemView {{
     border: none;
 }}
 QCalendarWidget QAbstractItemView:disabled {{ color: {c.text_3}; }}
+
+/* ---------- login card pill badge & showcase ---------- */
+QFrame#LoginBadge {{
+    background-color: {c.primary_cont};
+    border-radius: {r.pill}px;
+}}
+QLabel#LoginBadgeText {{
+    color: {c.on_primary_cont};
+    font-weight: 700;
+    letter-spacing: 1px;
+}}
+QLabel#BrandTag {{
+    color: {c.hero_gold};
+    font-weight: 700;
+    letter-spacing: 1px;
+}}
+QLabel#ShowcaseTag {{
+    color: {c.primary_cont};
+    font-weight: 700;
+    letter-spacing: 2px;
+}}
+QLabel#ShowcaseTitle {{
+    color: {c.on_primary};
+    font-weight: 700;
+    font-size: 26px;
+    line-height: 34px;
+}}
+QLabel#ShowcaseDesc {{
+    color: {c.primary_cont};
+    font-size: 13px;
+    line-height: 20px;
+}}
 """

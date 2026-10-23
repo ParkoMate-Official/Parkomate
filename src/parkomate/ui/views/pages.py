@@ -4,9 +4,33 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PySide6.QtCore import Qt, QUrl
-from PySide6.QtGui import QDesktopServices, QGuiApplication, QKeySequence, QResizeEvent, QShortcut
-from PySide6.QtWidgets import QGridLayout, QHBoxLayout, QSizePolicy, QVBoxLayout, QWidget
+from PySide6.QtCore import QPoint, QRectF, Qt, QUrl
+from PySide6.QtGui import (
+    QBrush,
+    QColor,
+    QDesktopServices,
+    QGuiApplication,
+    QKeySequence,
+    QLinearGradient,
+    QPainter,
+    QPaintEvent,
+    QPen,
+    QRadialGradient,
+    QResizeEvent,
+    QShortcut,
+)
+from PySide6.QtWidgets import (
+    QFrame,
+    QGridLayout,
+    QHBoxLayout,
+    QLabel,
+    QSizePolicy,
+    QVBoxLayout,
+    QWidget,
+)
+from parkomate.ui.components.icons import icon_pixmap, paint_icon
+from parkomate.ui.theme.fonts import font_for
+from parkomate.ui.theme.tokens import ALPHA, RADIUS, TYPE
 
 from parkomate import __version__
 from parkomate.core.enums import PRODUCTION_STAGES
@@ -73,6 +97,158 @@ class StartingView(QWidget):
         layout.addStretch(1)
 
 
+class _ShowcaseCard(QWidget):
+    """One of the 4 glassmorphic feature tiles in the showcase panel."""
+
+    def __init__(self, icon_name: str, title_key: str, desc_key: str) -> None:
+        super().__init__()
+        self.icon_name = icon_name
+        self.title_key = title_key
+        self.desc_key = desc_key
+        self.setFixedHeight(SIZES.action_bar)
+
+    def paintEvent(self, _event: QPaintEvent) -> None:
+        p = QPainter(self)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        r = QRectF(self.rect()).adjusted(0.5, 0.5, -0.5, -0.5)
+
+        card_bg = QColor(COLORS.hero_card_bg)
+        card_bg.setAlphaF(0.40)
+        p.setBrush(QBrush(card_bg))
+        border = QColor(COLORS.hero_card_border)
+        border.setAlphaF(0.45)
+        p.setPen(QPen(border, SIZES.hairline))
+        p.drawRoundedRect(r, RADIUS.control, RADIUS.control)
+
+        icon_box_rect = QRectF(
+            r.left() + SPACE.m,
+            r.top() + (r.height() - SIZES.chip_hero) / 2,
+            SIZES.chip_hero,
+            SIZES.chip_hero,
+        )
+        icon_bg = QColor(COLORS.hero_bg_start)
+        icon_bg.setAlphaF(0.55)
+        p.setBrush(QBrush(icon_bg))
+        p.setPen(Qt.PenStyle.NoPen)
+        p.drawRoundedRect(icon_box_rect, RADIUS.chip, RADIUS.chip)
+
+        icon_r = icon_box_rect.adjusted(SPACE.s, SPACE.s, -SPACE.s, -SPACE.s)
+        paint_icon(p, self.icon_name, icon_r, COLORS.hero_gold)
+
+        text_left = icon_box_rect.right() + SPACE.m
+        text_w = r.right() - text_left - SPACE.m
+        title_r = QRectF(text_left, r.top() + SPACE.m, text_w, SIZES.icon)
+        p.setFont(font_for(TYPE.body_strong))
+        p.setPen(QPen(QColor(COLORS.on_primary)))
+        p.drawText(
+            title_r,
+            Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
+            t(self.title_key),
+        )
+
+        desc_r = QRectF(text_left, title_r.bottom() + SPACE.xs, text_w, SIZES.chip_hero)
+        p.setFont(font_for(TYPE.caption))
+        desc_col = QColor(COLORS.primary_cont)
+        desc_col.setAlphaF(0.90)
+        p.setPen(QPen(desc_col))
+        p.drawText(
+            desc_r,
+            Qt.AlignmentFlag.AlignLeft
+            | Qt.AlignmentFlag.AlignTop
+            | Qt.TextFlag.TextWordWrap,
+            t(self.desc_key),
+        )
+        p.end()
+
+
+class _ShowcasePanel(QWidget):
+    """Left-hand hero showcase panel matching the Parkomate dashboard aesthetic."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(SPACE.xxl, SPACE.xl, SPACE.xxl, SPACE.xl)
+        layout.setSpacing(SPACE.l)
+
+        logo_row = QHBoxLayout()
+        logo_row.setSpacing(SPACE.m)
+        self.logo_icon = QLabel()
+        self.logo_icon.setPixmap(
+            icon_pixmap("sensors", COLORS.hero_gold, SIZES.icon_hero)
+        )
+        logo_row.addWidget(self.logo_icon)
+
+        brand_col = QVBoxLayout()
+        brand_col.setSpacing(0)
+        self.brand_title = Text("Parkomate", "title", "on_primary")
+        self.brand_tag = TrText("login.footer_tag", "caption")
+        self.brand_tag.setObjectName("BrandTag")
+        brand_col.addWidget(self.brand_title)
+        brand_col.addWidget(self.brand_tag)
+        logo_row.addLayout(brand_col)
+        logo_row.addStretch(1)
+        layout.addLayout(logo_row)
+
+        layout.addSpacing(SPACE.l)
+
+        self.tag_label = TrText("login.showcase_tag", "mono_label")
+        self.tag_label.setObjectName("ShowcaseTag")
+        layout.addWidget(self.tag_label)
+
+        self.title_label = TrText("login.showcase_title", "headline")
+        self.title_label.setObjectName("ShowcaseTitle")
+        self.title_label.setWordWrap(True)
+        layout.addWidget(self.title_label)
+
+        self.desc_label = TrText("login.showcase_sub", "body")
+        self.desc_label.setObjectName("ShowcaseDesc")
+        self.desc_label.setWordWrap(True)
+        layout.addWidget(self.desc_label)
+
+        layout.addSpacing(SPACE.m)
+
+        grid1 = QHBoxLayout()
+        grid1.setSpacing(SPACE.m)
+        self.card1 = _ShowcaseCard("bolt", "login.card1_title", "login.card1_sub")
+        self.card2 = _ShowcaseCard("bar_chart", "login.card2_title", "login.card2_sub")
+        grid1.addWidget(self.card1, 1)
+        grid1.addWidget(self.card2, 1)
+        layout.addLayout(grid1)
+
+        grid2 = QHBoxLayout()
+        grid2.setSpacing(SPACE.m)
+        self.card3 = _ShowcaseCard(
+            "photo_camera", "login.card3_title", "login.card3_sub"
+        )
+        self.card4 = _ShowcaseCard(
+            "description", "login.card4_title", "login.card4_sub"
+        )
+        grid2.addWidget(self.card3, 1)
+        grid2.addWidget(self.card4, 1)
+        layout.addLayout(grid2)
+
+        layout.addStretch(1)
+
+    def paintEvent(self, _event: QPaintEvent) -> None:
+        p = QPainter(self)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        r = self.rect()
+
+        grad = QLinearGradient(0, 0, r.width(), r.height())
+        grad.setColorAt(0.0, QColor(COLORS.hero_bg_start))
+        grad.setColorAt(0.45, QColor(COLORS.hero_bg_mid))
+        grad.setColorAt(1.0, QColor(COLORS.hero_bg_end))
+        p.fillRect(r, grad)
+
+        glow = QRadialGradient(r.width() * 0.9, r.height() * 0.95, r.width() * 0.6)
+        glow_color = QColor(COLORS.hero_card_border)
+        glow_color.setAlphaF(ALPHA.track)
+        glow.setColorAt(0.0, glow_color)
+        glow.setColorAt(1.0, QColor(0, 0, 0, 0))
+        p.fillRect(r, glow)
+        p.end()
+
+
 class LoginView(QWidget):
     def __init__(self, controller: StationController) -> None:
         super().__init__()
@@ -83,13 +259,32 @@ class LoginView(QWidget):
         panel.layout_.setContentsMargins(pad, pad, pad, pad)
         layout = panel.body
         layout.setSpacing(SPACE.l)
+
+        # Header: Pill Badge + "Welcome back" + subtitle + station
+        badge_row = QHBoxLayout()
+        badge_row.setSpacing(0)
+        self.badge_pill = QFrame()
+        self.badge_pill.setObjectName("LoginBadge")
+        badge_layout = QHBoxLayout(self.badge_pill)
+        badge_layout.setContentsMargins(SPACE.m, SPACE.xs, SPACE.m, SPACE.xs)
+        badge_layout.setSpacing(0)
+        badge_text = TrText("login.badge", "caption")
+        badge_text.setObjectName("LoginBadgeText")
+        badge_layout.addWidget(badge_text)
+        badge_row.addWidget(self.badge_pill)
+        badge_row.addStretch(1)
+        layout.addLayout(badge_row)
+
         header = QVBoxLayout()
-        header.setSpacing(SPACE.s)
-        header.addWidget(ProductMark(SIZES.mark_large), 0, Qt.AlignmentFlag.AlignHCenter)
-        header.addWidget(TrText("app.brand", "headline", align=CENTER))
-        self.station = Text("", "body", "secondary", align=CENTER)
+        header.setSpacing(SPACE.xs)
+        self.welcome_back = TrText("login.welcome_back", "headline")
+        header.addWidget(self.welcome_back)
+        self.welcome_sub = TrText("login.welcome_sub", "body", "secondary")
+        header.addWidget(self.welcome_sub)
+        self.station = Text("", "caption", "secondary")
         header.addWidget(self.station)
         layout.addLayout(header)
+
         # the language switch sits in the top-right corner of the page
         self.language = LanguageSwitch()
         self.language.language_selected.connect(controller.set_language)
@@ -141,7 +336,33 @@ class LoginView(QWidget):
         outer.setSpacing(0)
         self.band = SimulationBand()
         outer.addWidget(self.band)
-        outer.addWidget(_centered(panel, LOGIN_WIDTH))
+
+        split = QHBoxLayout()
+        split.setContentsMargins(0, 0, 0, 0)
+        split.setSpacing(0)
+
+        self.showcase = _ShowcasePanel()
+        split.addWidget(self.showcase, 11)
+
+        right_pane = QWidget()
+        right_layout = QVBoxLayout(right_pane)
+        right_layout.setContentsMargins(SPACE.xl, SPACE.xl, SPACE.xl, SPACE.xl)
+        right_layout.setSpacing(0)
+        right_layout.addStretch(1)
+
+        center_row = QHBoxLayout()
+        center_row.setContentsMargins(0, 0, 0, 0)
+        center_row.setSpacing(0)
+        center_row.addStretch(1)
+        panel.setFixedWidth(LOGIN_WIDTH)
+        center_row.addWidget(panel)
+        center_row.addStretch(1)
+
+        right_layout.addLayout(center_row)
+        right_layout.addStretch(1)
+        split.addWidget(right_pane, 9)
+
+        outer.addLayout(split, 1)
         # floats in the top-right corner, so the card keeps the full height
         self.language.setParent(self)
         self.language.raise_()
