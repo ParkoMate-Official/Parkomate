@@ -21,24 +21,24 @@ from dataclasses import dataclass, field
 @dataclass(frozen=True, slots=True)
 class Colors:
     # ---- neutrals (warm olive/sage brand-aligned from parkomate.com dashboard)
-    bg: str = "#F7F8F5"  # page background
+    bg: str = "#DEE7D4"  # page background (brand sage green)
     surface: str = "#FFFFFF"  # cards
     surface_2: str = "#EFF2EA"  # inset areas, table header, input fill
     surface_3: str = "#E4E8DE"  # hover on surface_2, disabled fill
-    outline: str = "#D6DBCF"  # card / input borders (1 px)
-    outline_soft: str = "#E4E8DE"  # dividers
-    outline_strong: str = "#6D7563"  # unselected controls (>= 3:1 on surface and surface_2)
+    outline: str = "#CCD4C4"  # card / input borders (1 px)
+    outline_soft: str = "#D8E0D0"  # dividers
+    outline_strong: str = "#66725B"  # unselected controls (>= 3:1 on surface and surface_2)
     text: str = "#181C13"  # primary text
     text_2: str = "#4A5241"  # secondary text
-    text_3: str = "#626A5A"  # captions, placeholders
+    text_3: str = "#545D4C"  # captions, placeholders
     # ---- accent (Parkomate Olive Green from brand dashboard)
-    primary: str = "#5A7928"
-    primary_hov: str = "#4D6722"
-    primary_pressed: str = "#40561C"
+    primary: str = "#4C6B1D"
+    primary_hov: str = "#3F5917"
+    primary_pressed: str = "#334712"
     primary_cont: str = "#E6ECE0"  # tonal buttons, active card surface, badge container
     primary_cont_hov: str = "#DCE3D4"
     on_primary: str = "#FFFFFF"
-    on_primary_cont: str = "#344617"
+    on_primary_cont: str = "#2B3C0F"
     # ---- status (never decorative). "<x>" = icons, bars and fills; "on_<x>_cont" = text on
     # the <x>_cont container and on white, and the fill behind white text.
     success: str = "#1E8E4E"
