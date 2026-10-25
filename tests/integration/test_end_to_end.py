@@ -15,18 +15,21 @@ from parkomate.app_paths import AppPaths
 from parkomate.cli import main as cli_main
 from parkomate.config.manager import settings_to_toml, validate_settings
 from parkomate.config.secrets import MemorySecretStore
-from parkomate.config.settings import Settings
+from parkomate.config.settings import DevSettings, Settings
 from parkomate.core.enums import (
     AmbientReason,
     CheckCode,
     DeviceStatus,
     IdentityStatus,
+    OpCode,
     OutboxStatus,
+    RunOutcome,
     SessionEndReason,
     Stage,
 )
 from parkomate.core.errors import SettingsError
 from parkomate.data.records import ProductionRecords
+from parkomate.hardware import RealHardwareService
 from parkomate.hardware.mocks import MockHardwareService, MockScenario
 
 PASSWORD = "secret-pass-1"
@@ -94,7 +97,7 @@ def run_device(ctx: AppContext) -> Stage:
     wf.submit_and_next()
     for code in (CheckCode.D1, CheckCode.D2, CheckCode.D3, CheckCode.D4):
         wf.submit_check(code, True)
-    assert wf.submit_and_next() is Stage.COMPLETE
+    assert wf.submit_and_next().stage is Stage.COMPLETE
     return finish(ctx)
 
 
@@ -174,15 +177,18 @@ def test_session_close_reports_and_firmware_never_on_disk(ctx: AppContext, data_
     assert not any(firmware)
 
 
-def test_logout_with_device_on_bench_abandons(ctx: AppContext) -> None:
+def test_logout_with_device_on_bench_releases_it(ctx: AppContext) -> None:
     _login(ctx)
     hw = ctx.hardware
     hw.connect("COM4")
     ctx.workflow.start_device(hw.read_mac())
     row = outcome_row(ctx)
     result = ctx.station.logout(SessionEndReason.CLOSE)
-    assert result.summary.abandoned == 1
-    assert ctx.repos.devices.require(row).status is DeviceStatus.ABANDONED
+    assert result.summary.abandoned == 0 and result.summary.in_progress == 1
+    device = ctx.repos.devices.require(row)
+    assert device.status is DeviceStatus.IN_PROGRESS and device.next_op is OpCode.A_PROGRAM
+    run = ctx.repos.runs.latest_for_device(row)
+    assert run is not None and run.outcome is RunOutcome.RELEASED
 
 
 def test_email_outbox_survives_offline_and_recovery(data_dir: Path) -> None:
@@ -233,7 +239,7 @@ def test_email_outbox_survives_offline_and_recovery(data_dir: Path) -> None:
         configure_logging=False,
     )
     startup = restarted.station.startup()
-    assert startup.recovery.recovered and len(startup.recovery.abandoned_device_ids) == 1
+    assert startup.recovery.recovered and len(startup.recovery.released_device_ids) == 1
     assert len(startup.queued_reports) == 1
 
     class Online:
@@ -247,11 +253,19 @@ def test_email_outbox_survives_offline_and_recovery(data_dir: Path) -> None:
     restarted.close()
 
 
-def test_real_hardware_not_available_yet() -> None:
-    with pytest.raises(SettingsError):
-        create_hardware(Settings(), mock=False)
-    hardware, mocked = create_hardware(Settings(), mock=None)
-    assert mocked and isinstance(hardware, MockHardwareService)
+def test_create_hardware_selects_real_bench_or_mock(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("PARKOMATE_REPLAY", raising=False)
+    monkeypatch.delenv("PARKOMATE_RECORD", raising=False)
+    secrets = MemorySecretStore()
+    for mock in (False, None):  # None = follow dev.use_mock_hardware (off by default)
+        hardware, simulated = create_hardware(Settings, secrets, mock=mock)
+        assert isinstance(hardware, RealHardwareService) and not simulated
+        hardware.shutdown()  # nothing opened yet: must still be safe
+    dev_mock = Settings(dev=DevSettings(use_mock_hardware=True))
+    hardware, simulated = create_hardware(lambda: dev_mock, secrets, mock=None)
+    assert simulated and isinstance(hardware, MockHardwareService)
+    hardware, simulated = create_hardware(Settings, secrets, mock=True)
+    assert simulated and isinstance(hardware, MockHardwareService)
 
 
 def test_invalid_settings_refuse_start(data_dir: Path) -> None:

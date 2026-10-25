@@ -199,10 +199,10 @@ class LoginView(QWidget):
         startup = c.startup
         if c.startup_error is not None:
             self.notice.show_error(c.startup_error)
-        elif startup is not None and startup.recovery.abandoned_device_ids:
+        elif startup is not None and startup.recovery.released_device_ids:
             self.notice.show_text(
-                t("notice.abandoned_title"),
-                t("notice.abandoned_body", n=len(startup.recovery.abandoned_device_ids)),
+                t("notice.released_title"),
+                t("notice.released_body", n=len(startup.recovery.released_device_ids)),
             )
         elif startup is not None and startup.recovery.recovered:
             self.notice.show_text(t("notice.recovered_title"), "")

@@ -34,6 +34,42 @@ Relative to the interface list in the build prompt:
   `REPORT_FAILED`, `AUTH_*`, `PERMISSION_DENIED`, `INVALID_STATE`, `INVALID_INPUT`,
   `NOT_FOUND`, `ALREADY_RUNNING`, `UNEXPECTED`.
 
+**Multi-worker line, phase 1** (`docs/MULTI_WORKER_PLAN.md`) - added so far
+* `OpCode` (`A_PROGRAM`, `B_TEST`, `C_CODE`, `C_CASING`, `C_BRANDING`, `D_PACK`; line order
+  `LINE_ORDER`), `IdentifyBy`, `RunOutcome`, `BenchNeed` in `core/enums.py`.
+* Operation catalogue `workflow/operations.py`: the checks each step records, how a board is
+  identified when picked up, what the bench needs.
+* Migration `0004_operations`: `operation_runs` (one open run per board and one per session,
+  closed once, never deleted), `devices.next_op` (default `A_PROGRAM`, NULL once finished),
+  `check_results.run_id`, `stage_transitions.run_id`; index `ux_devices_one_active` dropped.
+* Migration `0005_unique_boards_in_progress`: one in-progress row per MAC and per QR ID, so a
+  board picked up by either is found exactly once (older duplicates are abandoned on upgrade).
+* Records API (`ProductionRecords`): `start_device` registers a new board **and** opens its
+  `A_PROGRAM` run; `claim(row, op, identified_by)`, `open_run`, `pass_run` (next step in line
+  order), `release_run`, `find_device(mac= | device_id=)`, `queue(op)`, `queue_counts`,
+  `device_history`. Checks and stage transitions carry the `run_id`; `complete_device` /
+  `reject_device` close the run; `abandon_device` is a write-off (closes any open run on the
+  board, wherever it is). A board can only be written to by the session that holds its run.
+* **`WorkflowService.abandon_device()` renamed `release_device()`.** Ending a session and crash
+  recovery **release** the board on the bench instead of abandoning it: it waits for its
+  current step (`RecoveryResult.released_device_ids`, event `DeviceReleased`, login notice
+  `notice.released_*`).
+* **WorkflowService works step by step** (task 3): `bench_steps()`, `selected_steps()`,
+  `choose_steps(ops)`, `add_step(op)`, `pick_up(DeviceKey)`, `current_operation()`,
+  `finish_later() -> StepResult`, `operation_checks(op)`; **`submit_and_next()` returns
+  `StepResult`** (stage, next step, `parked`) instead of `Stage`; `start_device(mac)` is a pick-up
+  by MAC, so a board in progress continues at its next step. `WorkflowEngine(..., bench=)` sets
+  the steps a bench can do (default all; `station.operations` setting is task 4).
+* Shared types: `DeviceKey`, `StepResult`, `DeviceState.op / passed_ops / resumed`,
+  `OpCode.label_key` (`op.*` texts), event `DeviceParked`, error codes `WIP_NOT_FOUND`,
+  `WIP_FINISHED`, `WIP_CLAIMED`, `WIP_WRONG_OPERATION`, `WIP_STEP_NOT_SELECTED` (EN + MR texts).
+  Error banners now translate `*_key` params (`op_key` -> `{op}`).
+* UI: **Finish later** button on every stage screen (not while hardware is busy); a board
+  connected on the programming screen opens the screen of the step it waits for; the green
+  toast says which tray a parked board goes to.
+* Not yet (task 5): Choose steps screen, QR pick-up screen for benches without serial,
+  "Add this step" button on the mix-up message, Put in tray takeover, stepper with steps.
+
 **Database - extra columns** (beyond the prompt's table list)
 * `devices.reject_reason_key`, `devices.reject_reason_params` - the reason is stored as an
   i18n key + parameters so reports can render it in either language; `reject_reason` keeps
@@ -62,15 +98,15 @@ Relative to the interface list in the build prompt:
 | D4 | WAL + `synchronous=NORMAL` | survives app crashes; a power cut can lose at most the last transaction |
 | D5 | Migration runner backs up the DB (`backups/`) before upgrading an existing schema; refuses a DB newer than the app | safe upgrades in the field |
 | D6 | `Stage` values are names (`programming`…), with `.letter` A–D for boxes and reports; terminal `complete` / `rejected` | readable in SQL and logs |
-| D7 | One device in progress per session, enforced in code **and** by a unique partial index | matches "one device at a time" |
+| D7 | One device in progress per session, enforced in code **and** by a unique partial index. **0004 drops that index**: a session may leave boards waiting for later steps; one board *on the bench* per session is enforced by `ux_runs_open_session` | matches "one device at a time"; multi-worker line |
 | D8 | MAC addresses normalised to `AA:BB:CC:DD:EE:FF` | consistent search and reports |
 | D9 | Counter **reset** (admin only) restarts the *live* counters; the session summary and reports always cover the whole session | history stays auditable |
 | D10 | "Reduce failure count by 1": only after a failure *followed by* a success on the same device, once per device (unique index + check), audited | prompt rule |
 | D11 | **First-pass yield** = completed devices with no upload failure ÷ devices that finished (complete + rejected); abandoned / in-progress excluded; shown as "-" when none finished **(client)** | common FPY definition |
-| D12 | Crash recovery closes stale sessions at their **last recorded activity** (not "now"), marks in-progress devices `abandoned`, queues the report, and the login screen tells the operator | accurate times; operator knows to set the board aside |
+| D12 | Crash recovery closes stale sessions at their **last recorded activity** (not "now"), **releases** the board on the bench (since 0004; before: marked `abandoned`), queues the report, and the login screen tells the operator | accurate times; the board waits for its current step instead of being lost |
 | D13 | Retention purge deletes only payload files of **sent** e-mails older than `retention_days` (default 90); rows kept | prompt rule |
 
-## Workflow stub (Piyush replaces it)
+## Workflow (Piyush - `WorkflowEngine`)
 
 | # | Decision | Why |
 |---|---|---|
@@ -83,6 +119,15 @@ Relative to the interface list in the build prompt:
 | W7 | Testing order enforced: B1 before readings; exactly N readings in order; sensor/indicator marks before measuring; measurement starts automatically when both are OK | gates exactly as specified |
 | W8 | Checklist ticks can be unticked; they are written to the database when the stage is submitted | no false "pass" rows for accidental taps |
 | W9 | Manual reject in Programming/Testing is attributed to the stage's first missing check; in Labeling/Packaging the operator chooses the failing item | always a concrete check code |
+| W10 | Communication test and measurement can be made retriable (`workflow.retriable_checks` + `workflow.max_attempts`); a retried measurement re-checks all four values and, when attempts run out, rejects on the **first** failing value | default stays "only programming retries" (W1); first failure = the reason printed on the box |
+| W11 | A new valid QR scan in Labeling clears an earlier identity result: the ID must be reconciled again for the sticker now on the bench | a match for an old sticker must never complete a board with a different label |
+| W12 | Real-bench tests live in `tests/hil/`, are skipped unless `PARKOMATE_HIL=1`, use a golden board and a scratch database; flashing only with `PARKOMATE_HIL_FULL=1` | a plain `pytest` never touches hardware or the station data |
+| W13 | Stages are split into operations; labeling into `C_CODE` (QR read, ID write / read-back, C4 QR sticker), `C_CASING` (C1, C2) and `C_BRANDING` (C3) **(client)** | one worker can do one step for many boards, or stop and finish later |
+| W14 | Boards in progress when 0004 is applied restart at the first operation of their last stage | the old engine kept a board's progress in memory only |
+| W15 | A **sitting** = the board's current step plus the following steps of its stage that are chosen and possible on this bench; the gate is the sum of their checks, and a stage screen works as before when all its steps are chosen | the station screens stay stage-based while the records are per step |
+| W16 | Finish later: a finished sitting is submitted and the board parked for its next step (or completed after D); otherwise the finished steps of the sitting are kept and the unfinished one is released and starts again. The UI asks first only when that step already has results. End of session / window close does the same but never submits | nothing done is lost; a half-done step is never half-trusted |
+| W17 | A continued board's state is rebuilt from its **passed** runs; attempt counts (upload, communication, measurement) include every run | the retry limit cannot be reset by stopping and continuing |
+| W18 | A MAC or QR of a finished board (complete, rejected, written off) is refused at pick-up (`WIP_FINISHED`) instead of starting a new row **(client, open question 10)** | a finished board must not slip back onto the line |
 
 ## E-mail, reports, logs, secrets
 
@@ -165,3 +210,5 @@ Relative to the interface list in the build prompt:
 12. **Marathi texts**: native-speaker review (`src/parkomate/i18n/REVIEW.md`).
 13. Retention period for sent e-mail files (90 days) and whether the database needs a
     scheduled backup / export to a server.
+14. **Multi-worker line**: labeling split, one PC or several, QR camera vs. hand scanner and
+    the other questions in `docs/MULTI_WORKER_PLAN.md`, section 12.

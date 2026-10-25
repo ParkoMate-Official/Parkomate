@@ -7,11 +7,11 @@ replace the stand-ins without touching UI or data code.
 | Owner | Implements | Lives in | Stand-in used today |
 |---|---|---|---|
 | Aditya | `HardwareService` | `src/parkomate/hardware/` | `hardware/mocks/MockHardwareService` |
-| Piyush | `WorkflowService` | `src/parkomate/workflow/` | `workflow/stub/StubWorkflowService` |
+| Piyush | `WorkflowService` | `src/parkomate/workflow/` | - (`WorkflowEngine` is the real one) |
 | Yugant | records API, reports, mail, auth, settings, logs, i18n, UI | everything else | - |
 
 Shared types live in `src/parkomate/core/`: `models.py` (pydantic, frozen), `enums.py`
-(`Stage`, `CheckCode`, ...), `errors.py` (`ParkomateError` + `ErrorCode`), `events.py`
+(`Stage`, `CheckCode`, `OpCode`, ...), `errors.py` (`ParkomateError` + `ErrorCode`), `events.py`
 (`EventBus` + event classes).
 
 > Changes against the list in the build prompt are recorded at the top of `DECISIONS.md`.
@@ -63,17 +63,25 @@ The brain: stage order, stage gates, limit checks, reject / retry / complete. It
 result through `ProductionRecords` (Yugant) and publishes events on the shared `EventBus`.
 
 ```python
-start_device(mac) -> DeviceState                      # new device at PROGRAMMING
+bench_steps() -> list[OpCode]                         # steps this bench can do
+selected_steps() -> list[OpCode]                      # steps the worker does now (default all)
+choose_steps(ops) / add_step(op) -> None
+pick_up(DeviceKey) -> DeviceState                     # new MAC starts at A; a board in progress
+                                                      # continues at its next step (WIP_* errors)
+start_device(mac) -> DeviceState                      # pick_up by MAC
 current_device() -> DeviceState | None                # None = bench idle
 current_stage() -> Stage                              # PROGRAMMING when idle
-abandon_device() -> None                              # session ends with a board on the bench
+current_operation() -> OpCode | None
+finish_later() -> StepResult                          # stop with this board; done steps kept
+release_device() -> None                              # session ends with a board on the bench:
+                                                      # it waits for its current step
 clear_finished() -> None                              # forget a completed/rejected device
-required_checks(stage) -> list[CheckCode]
+required_checks(stage) / operation_checks(op) -> list[CheckCode]
 missing_checks() -> list[CheckCode]                   # drives "Still needed: ..." and gates
 is_stage_complete(stage) -> bool
 submit_check(code, value=None, *, text=None) -> CheckOutcome
 can_submit() -> bool
-submit_and_next() -> Stage                            # COMPLETE after packaging
+submit_and_next() -> StepResult                       # continue, parked for a tray, or COMPLETE
 reject(code, reason_key="reject.reason.manual", **params) -> RejectInstruction
 can_retry_programming() -> bool
 evaluate_measurement(Measurement) -> list[CheckOutcome]
@@ -111,6 +119,9 @@ Threading: workflow methods are quick (SQLite writes) and are called from the GU
 * `ProductionRecords` (`data/records.py`) - session/device/check/counter persistence with state
   validation (`start_device`, `record_check`, `set_device_id`, `complete_device`,
   `reject_device`, `counter_event`, `can_adjust_failure`, `record_ambient`, ...).
+  Multi-worker line: a board is written to only through the session's open operation run
+  (`start_device` for a new board, `claim` for a waiting one, `pass_run`, `release_run`,
+  `queue`, `find_device`, `device_history`) - see `docs/MULTI_WORKER_PLAN.md`.
 * `Settings` (`config/settings.py`) - typed limits, timeouts, server, measurement, camera.
 * `EventBus`, `ParkomateError` + i18n keys for every `ErrorCode`.
 * Translations: any new user-facing text needs a key in **both** `i18n/en.json` and

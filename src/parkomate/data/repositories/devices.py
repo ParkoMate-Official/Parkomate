@@ -8,7 +8,7 @@ from datetime import datetime
 from typing import Any
 
 from parkomate.core.clock import Clock
-from parkomate.core.enums import CheckCode, DeviceStatus, IdEntryMethod, Stage
+from parkomate.core.enums import CheckCode, DeviceStatus, IdEntryMethod, OpCode, Stage
 from parkomate.core.errors import NotFoundError
 from parkomate.core.models import Device
 from parkomate.data.db import Database
@@ -17,8 +17,13 @@ from parkomate.data.repositories._rows import dumps, iso, last_id, loads_dict, t
 _COLUMNS = (
     "id, session_id, device_id, mac_address, firmware_version, started_at, finished_at, status, "
     "reject_stage, reject_check_code, reject_reason, reject_reason_key, reject_reason_params, "
-    "programming_attempts, id_entry_method"
+    "programming_attempts, id_entry_method, next_op"
 )
+_WAITING = (
+    "status = 'in_progress' AND NOT EXISTS (SELECT 1 FROM operation_runs r"
+    " WHERE r.device_row_id = devices.id AND r.finished_at IS NULL)"
+)
+"""In progress and on nobody's bench: waiting in a tray for ``next_op``."""
 
 
 def _to_model(row: sqlite3.Row) -> Device:
@@ -38,6 +43,7 @@ def _to_model(row: sqlite3.Row) -> Device:
         reject_reason_params=loads_dict(row["reject_reason_params"]),
         programming_attempts=row["programming_attempts"],
         id_entry_method=IdEntryMethod(row["id_entry_method"]) if row["id_entry_method"] else None,
+        next_op=OpCode(row["next_op"]) if row["next_op"] else None,
     )
 
 
@@ -110,13 +116,43 @@ class DeviceRepo:
     def increment_programming_attempts(self, device_row_id: int) -> None:
         self._update(device_row_id, "programming_attempts = programming_attempts + 1", ())
 
+    def set_next_op(self, device_row_id: int, op: OpCode) -> None:
+        self._update(device_row_id, "next_op = ?", (op.value,), only_in_progress=True)
+
+    def find(self, *, mac: str | None = None, device_id: str | None = None) -> Device | None:
+        """The board with this MAC (or QR ID): its in-progress row, else its newest row."""
+        column, value = ("mac_address", mac) if mac is not None else ("device_id", device_id)
+        row = self._db.query_one(
+            f"SELECT {_COLUMNS} FROM devices WHERE {column} = ?"
+            " ORDER BY status = 'in_progress' DESC, id DESC LIMIT 1",
+            (value,),
+        )
+        return None if row is None else _to_model(row)
+
+    def queue(self, op: OpCode) -> list[Device]:
+        """Boards waiting for ``op``, oldest first."""
+        rows = self._db.query(
+            f"SELECT {_COLUMNS} FROM devices WHERE next_op = ? AND {_WAITING} ORDER BY id",
+            (op.value,),
+        )
+        return [_to_model(row) for row in rows]
+
+    def queue_counts(self) -> dict[OpCode, int]:
+        """Number of boards waiting for each operation."""
+        counts = dict.fromkeys(OpCode, 0)
+        for row in self._db.query(
+            f"SELECT next_op, COUNT(*) AS n FROM devices WHERE {_WAITING} GROUP BY next_op"
+        ):
+            counts[OpCode(row["next_op"])] = int(row["n"])
+        return counts
+
     def finish(self, device_row_id: int, status: DeviceStatus, finished_at: datetime) -> None:
         """Set a terminal non-reject status (complete / abandoned)."""
         if status not in (DeviceStatus.COMPLETE, DeviceStatus.ABANDONED):
             raise ValueError(f"use reject() for status {status}")
         self._update(
             device_row_id,
-            "status = ?, finished_at = ?",
+            "status = ?, finished_at = ?, next_op = NULL",
             (status.value, iso(finished_at)),
             only_in_progress=True,
         )
@@ -135,7 +171,7 @@ class DeviceRepo:
         self._update(
             device_row_id,
             "status = 'rejected', finished_at = ?, reject_stage = ?, reject_check_code = ?,"
-            " reject_reason = ?, reject_reason_key = ?, reject_reason_params = ?",
+            " reject_reason = ?, reject_reason_key = ?, reject_reason_params = ?, next_op = NULL",
             (
                 iso(finished_at),
                 stage.value,
@@ -146,21 +182,6 @@ class DeviceRepo:
             ),
             only_in_progress=True,
         )
-
-    def abandon_in_session(self, session_id: int, finished_at: datetime) -> list[int]:
-        """Mark every in-progress device of the session abandoned; returns their row ids."""
-        with self._db.transaction() as conn:
-            rows = conn.execute(
-                "SELECT id FROM devices WHERE session_id = ? AND status = 'in_progress'",
-                (session_id,),
-            ).fetchall()
-            ids = [int(row["id"]) for row in rows]
-            conn.execute(
-                "UPDATE devices SET status = 'abandoned', finished_at = ?"
-                " WHERE session_id = ? AND status = 'in_progress'",
-                (iso(finished_at), session_id),
-            )
-        return ids
 
     def _update(
         self,

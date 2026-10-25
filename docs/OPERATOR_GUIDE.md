@@ -79,11 +79,25 @@ The screen is also in Marathi: press **मराठी** at the top. The app rem
 Do the numbered steps, then press the button on the right (**Try again**, **Measure again**,
 **Scan again** …). If it keeps happening, call the supervisor and show the screen.
 
-## 9. End of shift
+## 9. Finish later - do some steps now, the rest later
+
+You do not have to take a board from A to D in one go.
+
+1. Press **Finish later** on any screen. The green message says which tray the board goes to,
+   e.g. "put it in the tray for Testing". Put it there.
+2. Later - the same day, another day, you or someone else - connect the board as usual on the
+   Programming screen. The station opens the step the board is waiting for and shows what was
+   already done.
+
+Steps already finished are kept. If the step on the screen was started but not finished, the
+station asks first: that step starts again next time.
+
+## 10. End of shift
 
 1. Press **Session** (top right) → **End session** → **End session** again to confirm.
 2. The summary shows your counts. The report is sent (or saved and sent later).
 3. Press **Log out**.
 
-**Esc** never deletes anything. If the station closes by accident, the board on the bench is
-marked "not finished" - put it aside for re-testing and tell the supervisor.
+**Esc** never deletes anything. A board still on the bench at the end of the session (or if
+the station closes by accident) keeps the steps it passed: put it in the tray of the step it
+was on, anyone can finish it later.

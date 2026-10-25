@@ -11,12 +11,13 @@ The UI and the data layer depend only on these Protocols, never on the implement
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from typing import Protocol, runtime_checkable
 
-from parkomate.core.enums import CheckCode, IdEntryMethod, Stage
+from parkomate.core.enums import CheckCode, IdEntryMethod, OpCode, Stage
 from parkomate.core.models import (
     CheckOutcome,
+    DeviceKey,
     DeviceState,
     FirmwareInfo,
     FlashResult,
@@ -26,6 +27,7 @@ from parkomate.core.models import (
     PreviewFrame,
     RejectInstruction,
     SensorReading,
+    StepResult,
     WhitelistResult,
 )
 
@@ -162,9 +164,36 @@ class WorkflowService(Protocol):
     Methods are fast (database writes only) and may be called from the UI thread.
     """
 
+    # -- steps the worker does -----------------------------------------------------------
+    def bench_steps(self) -> list[OpCode]:
+        """Steps this bench can do, in line order."""
+        ...
+
+    def selected_steps(self) -> list[OpCode]:
+        """Steps the worker chose to do now (default: every bench step), in line order."""
+        ...
+
+    def choose_steps(self, ops: Iterable[OpCode]) -> None:
+        """Choose the steps to do now (non-empty, bench steps only, no board on the bench).
+        A board moves on to its next step on the bench while that step is chosen, and is
+        parked for the tray when it is not."""
+        ...
+
+    def add_step(self, op: OpCode) -> None:
+        """Add one bench step to the chosen ones ("Add this step" after a mix-up message)."""
+        ...
+
     # -- device lifecycle ---------------------------------------------------------------
+    def pick_up(self, key: DeviceKey) -> DeviceState:
+        """Put a board on the bench. A new MAC starts at PROGRAMMING; a board in progress
+        continues at its next step, its state rebuilt from the database (whoever did the
+        earlier steps). Raises ``WIP_NOT_FOUND``, ``WIP_FINISHED``, ``WIP_CLAIMED``,
+        ``WIP_WRONG_OPERATION`` or ``WIP_STEP_NOT_SELECTED`` for a board that cannot be worked
+        on here, ``INVALID_STATE`` while another board is on the bench."""
+        ...
+
     def start_device(self, mac: str) -> DeviceState:
-        """Begin a new device at PROGRAMMING. Raises ``INVALID_STATE`` if one is active."""
+        """``pick_up`` by MAC (the board connected on the programming screen)."""
         ...
 
     def current_device(self) -> DeviceState | None:
@@ -175,8 +204,19 @@ class WorkflowService(Protocol):
         """Stage of the active device; ``PROGRAMMING`` when idle."""
         ...
 
-    def abandon_device(self) -> None:
-        """Mark the active device abandoned (session ending with a device on the bench)."""
+    def current_operation(self) -> OpCode | None:
+        """Step being worked on; ``None`` when the bench is idle."""
+        ...
+
+    def finish_later(self) -> StepResult:
+        """Worker stops with this board: steps already complete are kept (a fully done
+        sitting is submitted), the unfinished step is released and starts again next time.
+        The board leaves the bench (``parked``)."""
+        ...
+
+    def release_device(self) -> None:
+        """Session ends with a board on the bench: completed steps of the sitting are kept,
+        the unfinished step is released; the board waits for it, for any session."""
         ...
 
     def clear_finished(self) -> None:
@@ -184,10 +224,16 @@ class WorkflowService(Protocol):
         ...
 
     # -- checks -------------------------------------------------------------------------
-    def required_checks(self, stage: Stage) -> list[CheckCode]: ...
+    def required_checks(self, stage: Stage) -> list[CheckCode]:
+        """Required checks of all steps of ``stage``, in line order."""
+        ...
+
+    def operation_checks(self, op: OpCode) -> list[CheckCode]:
+        """Required checks of one step."""
+        ...
 
     def missing_checks(self) -> list[CheckCode]:
-        """Required checks of the current stage that have not passed yet (gate message)."""
+        """Required checks of the steps on the bench that have not passed yet (gate)."""
         ...
 
     def is_stage_complete(self, stage: Stage) -> bool: ...
@@ -208,9 +254,10 @@ class WorkflowService(Protocol):
         """True when the current stage gate is satisfied."""
         ...
 
-    def submit_and_next(self) -> Stage:
-        """Close the current stage and advance. Returns the new stage (``COMPLETE`` after
-        packaging). Raises ``INVALID_STATE`` when the gate is not satisfied."""
+    def submit_and_next(self) -> StepResult:
+        """Pass the steps on the bench. The board continues with its next step when the
+        worker chose it, else it is parked for the tray (``parked``); ``COMPLETE`` after
+        packaging. Raises ``INVALID_STATE`` when the gate is not satisfied."""
         ...
 
     def reject(

@@ -16,7 +16,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, TypeVar
 
-from parkomate.core.enums import Stage
+from parkomate.core.enums import OpCode, Stage
 from parkomate.core.models import CheckOutcome, RejectInstruction
 
 log = logging.getLogger(__name__)
@@ -61,6 +61,22 @@ class DeviceRejected(Event):
 @dataclass(frozen=True, slots=True)
 class DeviceAbandoned(Event):
     device_row_id: int
+
+
+@dataclass(frozen=True, slots=True)
+class DeviceReleased(Event):
+    """A board left a bench unfinished; it waits for ``op`` again (any bench may continue)."""
+
+    device_row_id: int
+    op: OpCode
+
+
+@dataclass(frozen=True, slots=True)
+class DeviceParked(Event):
+    """A board passed the worker's steps and left the bench; it waits for ``next_op``."""
+
+    device_row_id: int
+    next_op: OpCode
 
 
 @dataclass(frozen=True, slots=True)

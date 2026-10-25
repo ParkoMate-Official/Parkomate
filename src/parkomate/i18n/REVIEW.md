@@ -261,7 +261,7 @@ Total keys: **689** - needs_review: **689**
 | Key | English | Marathi | Status |
 |---|---|---|---|
 | `confirm.end_session` | End the session and send the report? | सत्र संपवून अहवाल पाठवायचा? | needs_review |
-| `confirm.end_session_device` | A device is still in progress. It will be marked ABANDONED. End the session? | एक डिव्हाइस अजून चालू आहे. ते 'अपूर्ण सोडले' म्हणून नोंदवले जाईल. सत्र संपवायचे? | needs_review |
+| `confirm.end_session_device` | A device is still on the bench. Steps already passed are kept and it can be finished later. End the session? | एक डिव्हाइस अजून बेंचवर आहे. पूर्ण झालेल्या पायऱ्या जतन राहतील आणि ते नंतर पूर्ण करता येईल. सत्र संपवायचे? | needs_review |
 | `confirm.reject_device` | Reject this device? It must go to the reject box. | हे डिव्हाइस नाकारायचे? ते रिजेक्ट बॉक्समध्ये जाईल. | needs_review |
 | `confirm.reject_for` | Reject this device because of: {check}? | या कारणाने डिव्हाइस नाकारायचे: {check}? | needs_review |
 | `confirm.mark_failed` | Mark "{check}" as FAILED? The device will be rejected. | "{check}" अयशस्वी नोंदवायचे? डिव्हाइस नाकारले जाईल. | needs_review |
@@ -566,8 +566,8 @@ Total keys: **689** - needs_review: **689**
 
 | Key | English | Marathi | Status |
 |---|---|---|---|
-| `notice.abandoned_title` | Last device was not finished - it has been marked abandoned | मागील डिव्हाइस पूर्ण झाले नव्हते - ते 'अपूर्ण सोडले' म्हणून नोंदवले आहे | needs_review |
-| `notice.abandoned_body` | The station stopped unexpectedly. {n} unfinished device(s) were recorded as abandoned and the session report was saved. Put such a board aside for re-testing. | स्टेशन अचानक बंद झाले. {n} अपूर्ण डिव्हाइस 'अपूर्ण सोडले' म्हणून नोंदवले आणि सत्र अहवाल जतन केला. असा बोर्ड पुन्हा चाचणीसाठी बाजूला ठेवा. | needs_review |
+| `notice.released_title` | Last device was not finished - it can be finished later | मागील डिव्हाइस पूर्ण झाले नव्हते - ते नंतर पूर्ण करता येईल | needs_review |
+| `notice.released_body` | The station stopped unexpectedly. {n} unfinished device(s) were kept with the steps already passed, and the session report was saved. Put such a board in the tray of the step it was on; any station can finish it. | स्टेशन अचानक बंद झाले. {n} अपूर्ण डिव्हाइस आधी पूर्ण झालेल्या पायऱ्यांसह जतन केले आणि सत्र अहवाल जतन केला. असा बोर्ड तो ज्या पायरीवर होता त्या पायरीच्या ट्रेमध्ये ठेवा; कोणतेही स्टेशन तो पूर्ण करू शकते. | needs_review |
 | `notice.recovered_title` | The last session was closed automatically after an unexpected stop | अचानक बंद झाल्यानंतर मागील सत्र आपोआप बंद केले | needs_review |
 
 ## outbox_status (`outbox_status.*`, 3)
@@ -911,3 +911,32 @@ Total keys: **689** - needs_review: **689**
 | Key | English | Marathi | Status |
 |---|---|---|---|
 | `toast.device_complete` | Device {device} complete | डिव्हाइस {device} पूर्ण | needs_review |
+
+## Multi-worker line (`op.*`, `error.wip_*`, finish later, parked toast)
+
+| Key | English | Marathi | Status |
+|---|---|---|---|
+| `op.A_PROGRAM` | Programming | प्रोग्रामिंग | needs_review |
+| `op.B_TEST` | Testing | चाचणी | needs_review |
+| `op.C_CODE` | C-1 Code insertion | C-1 कोड टाकणे | needs_review |
+| `op.C_CASING` | C-2 Casing | C-2 केसिंग | needs_review |
+| `op.C_BRANDING` | C-3 Branding | C-3 ब्रँडिंग | needs_review |
+| `op.D_PACK` | Packaging | पॅकेजिंग | needs_review |
+| `error.wip_not_found.title` | Board not found | बोर्ड सापडला नाही | needs_review |
+| `error.wip_not_found.cause` | No board on the line has the ID {value}. | लाइनवरील कोणत्याही बोर्डचा ID {value} नाही. | needs_review |
+| `error.wip_not_found.action` | Scan the QR code again.<br>Check that the sticker belongs to this board.<br>If it continues, call the supervisor. | QR कोड पुन्हा स्कॅन करा.<br>स्टिकर याच बोर्डचा आहे का ते तपासा.<br>तरीही होत असल्यास सुपरवायझरला बोलवा. | needs_review |
+| `error.wip_finished.title` | Board already finished | बोर्डचे काम आधीच संपले आहे | needs_review |
+| `error.wip_finished.cause` | This board is already {status}. | हा बोर्ड आधीच '{status}' आहे. | needs_review |
+| `error.wip_finished.action` | Do not work on it again.<br>If it was rejected, put it back in its reject box.<br>Call the supervisor if unsure. | त्यावर पुन्हा काम करू नका.<br>तो नाकारला असल्यास, त्याच्या रिजेक्ट बॉक्समध्ये परत ठेवा.<br>खात्री नसल्यास सुपरवायझरला बोलवा. | needs_review |
+| `error.wip_claimed.title` | Board is on another bench | बोर्ड दुसऱ्या बेंचवर आहे | needs_review |
+| `error.wip_claimed.cause` | This board is being worked on at {station}. | या बोर्डवर {station} येथे काम सुरू आहे. | needs_review |
+| `error.wip_claimed.action` | Give the board back to that station.<br>If that station has stopped, call the supervisor. | बोर्ड त्या स्टेशनला परत द्या.<br>ते स्टेशन बंद पडले असल्यास सुपरवायझरला बोलवा. | needs_review |
+| `error.wip_wrong_operation.title` | Wrong station for this board | या बोर्डसाठी हे स्टेशन नाही | needs_review |
+| `error.wip_wrong_operation.cause` | This board needs {op} next, which is not done at this station. | या बोर्डला पुढे {op} करायचे आहे, ते या स्टेशनवर होत नाही. | needs_review |
+| `error.wip_wrong_operation.action` | Put the board in the tray for {op}. | बोर्ड {op} च्या ट्रेमध्ये ठेवा. | needs_review |
+| `error.wip_step_not_selected.title` | Step not in your list | ही पायरी तुमच्या यादीत नाही | needs_review |
+| `error.wip_step_not_selected.cause` | This board needs {op} next, which is not one of your steps. | या बोर्डला पुढे {op} करायचे आहे, ती तुमच्या पायऱ्यांपैकी नाही. | needs_review |
+| `error.wip_step_not_selected.action` | Add {op} to your steps, or put the board in the tray for {op}. | {op} तुमच्या पायऱ्यांमध्ये जोडा, किंवा बोर्ड {op} च्या ट्रेमध्ये ठेवा. | needs_review |
+| `action.finish_later` | Finish later | नंतर पूर्ण करा | needs_review |
+| `confirm.finish_later_mid_step` | {op} is not finished. Its results so far are discarded and it starts again next time. Finish later? | {op} पूर्ण झालेले नाही. आतापर्यंतचे निकाल रद्द होतील आणि पुढच्या वेळी ते पुन्हा सुरुवातीपासून होईल. नंतर पूर्ण करायचे? | needs_review |
+| `toast.device_parked` | Device {device} saved - put it in the tray for {op} | डिव्हाइस {device} जतन केले - ते {op} च्या ट्रेमध्ये ठेवा | needs_review |

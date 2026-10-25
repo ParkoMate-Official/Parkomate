@@ -157,11 +157,20 @@ class SessionRepo:
             SELECT MAX(t) FROM (
                 SELECT started_at AS t FROM sessions WHERE id = :s
                 UNION ALL SELECT started_at FROM devices WHERE session_id = :s
-                UNION ALL SELECT finished_at FROM devices WHERE session_id = :s
                 UNION ALL SELECT measured_at FROM ambient_readings WHERE session_id = :s
                 UNION ALL SELECT created_at FROM counter_events WHERE session_id = :s
+                -- rows from before operation runs (0004): attributed to the starting session
+                UNION ALL SELECT finished_at FROM devices d WHERE d.session_id = :s
+                          AND NOT EXISTS (SELECT 1 FROM operation_runs r
+                                          WHERE r.device_row_id = d.id)
                 UNION ALL SELECT c.created_at FROM check_results c
-                          JOIN devices d ON d.id = c.device_row_id WHERE d.session_id = :s
+                          JOIN devices d ON d.id = c.device_row_id
+                          WHERE d.session_id = :s AND c.run_id IS NULL
+                -- since 0004: whatever this session did through its runs, on any board
+                UNION ALL SELECT started_at FROM operation_runs WHERE session_id = :s
+                UNION ALL SELECT finished_at FROM operation_runs WHERE session_id = :s
+                UNION ALL SELECT c.created_at FROM check_results c
+                          JOIN operation_runs r ON r.id = c.run_id WHERE r.session_id = :s
             )
             """,
             {"s": session_id},

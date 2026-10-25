@@ -17,6 +17,7 @@ import re
 import threading
 import time
 from collections.abc import Callable
+from functools import partial
 from typing import Any, Protocol
 
 from parkomate.config.settings import CameraSettings, Settings
@@ -93,7 +94,7 @@ class ZbarOpenCvDecoder:
     def _pyzbar(self) -> Any:
         if self._zbar is None and not self._zbar_failed:
             try:
-                from pyzbar import pyzbar
+                from pyzbar import pyzbar  # type: ignore[import-untyped]
 
                 self._zbar = pyzbar
             except (ImportError, OSError):  # ZBar DLL missing
@@ -182,8 +183,10 @@ class CameraService:
             if frame is None:
                 failures += 1
                 if failures >= MAX_READ_FAILURES:
-                    log.error("camera stopped delivering frames",
-                              extra={"error_code": ErrorCode.CAM_NOT_FOUND.value})
+                    log.error(
+                        "camera stopped delivering frames",
+                        extra={"error_code": ErrorCode.CAM_NOT_FOUND.value},
+                    )
                     with self._cond:
                         self._lost = True
                         self._cond.notify_all()
@@ -205,6 +208,10 @@ class CameraService:
         with self._cond:
             return self._preview
 
+    def _news_since(self, seen_seq: int) -> bool:
+        """A new frame arrived, or the camera stopped (called with ``_cond`` held)."""
+        return self._seq != seen_seq or self._lost or not self._running
+
     def read_qr(self, timeout_s: float) -> str | None:
         if not self._running:
             raise CameraError("camera is not open", code=ErrorCode.CAM_NOT_FOUND)
@@ -215,12 +222,13 @@ class CameraService:
         while self._monotonic() < deadline:
             with self._cond:
                 self._cond.wait_for(
-                    lambda: self._seq != seen_seq or self._lost or not self._running,
+                    partial(self._news_since, seen_seq),
                     timeout=max(0.0, min(0.3, deadline - self._monotonic())),
                 )
                 if self._lost or not self._running:
-                    raise CameraError("camera stopped delivering frames",
-                                      code=ErrorCode.CAM_NOT_FOUND)
+                    raise CameraError(
+                        "camera stopped delivering frames", code=ErrorCode.CAM_NOT_FOUND
+                    )
                 if self._seq == seen_seq or self._frame is None:
                     continue
                 seen_seq = self._seq

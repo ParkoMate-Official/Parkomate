@@ -249,6 +249,8 @@ class TestingViewModel(StageViewModel):
             actions.append(
                 Action("action.reject_device", self.reject_device, variant="danger", name="reject")
             )
+            if self.comm_state is not StepState.WORKING and not self.reading_busy:
+                actions.append(self.finish_later_action())
         return actions
 
     def status(self) -> StatusLine | None:

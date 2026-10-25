@@ -239,11 +239,21 @@ class SuccessToast(QFrame):
         self._timer.setSingleShot(True)
         self._timer.timeout.connect(self.hide)
         self._device = ""
+        self._key = "toast.device_complete"
+        self._params: dict[str, object] = {}
         self.setVisible(False)
         language_notifier().changed.connect(self.retranslate)
 
-    def show_message(self, device: str, seconds: float) -> None:
+    def show_message(
+        self,
+        device: str,
+        seconds: float,
+        key: str = "toast.device_complete",
+        params: dict[str, object] | None = None,
+    ) -> None:
         self._device = device
+        self._key = key
+        self._params = dict(params or {})
         self.retranslate()
         parent = self.parentWidget()
         if parent is not None:
@@ -254,5 +264,5 @@ class SuccessToast(QFrame):
         self._timer.start(int(seconds * 1000))
 
     def retranslate(self, *_args: object) -> None:
-        self.label.setText(t("toast.device_complete", device=self._device))
+        self.label.setText(tr_message(None, self._key, {**self._params, "device": self._device}))
         self.setAccessibleName(self.label.text())

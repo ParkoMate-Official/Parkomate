@@ -450,6 +450,14 @@ class ProductionShell(QWidget):
         controller.toast.connect(
             lambda device: self.toast.show_message(device, controller.settings.ui.success_toast_s)
         )
+        controller.parked.connect(
+            lambda device, op_key: self.toast.show_message(
+                device,
+                controller.settings.ui.success_toast_s,
+                key="toast.device_parked",
+                params={"op_key": op_key},
+            )
+        )
         for signal in (
             controller.device_changed,
             controller.counters_changed,

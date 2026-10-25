@@ -11,9 +11,7 @@ from __future__ import annotations
 from parkomate.config.settings import Settings
 from parkomate.core.enums import CheckCode
 
-ELECTRICAL = frozenset(
-    {CheckCode.B3_V_A, CheckCode.B3_V_B, CheckCode.B3_V_C, CheckCode.B3_T_REG}
-)
+ELECTRICAL = frozenset({CheckCode.B3_V_A, CheckCode.B3_V_B, CheckCode.B3_V_C, CheckCode.B3_T_REG})
 
 
 def retry_group(code: CheckCode) -> str | None:

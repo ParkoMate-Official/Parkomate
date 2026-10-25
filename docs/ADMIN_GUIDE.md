@@ -87,8 +87,9 @@ or firmware are ever logged).
 
 * **Remove 1 failure**: after a failed upload and a successful retry the operator may remove
   that one failure from the count - once per board, recorded in the audit log.
-* **Crash / power cut**: at the next start the unfinished board is marked *abandoned*, the
-  session is closed and its report queued; the login screen tells the operator.
+* **Crash / power cut**: at the next start the unfinished board is put back to wait for the
+  step it was on (steps already passed are kept), the session is closed and its report
+  queued; the login screen tells the operator.
 * **Only one station window** can run per PC.
 * **Simulated bench**: the top-left shows `SIMULATED · <scenario>` while mock hardware is in
   use (`dev.use_mock_hardware`). Never use it for real production.

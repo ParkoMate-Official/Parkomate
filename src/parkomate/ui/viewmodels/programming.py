@@ -152,6 +152,9 @@ class ProgrammingViewModel(StageViewModel):
         self.chip = chip
         self.connect_state = StepState.PASS
         self.c.device_updated()
+        if state.stage is not Stage.PROGRAMMING:
+            self.c.resume_at(state.stage)  # a board continued: open the screen of its step
+            return
         self.notify()
         self.check_whitelist()
 
@@ -414,6 +417,8 @@ class ProgrammingViewModel(StageViewModel):
                         "action.reject_device", self.reject_device, variant="danger", name="reject"
                     )
                 )
+            if self.whitelist_state is not StepState.WORKING:
+                actions.append(self.finish_later_action())
         return actions
 
     def status(self) -> StatusLine | None:

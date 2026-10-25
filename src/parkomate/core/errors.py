@@ -62,6 +62,12 @@ class ErrorCode(StrEnum):
     NOT_FOUND = "NOT_FOUND"
     ALREADY_RUNNING = "ALREADY_RUNNING"
     UNEXPECTED = "UNEXPECTED"
+    # Multi-worker line: picking up a board (Piyush)
+    WIP_NOT_FOUND = "WIP_NOT_FOUND"
+    WIP_FINISHED = "WIP_FINISHED"
+    WIP_CLAIMED = "WIP_CLAIMED"
+    WIP_WRONG_OPERATION = "WIP_WRONG_OPERATION"
+    WIP_STEP_NOT_SELECTED = "WIP_STEP_NOT_SELECTED"
 
     @property
     def severity(self) -> Severity:
@@ -122,6 +128,11 @@ _SEVERITY: dict[ErrorCode, Severity] = {
     ErrorCode.NOT_FOUND: Severity.ERROR,
     ErrorCode.ALREADY_RUNNING: Severity.ERROR,
     ErrorCode.UNEXPECTED: Severity.CRITICAL,
+    ErrorCode.WIP_NOT_FOUND: Severity.WARNING,
+    ErrorCode.WIP_FINISHED: Severity.WARNING,
+    ErrorCode.WIP_CLAIMED: Severity.WARNING,
+    ErrorCode.WIP_WRONG_OPERATION: Severity.WARNING,
+    ErrorCode.WIP_STEP_NOT_SELECTED: Severity.WARNING,
 }
 
 

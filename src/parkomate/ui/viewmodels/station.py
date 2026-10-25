@@ -37,6 +37,7 @@ from parkomate.core.models import (
     RejectInstruction,
     Session,
     SessionSummary,
+    StepResult,
 )
 from parkomate.i18n import get_language, set_language
 from parkomate.mail.outbox import SendReport
@@ -83,6 +84,8 @@ class StationController(QObject):
     reject_shown = Signal(object)
     reject_cleared = Signal()
     toast = Signal(str)
+    parked = Signal(str, str)
+    """(device label, i18n key of the step it waits for) - put it in that step's tray."""
     counters_changed = Signal()
     session_changed = Signal()
     device_changed = Signal()
@@ -401,25 +404,93 @@ class StationController(QObject):
 
     # ================================================================== stage flow
     def advance(self) -> None:
-        """Primary "Submit and next": close the stage, go to the next one."""
+        """Primary "Submit and next": pass the steps on the bench, go to the next one."""
+        label = self._device_label()
         try:
-            new = self.ctx.workflow.submit_and_next()
+            result = self.ctx.workflow.submit_and_next()
         except ParkomateError as exc:
             self.show_error(exc)
             return
+        self._after_step(label, result)
+
+    def request_finish_later(self) -> None:
+        """Secondary "Finish later": stop with this board; it waits for its next step.
+
+        Nothing is lost when the steps on the bench are done or not started; otherwise the
+        worker confirms that the unfinished step starts again next time."""
+        device = self.device
+        if device is None or device.status is not DeviceStatus.IN_PROGRESS or device.op is None:
+            return
+        workflow = self.ctx.workflow
+        missing = set(workflow.missing_checks())
+        unfinished = next(
+            (
+                op
+                for op in workflow.selected_steps()
+                if op.stage is device.op.stage and missing & set(workflow.operation_checks(op))
+            ),
+            None,
+        )
+        started = unfinished is not None and any(
+            code in device.outcomes or device.marks.get(code)
+            for code in workflow.operation_checks(unfinished)
+        )
+        if unfinished is None or not started:
+            self.finish_later()
+            return
+        self.ask(
+            ConfirmState(
+                "confirm.finish_later_mid_step",
+                self.finish_later,
+                yes_key="action.finish_later",
+                params={"op_key": unfinished.label_key},
+            )
+        )
+
+    def finish_later(self) -> None:
+        label = self._device_label()
+        try:
+            result = self.ctx.workflow.finish_later()
+        except ParkomateError as exc:
+            self.show_error(exc)
+            return
+        self._after_step(label, result)
+
+    def _after_step(self, label: str, result: StepResult) -> None:
         self.clear_error()
         old_vm = self.current_vm
         if old_vm is not None:
             old_vm.leave()
-        if new is Stage.COMPLETE:
+        if result.complete:
             return  # DeviceCompleted arrives through the event bridge
-        self.stage = new
+        if result.parked:
+            if result.next_op is not None:
+                self.parked.emit(label, result.next_op.label_key)
+            if self.settings.ui.sound:
+                QApplication.beep()
+            self._next_device()
+            return
+        self._show_stage(result.stage)
+
+    def resume_at(self, stage: Stage) -> None:
+        """A board picked up to continue: go straight to the screen of its step."""
+        old_vm = self.current_vm
+        if old_vm is not None and old_vm.stage is not stage:
+            old_vm.leave()
+        self._show_stage(stage)
+
+    def _show_stage(self, stage: Stage) -> None:
+        self.stage = stage
         self.stage_changed.emit()
         self.device_changed.emit()
         vm = self.current_vm
         if vm is not None:
             vm.enter()
         self.bottom_bar_changed.emit()
+
+    def _device_label(self) -> str:
+        state = self.device
+        return state.display_id if state is not None else ""
 
     def device_updated(self) -> None:
         self.device_changed.emit()
@@ -562,9 +633,9 @@ class StationController(QObject):
         if vm is not None:
             vm.leave()
         try:
-            self.ctx.workflow.abandon_device()
+            self.ctx.workflow.release_device()
         except ParkomateError:
-            log.exception("could not abandon the device on the bench")
+            log.exception("could not release the device on the bench")
         self.clear_error()
         self.toggle_drawer(False)
         self.send_state = SendState.CLOSING
@@ -652,7 +723,7 @@ class StationController(QObject):
 
     # ================================================================== shutdown
     def shutdown(self) -> None:
-        """Window closing: abandon the device, close the session, release hardware."""
+        """Window closing: release the device, close the session, release hardware."""
         if self._shut_down:
             return
         self._shut_down = True
@@ -662,7 +733,7 @@ class StationController(QObject):
         self.bg.wait(30_000)
         if self.ctx.records.session is not None:
             try:
-                self.ctx.workflow.abandon_device()
+                self.ctx.workflow.release_device()
                 self.ctx.station.logout(SessionEndReason.CLOSE)
             except ParkomateError:
                 log.exception("closing the session on exit failed")

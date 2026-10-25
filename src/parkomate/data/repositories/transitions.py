@@ -10,7 +10,7 @@ from parkomate.core.models import StageTransition
 from parkomate.data.db import Database
 from parkomate.data.repositories._rows import iso, last_id, ts_req
 
-_COLUMNS = "id, device_row_id, from_stage, to_stage, created_at"
+_COLUMNS = "id, device_row_id, from_stage, to_stage, created_at, run_id"
 
 
 def _to_model(row: sqlite3.Row) -> StageTransition:
@@ -20,6 +20,7 @@ def _to_model(row: sqlite3.Row) -> StageTransition:
         from_stage=Stage(row["from_stage"]) if row["from_stage"] else None,
         to_stage=Stage(row["to_stage"]),
         created_at=ts_req(row["created_at"]),
+        run_id=row["run_id"],
     )
 
 
@@ -28,16 +29,24 @@ class TransitionRepo:
         self._db = db
         self._clock = clock
 
-    def add(self, device_row_id: int, from_stage: Stage | None, to_stage: Stage) -> StageTransition:
+    def add(
+        self,
+        device_row_id: int,
+        from_stage: Stage | None,
+        to_stage: Stage,
+        *,
+        run_id: int | None = None,
+    ) -> StageTransition:
         with self._db.transaction() as conn:
             cursor = conn.execute(
-                "INSERT INTO stage_transitions (device_row_id, from_stage, to_stage, created_at)"
-                " VALUES (?, ?, ?, ?)",
+                "INSERT INTO stage_transitions (device_row_id, from_stage, to_stage, created_at,"
+                " run_id) VALUES (?, ?, ?, ?, ?)",
                 (
                     device_row_id,
                     from_stage.value if from_stage else None,
                     to_stage.value,
                     iso(self._clock.now()),
+                    run_id,
                 ),
             )
             row = conn.execute(
