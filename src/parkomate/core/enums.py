@@ -263,6 +263,12 @@ class OpCode(StrEnum):
     def stage(self) -> Stage:
         return _OP_STAGES[self]
 
+    @property
+    def next(self) -> OpCode | None:
+        """The step after this one; ``None`` after the last (the board is complete)."""
+        index = LINE_ORDER.index(self) + 1
+        return LINE_ORDER[index] if index < len(LINE_ORDER) else None
+
 
 _OP_STAGES: dict[OpCode, Stage] = {
     OpCode.A_PROGRAM: Stage.PROGRAMMING,

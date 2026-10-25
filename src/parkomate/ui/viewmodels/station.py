@@ -562,9 +562,9 @@ class StationController(QObject):
         if vm is not None:
             vm.leave()
         try:
-            self.ctx.workflow.abandon_device()
+            self.ctx.workflow.release_device()
         except ParkomateError:
-            log.exception("could not abandon the device on the bench")
+            log.exception("could not release the device on the bench")
         self.clear_error()
         self.toggle_drawer(False)
         self.send_state = SendState.CLOSING
@@ -652,7 +652,7 @@ class StationController(QObject):
 
     # ================================================================== shutdown
     def shutdown(self) -> None:
-        """Window closing: abandon the device, close the session, release hardware."""
+        """Window closing: release the device, close the session, release hardware."""
         if self._shut_down:
             return
         self._shut_down = True
@@ -662,7 +662,7 @@ class StationController(QObject):
         self.bg.wait(30_000)
         if self.ctx.records.session is not None:
             try:
-                self.ctx.workflow.abandon_device()
+                self.ctx.workflow.release_device()
                 self.ctx.station.logout(SessionEndReason.CLOSE)
             except ParkomateError:
                 log.exception("closing the session on exit failed")

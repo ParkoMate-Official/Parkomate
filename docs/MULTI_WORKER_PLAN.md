@@ -1,6 +1,9 @@
 # Multi-worker production line - architecture, workflow and plan
 
-Status: **proposal** (nothing implemented yet). Owner of the proposal: Piyush (workflow).
+Status: **phase 1 in progress** on branch `feature/multi-worker` - task 1 (operation catalogue,
+migration 0004) and task 2 (records API, migration 0005, end of session / crash recovery release
+boards) are done; task 3 (engine: choose steps, pick up, finish later) is next. Owner of the
+proposal: Piyush (workflow).
 Decisions that need the client or the team are collected in [section 12](#12-open-questions).
 
 ## 1. What we want
@@ -585,7 +588,7 @@ flowchart LR
 | # | Task | Owner | Done when |
 |---|---|---|---|
 | 1 | `OpCode` in `core/enums.py`; `workflow/operations.py` catalogue (stage, checks, identify-by, bench needs, line order) | Piyush | catalogue unit-tested; every `CheckCode` belongs to exactly one op |
-| 2 | `0004_operations.sql`; `runs` repository; records: `claim_run`, `finish_run`, `release_open_run`, `queue`, `device_history`, `find_device(mac / qr)`; `end_session` and recovery **release** instead of abandon | Yugant | migration test on a 0003 DB; append-only trigger tests |
+| 2 | `0004_operations.sql`, `0005_unique_boards_in_progress.sql`; `runs` repository; records: `claim`, `pass_run`, `release_run`, `queue`, `device_history`, `find_device(mac / qr)`; `end_session` and recovery **release** instead of abandon | Yugant | done: `test_records_wip.py`, migration tests on 0003 / 0004 databases |
 | 3 | Engine: state rebuilt from history, per-op `required_checks` / `missing_checks`, `choose_steps`, `pick_up`, `finish_later`, `add_step`, `submit_and_next -> StepResult`, mix-up guard, attempts across runs | Piyush | engine tests below pass; old `test_workflow_engine.py` still green |
 | 4 | Settings `station.operations`; firmware / ambient only when needed; `create_hardware` tolerant of missing devices | Yugant, Aditya | settings validation + mock bench with "C-only" station |
 | 5 | UI: Choose steps, Pick up, Finish later, Put in tray, "Not in your steps", op-filtered labeling card, stepper with progress, My unfinished boards, admin write-off; EN + MR | Yugant | `tests/ui` flows for full, partial and batch work; static i18n scan green; screenshots |

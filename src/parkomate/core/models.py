@@ -22,10 +22,13 @@ from parkomate.core.enums import (
     CheckCode,
     CounterEvent,
     DeviceStatus,
+    IdentifyBy,
     IdentityStatus,
     IdEntryMethod,
+    OpCode,
     OutboxStatus,
     Role,
+    RunOutcome,
     SessionEndReason,
     Stage,
 )
@@ -87,6 +90,8 @@ class Device(_Frozen):
     """One physical board going through the line (``devices`` row).
 
     ``id`` is the *device row id*; ``device_id`` is the QR identity assigned in stage C.
+    ``session_id`` is the session that started the board; any session may continue it at
+    ``next_op`` (``None`` once the board is finished).
     """
 
     id: int
@@ -104,6 +109,7 @@ class Device(_Frozen):
     reject_reason_params: dict[str, Any] = Field(default_factory=dict)
     programming_attempts: int = 0
     id_entry_method: IdEntryMethod | None = None
+    next_op: OpCode | None = None
 
 
 class CheckResult(_Frozen):
@@ -119,6 +125,8 @@ class CheckResult(_Frozen):
     passed: bool | None = None
     operator_marked: bool = False
     created_at: datetime
+    run_id: int | None = None
+    """Operation run that recorded it (``None`` for rows from before migration 0004)."""
 
 
 class StageTransition(_Frozen):
@@ -129,6 +137,43 @@ class StageTransition(_Frozen):
     from_stage: Stage | None
     to_stage: Stage
     created_at: datetime
+    run_id: int | None = None
+
+
+class OperationRun(_Frozen):
+    """One sitting of one worker on one board for one operation (``operation_runs`` row)."""
+
+    id: int
+    device_row_id: int
+    op_code: OpCode
+    session_id: int
+    operator_id: int
+    station_id: str
+    identified_by: IdentifyBy
+    started_at: datetime
+    finished_at: datetime | None = None
+    outcome: RunOutcome | None = None
+
+    @property
+    def is_open(self) -> bool:
+        return self.finished_at is None
+
+
+class DeviceHistory(_Frozen):
+    """Everything recorded for one board, oldest first - what a bench needs to continue it."""
+
+    device: Device
+    runs: list[OperationRun] = Field(default_factory=list)
+    checks: list[CheckResult] = Field(default_factory=list)
+    transitions: list[StageTransition] = Field(default_factory=list)
+
+    @property
+    def passed_ops(self) -> list[OpCode]:
+        return [r.op_code for r in self.runs if r.outcome is RunOutcome.PASSED]
+
+    @property
+    def open_run(self) -> OperationRun | None:
+        return next((r for r in self.runs if r.is_open), None)
 
 
 class CounterEventRecord(_Frozen):

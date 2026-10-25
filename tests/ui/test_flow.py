@@ -230,7 +230,7 @@ def test_end_session_summary_and_logout(driver: StationDriver) -> None:
     d.wait(lambda: d.c.page is Page.LOGIN, what="login")
 
 
-def test_end_session_with_device_abandons_it(driver: StationDriver) -> None:
+def test_end_session_with_device_releases_it(driver: StationDriver) -> None:
     d = driver
     d.connect()
     row = d.c.device.device_row_id  # type: ignore[union-attr]
@@ -238,7 +238,9 @@ def test_end_session_with_device_abandons_it(driver: StationDriver) -> None:
     assert d.c.confirm is not None and d.c.confirm.message_key == "confirm.end_session_device"
     d.c.answer(True)
     d.wait(lambda: d.c.send_state not in (None, SendState.CLOSING), what="closed")
-    assert d.ctx.repos.devices.require(row).status is DeviceStatus.ABANDONED
+    # The board waits for its current step; any session can continue it.
+    assert d.ctx.repos.devices.require(row).status is DeviceStatus.IN_PROGRESS
+    assert d.ctx.repos.runs.open_for_device(row) is None
 
 
 def test_crash_recovery_notice(make_driver: DriverFactory) -> None:
@@ -253,7 +255,7 @@ def test_crash_recovery_notice(make_driver: DriverFactory) -> None:
     d.start()
     notice = d.window.login.notice
     assert notice.isVisible()
-    assert notice.title.text() == "Last device was not finished - it has been marked abandoned"
+    assert notice.title.text() == "Last device was not finished - it can be finished later"
     sessions = d.ctx.repos.sessions.list_sessions()
     assert sessions[0].end_reason is SessionEndReason.CRASH_RECOVERED
 

@@ -13,7 +13,7 @@ from parkomate.data.repositories._rows import int_bool, iso, last_id, opt_bool, 
 
 _COLUMNS = (
     "id, device_row_id, stage, check_code, value_text, value_num, unit, limit_low, limit_high, "
-    "passed, operator_marked, created_at"
+    "passed, operator_marked, created_at, run_id"
 )
 
 
@@ -31,6 +31,7 @@ def _to_model(row: sqlite3.Row) -> CheckResult:
         passed=opt_bool(row["passed"]),
         operator_marked=bool(row["operator_marked"]),
         created_at=ts_req(row["created_at"]),
+        run_id=row["run_id"],
     )
 
 
@@ -52,12 +53,13 @@ class CheckResultRepo:
         limit_high: float | None = None,
         passed: bool | None = None,
         operator_marked: bool = False,
+        run_id: int | None = None,
     ) -> CheckResult:
         with self._db.transaction() as conn:
             cursor = conn.execute(
                 "INSERT INTO check_results (device_row_id, stage, check_code, value_text,"
-                " value_num, unit, limit_low, limit_high, passed, operator_marked, created_at)"
-                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                " value_num, unit, limit_low, limit_high, passed, operator_marked, created_at,"
+                " run_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     device_row_id,
                     stage.value,
@@ -70,6 +72,7 @@ class CheckResultRepo:
                     int_bool(passed),
                     int(operator_marked),
                     iso(self._clock.now()),
+                    run_id,
                 ),
             )
             row = conn.execute(

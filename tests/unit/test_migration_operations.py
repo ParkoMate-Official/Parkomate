@@ -193,15 +193,27 @@ def test_upgrade_fills_next_op_from_the_last_stage(
     repos = Repositories.create(db, clock)
     operator_id, _ = _session(repos)
 
-    def board(mac: str, stages: list[Stage]) -> int:
+    def board(mac: str, stages: list[Stage], status: str = "in_progress") -> int:
+        # The v3 schema: plain SQL (the repositories already expect the newer columns).
         # Before 0004 a session holds one board in progress, so each board gets its own.
         session_id = repos.sessions.create(operator_id, "STATION-01", "en").id
-        device = repos.devices.create(session_id, mac)
-        previous: Stage | None = None
-        for stage in stages:
-            repos.transitions.add(device.id, previous, stage)
-            previous = stage
-        return device.id
+        finished = None if status == "in_progress" else T1
+        with db.transaction() as conn:
+            cursor = conn.execute(
+                "INSERT INTO devices (session_id, mac_address, started_at, finished_at, status)"
+                " VALUES (?, ?, ?, ?, ?)",
+                (session_id, mac, T0, finished, status),
+            )
+            assert cursor.lastrowid is not None
+            previous: Stage | None = None
+            for stage in stages:
+                conn.execute(
+                    "INSERT INTO stage_transitions (device_row_id, from_stage, to_stage,"
+                    " created_at) VALUES (?, ?, ?, ?)",
+                    (cursor.lastrowid, previous, stage, T0),
+                )
+                previous = stage
+        return cursor.lastrowid
 
     fresh = board("AA:BB:CC:DD:EE:01", [])
     programming = board("AA:BB:CC:DD:EE:02", [Stage.PROGRAMMING])
@@ -210,11 +222,10 @@ def test_upgrade_fills_next_op_from_the_last_stage(
     packaging = board(
         "AA:BB:CC:DD:EE:05", [Stage.PROGRAMMING, Stage.TESTING, Stage.LABELING, Stage.PACKAGING]
     )
-    done = board("AA:BB:CC:DD:EE:06", [Stage.PROGRAMMING])
-    repos.devices.finish(done, DeviceStatus.COMPLETE, clock.now())
+    done = board("AA:BB:CC:DD:EE:06", [Stage.PROGRAMMING], status="complete")
 
     monkeypatch.undo()
-    assert migrate(db) == 4
+    assert migrate(db) == discover_migrations()[-1].version
     assert _next_op(db, fresh) == OpCode.A_PROGRAM
     assert _next_op(db, programming) == OpCode.A_PROGRAM
     assert _next_op(db, testing) == OpCode.B_TEST

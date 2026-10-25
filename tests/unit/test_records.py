@@ -7,7 +7,9 @@ from parkomate.core.enums import (
     AmbientReason,
     CheckCode,
     DeviceStatus,
+    IdentifyBy,
     IdEntryMethod,
+    OpCode,
     SessionEndReason,
     Stage,
 )
@@ -16,6 +18,7 @@ from parkomate.core.events import (
     AmbientMeasured,
     CountersChanged,
     DeviceAbandoned,
+    DeviceReleased,
     Event,
     EventBus,
     SessionEnded,
@@ -56,10 +59,10 @@ def test_session_lifecycle_publishes_and_audits(
     row = records.start_device(MAC)
     closed = records.end_session(SessionEndReason.LOGOUT)
     assert closed.end_reason is SessionEndReason.LOGOUT and closed.ended_at is not None
-    assert records.get_device(row).status is DeviceStatus.ABANDONED
+    assert records.get_device(row).status is DeviceStatus.IN_PROGRESS  # released, not abandoned
     assert records.session is None
     kinds = [type(e) for e in events]
-    assert kinds == [SessionStarted, DeviceAbandoned, SessionEnded]
+    assert kinds == [SessionStarted, DeviceReleased, SessionEnded]
     actions = [e.action for e in records.repos.audit.list_entries()]
     assert "session.start" in actions and "session.end" in actions
 
@@ -145,14 +148,16 @@ def test_device_identity_and_firmware(open_session: ProductionRecords) -> None:
     assert device.firmware_version == "2.3.1"
 
 
-def test_device_from_other_session_rejected(
+def test_device_from_other_session_must_be_claimed(
     open_session: ProductionRecords, operator: Operator
 ) -> None:
     row = open_session.start_device(MAC)
     open_session.end_session(SessionEndReason.CLOSE)
     open_session.start_session(operator, language="en")
-    with pytest.raises(RecordStateError, match="another session"):
+    with pytest.raises(RecordStateError, match="not on this session's bench"):
         open_session.complete_device(row)
+    open_session.claim(row, OpCode.A_PROGRAM, IdentifyBy.MAC)  # continued by the new session
+    assert open_session.complete_device(row).status is DeviceStatus.COMPLETE
 
 
 def test_abandon_device(open_session: ProductionRecords, bus: EventBus) -> None:

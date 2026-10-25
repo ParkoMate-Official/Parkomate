@@ -129,9 +129,11 @@ def test_device_repo(repos: Repositories, clock: FakeClock) -> None:
         repos.devices.finish(device.id, DeviceStatus.COMPLETE, clock.now())
     with pytest.raises(ValueError):
         repos.devices.finish(device.id, DeviceStatus.REJECTED, clock.now())
+    assert rejected.next_op is None  # finished boards wait for nothing
     other = repos.devices.create(session.id, "AA:BB:CC:DD:EE:02")
-    assert repos.devices.abandon_in_session(session.id, clock.now()) == [other.id]
-    assert repos.devices.require(other.id).status is DeviceStatus.ABANDONED
+    repos.devices.finish(other.id, DeviceStatus.ABANDONED, clock.now())
+    abandoned = repos.devices.require(other.id)
+    assert abandoned.status is DeviceStatus.ABANDONED and abandoned.next_op is None
     assert [d.id for d in repos.devices.list_for_session(session.id)] == [device.id, other.id]
     assert repos.devices.list_for_sessions([]) == []
     assert repos.devices.search("PKM-0000") == [rejected]

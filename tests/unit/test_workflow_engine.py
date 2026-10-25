@@ -19,6 +19,8 @@ from parkomate.core.enums import (
     DeviceStatus,
     IdentityStatus,
     IdEntryMethod,
+    OpCode,
+    RunOutcome,
     Stage,
 )
 from parkomate.core.errors import InputError, RecordStateError
@@ -152,6 +154,13 @@ def test_happy_path_publishes_events(wf: WorkflowEngine, bus: EventBus) -> None:
     assert device.id_entry_method is IdEntryMethod.CAMERA
     codes = [c.check_code for c in wf._records.checks_for_device(device.id)]
     assert CheckCode.C4 in codes and CheckCode.D4 in codes and CheckCode.B3_T_AMB in codes
+    # One passed run per step, in line order; every check and stage move points at a run.
+    history = wf._records.device_history(device.id)
+    assert history.passed_ops == list(OpCode)
+    assert all(r.outcome is RunOutcome.PASSED for r in history.runs)
+    assert device.next_op is None
+    assert all(c.run_id is not None for c in history.checks)
+    assert all(t.run_id is not None for t in history.transitions)
     wf.clear_finished()
     assert wf.current_device() is None and wf.current_stage() is Stage.PROGRAMMING
 
@@ -420,15 +429,17 @@ def test_checklist_untick_and_manual_reject(wf: WorkflowEngine) -> None:
     assert wf.missing_checks() == []
 
 
-def test_abandon_and_clear(wf: WorkflowEngine) -> None:
-    wf.abandon_device()  # nothing on the bench: harmless
+def test_release_and_clear(wf: WorkflowEngine) -> None:
+    wf.release_device()  # nothing on the bench: harmless
     wf.start_device(MAC)
     with pytest.raises(RecordStateError):
         wf.clear_finished()
     row = wf.current_device().device_row_id  # type: ignore[union-attr]
-    wf.abandon_device()
+    wf.release_device()
     assert wf.current_device() is None
-    assert wf._records.get_device(row).status is DeviceStatus.ABANDONED
+    released = wf._records.get_device(row)
+    assert released.status is DeviceStatus.IN_PROGRESS and released.next_op is OpCode.A_PROGRAM
+    assert wf._records.open_run() is None
     with pytest.raises(RecordStateError):
         wf.submit_check(CheckCode.A_WHITELIST, True)
     assert wf.required_checks(Stage.COMPLETE) == []

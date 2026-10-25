@@ -3,8 +3,8 @@
 * :meth:`Station.startup` - crash recovery, queue reports of recovered sessions, purge old
   e-mail payloads. Run once before the login screen.
 * :meth:`Station.login` - authenticate, open a session (language remembered per operator).
-* :meth:`Station.logout` - close the session (unfinished device -> abandoned), write the
-  reports and queue the summary e-mail. Sending happens separately
+* :meth:`Station.logout` - close the session (a board on the bench is released: it waits for
+  its current step), write the reports and queue the summary e-mail. Sending happens separately
   (:meth:`Station.send_pending`) so a slow mail server never blocks the UI.
 """
 

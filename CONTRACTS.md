@@ -66,7 +66,8 @@ result through `ProductionRecords` (Yugant) and publishes events on the shared `
 start_device(mac) -> DeviceState                      # new device at PROGRAMMING
 current_device() -> DeviceState | None                # None = bench idle
 current_stage() -> Stage                              # PROGRAMMING when idle
-abandon_device() -> None                              # session ends with a board on the bench
+release_device() -> None                              # session ends with a board on the bench:
+                                                      # it waits for its current step
 clear_finished() -> None                              # forget a completed/rejected device
 required_checks(stage) -> list[CheckCode]
 missing_checks() -> list[CheckCode]                   # drives "Still needed: ..." and gates
@@ -111,6 +112,9 @@ Threading: workflow methods are quick (SQLite writes) and are called from the GU
 * `ProductionRecords` (`data/records.py`) - session/device/check/counter persistence with state
   validation (`start_device`, `record_check`, `set_device_id`, `complete_device`,
   `reject_device`, `counter_event`, `can_adjust_failure`, `record_ambient`, ...).
+  Multi-worker line: a board is written to only through the session's open operation run
+  (`start_device` for a new board, `claim` for a waiting one, `pass_run`, `release_run`,
+  `queue`, `find_device`, `device_history`) - see `docs/MULTI_WORKER_PLAN.md`.
 * `Settings` (`config/settings.py`) - typed limits, timeouts, server, measurement, camera.
 * `EventBus`, `ParkomateError` + i18n keys for every `ErrorCode`.
 * Translations: any new user-facing text needs a key in **both** `i18n/en.json` and

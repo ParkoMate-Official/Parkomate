@@ -38,8 +38,10 @@ from parkomate.core.enums import (
     CheckKind,
     CounterEvent,
     DeviceStatus,
+    IdentifyBy,
     IdentityStatus,
     IdEntryMethod,
+    OpCode,
     Stage,
 )
 from parkomate.core.errors import InputError, RecordStateError
@@ -60,6 +62,7 @@ from parkomate.core.models import (
     RejectInstruction,
 )
 from parkomate.data.records import ProductionRecords
+from parkomate.workflow.operations import operations_of
 from parkomate.workflow.policy import RetryPolicy
 from parkomate.workflow.transitions import ORDER, check_transition, next_stage
 from parkomate.workflow.validation import (
@@ -83,6 +86,7 @@ class _Active:
     mac_address: str
     started_at: datetime
     stage: Stage = Stage.PROGRAMMING
+    op: OpCode = OpCode.A_PROGRAM
     status: DeviceStatus = DeviceStatus.IN_PROGRESS
     attempts: dict[CheckCode, int] = field(default_factory=dict)
     upload_failures: int = 0
@@ -143,12 +147,12 @@ class WorkflowEngine:
         with self._lock:
             return self._active.stage if self._active else Stage.PROGRAMMING
 
-    def abandon_device(self) -> None:
+    def release_device(self) -> None:
         with self._lock:
             active = self._active
             self._active = None
             if active is not None and active.status is DeviceStatus.IN_PROGRESS:
-                self._records.abandon_device(active.device_row_id)
+                self._records.release_run()
 
     def clear_finished(self) -> None:
         with self._lock:
@@ -378,6 +382,8 @@ class WorkflowEngine:
                 self._records.complete_device(active.device_row_id)
                 active.status = DeviceStatus.COMPLETE
             self._records.record_transition(active.device_row_id, old, new)
+            if new is not Stage.COMPLETE:
+                self._advance_runs(active, new)
             active.stage = new
             device_id = active.device_id
             row_id = active.device_row_id
@@ -531,6 +537,19 @@ class WorkflowEngine:
         return IdentityOutcome(status=status, qr_id=qr, device_id=qr)
 
     # ================================================================== internals
+    def _advance_runs(self, active: _Active, stage: Stage) -> None:
+        """Pass every remaining operation up to the first one of ``stage``, on this bench.
+
+        Bridge while the engine still works a whole stage at a time (multi-worker phase 1,
+        task 3 moves it to one operation at a time): the board's runs and ``next_op`` stay in
+        line order, so a board released later is continued at the right step.
+        """
+        target = operations_of(stage)[0].code
+        while active.op is not target:
+            following = self._records.pass_run()
+            self._records.claim(active.device_row_id, following, IdentifyBy.MAC)
+            active.op = following
+
     def _require_active(self) -> _Active:
         active = self._active
         if active is None:

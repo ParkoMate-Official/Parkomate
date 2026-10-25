@@ -20,7 +20,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from parkomate.core.enums import (
-    LINE_ORDER,
     MAX_SENSOR_READINGS,
     BenchNeed,
     CheckCode,
@@ -113,8 +112,7 @@ def operations_of(stage: Stage) -> tuple[Operation, ...]:
 
 def next_operation(code: OpCode) -> OpCode | None:
     """The step after ``code``; ``None`` after the last one (the board is complete)."""
-    index = LINE_ORDER.index(code) + 1
-    return LINE_ORDER[index] if index < len(LINE_ORDER) else None
+    return code.next
 
 
 def is_last_of_stage(code: OpCode) -> bool:

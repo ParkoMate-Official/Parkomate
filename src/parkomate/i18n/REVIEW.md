@@ -566,8 +566,8 @@ Total keys: **689** - needs_review: **689**
 
 | Key | English | Marathi | Status |
 |---|---|---|---|
-| `notice.abandoned_title` | Last device was not finished - it has been marked abandoned | मागील डिव्हाइस पूर्ण झाले नव्हते - ते 'अपूर्ण सोडले' म्हणून नोंदवले आहे | needs_review |
-| `notice.abandoned_body` | The station stopped unexpectedly. {n} unfinished device(s) were recorded as abandoned and the session report was saved. Put such a board aside for re-testing. | स्टेशन अचानक बंद झाले. {n} अपूर्ण डिव्हाइस 'अपूर्ण सोडले' म्हणून नोंदवले आणि सत्र अहवाल जतन केला. असा बोर्ड पुन्हा चाचणीसाठी बाजूला ठेवा. | needs_review |
+| `notice.released_title` | Last device was not finished - it can be finished later | मागील डिव्हाइस पूर्ण झाले नव्हते - ते नंतर पूर्ण करता येईल | needs_review |
+| `notice.released_body` | The station stopped unexpectedly. {n} unfinished device(s) were kept with the steps already passed, and the session report was saved. Put such a board in the tray of the step it was on; any station can finish it. | स्टेशन अचानक बंद झाले. {n} अपूर्ण डिव्हाइस आधी पूर्ण झालेल्या पायऱ्यांसह जतन केले आणि सत्र अहवाल जतन केला. असा बोर्ड तो ज्या पायरीवर होता त्या पायरीच्या ट्रेमध्ये ठेवा; कोणतेही स्टेशन तो पूर्ण करू शकते. | needs_review |
 | `notice.recovered_title` | The last session was closed automatically after an unexpected stop | अचानक बंद झाल्यानंतर मागील सत्र आपोआप बंद केले | needs_review |
 
 ## outbox_status (`outbox_status.*`, 3)

@@ -29,7 +29,8 @@ from parkomate.reports.writers import cell_text, safe_sheet_title
 
 @pytest.fixture
 def finished_session(open_session: ProductionRecords, clock: FakeClock) -> int:
-    """A session with one complete device, one rejected at B (V_C 3.21 V), one abandoned."""
+    """A session with one complete device, one rejected at B (V_C 3.21 V), one left unfinished
+    (released at logout: it waits for any session to continue it)."""
     r = open_session
     r.set_session_firmware(FirmwareInfo(name="fw.bin", version="2.3.1", sha256="ab" * 32, size=9))
     r.record_ambient(27.0, AmbientReason.SESSION_START)
@@ -95,7 +96,8 @@ def test_excel_report_sheets_and_cells(
     assert summary["Completed"] == 1
     assert summary["Rejected at B - Testing"] == 1
     assert summary["Rejected at A - Programming"] == 0
-    assert summary["Abandoned"] == 1
+    assert summary["Abandoned"] == 0
+    assert summary["Still in progress"] == 1
     assert summary["Uploads failed"] == 1
     assert summary["Failures removed after a successful retry"] == 1
     assert summary["Upload failures (counted)"] == 0

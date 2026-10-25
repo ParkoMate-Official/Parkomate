@@ -42,8 +42,25 @@ Relative to the interface list in the build prompt:
 * Migration `0004_operations`: `operation_runs` (one open run per board and one per session,
   closed once, never deleted), `devices.next_op` (default `A_PROGRAM`, NULL once finished),
   `check_results.run_id`, `stage_transitions.run_id`; index `ux_devices_one_active` dropped.
-* Not yet: the `WorkflowService` methods (`choose_steps`, `pick_up`, `finish_later`, ...) and
-  the records API. Until then the engine still runs one board per session as before.
+* Migration `0005_unique_boards_in_progress`: one in-progress row per MAC and per QR ID, so a
+  board picked up by either is found exactly once (older duplicates are abandoned on upgrade).
+* Records API (`ProductionRecords`): `start_device` registers a new board **and** opens its
+  `A_PROGRAM` run; `claim(row, op, identified_by)`, `open_run`, `pass_run` (next step in line
+  order), `release_run`, `find_device(mac= | device_id=)`, `queue(op)`, `queue_counts`,
+  `device_history`. Checks and stage transitions carry the `run_id`; `complete_device` /
+  `reject_device` close the run; `abandon_device` is a write-off (closes any open run on the
+  board, wherever it is). A board can only be written to by the session that holds its run.
+* **`WorkflowService.abandon_device()` renamed `release_device()`.** Ending a session and crash
+  recovery **release** the board on the bench instead of abandoning it: it waits for its
+  current step (`RecoveryResult.released_device_ids`, event `DeviceReleased`, login notice
+  `notice.released_*`).
+* Engine bridge: the engine still works a stage at a time; at each stage change it passes the
+  remaining operations and claims the first one of the next stage on the same bench, so runs
+  and `next_op` follow the line order. The records layer does not yet check that a check
+  belongs to the run's operation (labeling ticks are recorded in the `C_CODE` run for now).
+* Not yet (task 3): `choose_steps`, `pick_up`, `finish_later`. **Until then a released board
+  cannot be continued from the station screens** - plugging it in again says it is already in
+  progress.
 
 **Database - extra columns** (beyond the prompt's table list)
 * `devices.reject_reason_key`, `devices.reject_reason_params` - the reason is stored as an
@@ -78,7 +95,7 @@ Relative to the interface list in the build prompt:
 | D9 | Counter **reset** (admin only) restarts the *live* counters; the session summary and reports always cover the whole session | history stays auditable |
 | D10 | "Reduce failure count by 1": only after a failure *followed by* a success on the same device, once per device (unique index + check), audited | prompt rule |
 | D11 | **First-pass yield** = completed devices with no upload failure ÷ devices that finished (complete + rejected); abandoned / in-progress excluded; shown as "-" when none finished **(client)** | common FPY definition |
-| D12 | Crash recovery closes stale sessions at their **last recorded activity** (not "now"), marks in-progress devices `abandoned`, queues the report, and the login screen tells the operator | accurate times; operator knows to set the board aside |
+| D12 | Crash recovery closes stale sessions at their **last recorded activity** (not "now"), **releases** the board on the bench (since 0004; before: marked `abandoned`), queues the report, and the login screen tells the operator | accurate times; the board waits for its current step instead of being lost |
 | D13 | Retention purge deletes only payload files of **sent** e-mails older than `retention_days` (default 90); rows kept | prompt rule |
 
 ## Workflow (Piyush - `WorkflowEngine`)

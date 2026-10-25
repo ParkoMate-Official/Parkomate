@@ -175,8 +175,9 @@ class WorkflowService(Protocol):
         """Stage of the active device; ``PROGRAMMING`` when idle."""
         ...
 
-    def abandon_device(self) -> None:
-        """Mark the active device abandoned (session ending with a device on the bench)."""
+    def release_device(self) -> None:
+        """Take the active device off the bench unfinished (session ending with a device on
+        the bench): it waits for its current step, for any session to continue it."""
         ...
 
     def clear_finished(self) -> None:

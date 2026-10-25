@@ -3,8 +3,11 @@
 It is stateful: it knows the open session (one per station) and validates every request
 against the stored state, raising typed errors instead of writing inconsistent data, e.g.:
 
-* no device can start without an open session, and only one device can be in progress;
-* a check can only be recorded for an in-progress device and only for its own stage;
+* no device can start without an open session;
+* a board is worked on only by the session that holds it in an open operation run - one run
+  per board and one per session (:meth:`start_device` for a new board, :meth:`claim` for a
+  board waiting at ``next_op``); a board left unfinished waits for any session to continue it;
+* a check can only be recorded for a board on this session's bench and only for its own stage;
 * a rejected device cannot be completed, a finished device cannot be rejected;
 * "reduce failure count by 1" is allowed once per device, after a failure followed by a
   success.
@@ -15,9 +18,9 @@ Counters are never stored: they are computed from ``counter_events``.
 from __future__ import annotations
 
 import logging
-import re
 import threading
 from collections.abc import Mapping
+from datetime import datetime
 from typing import Any
 
 from parkomate.core.enums import (
@@ -25,28 +28,34 @@ from parkomate.core.enums import (
     CheckCode,
     CounterEvent,
     DeviceStatus,
+    IdentifyBy,
     IdEntryMethod,
+    OpCode,
     Role,
+    RunOutcome,
     SessionEndReason,
     Stage,
 )
 from parkomate.core.errors import InputError, PermissionDeniedError, RecordStateError
-from parkomate.core.mac import normalise_mac
 from parkomate.core.events import (
     AmbientMeasured,
     CountersChanged,
     DeviceAbandoned,
+    DeviceReleased,
     EventBus,
     SessionEnded,
     SessionStarted,
 )
+from parkomate.core.mac import normalise_mac
 from parkomate.core.models import (
     AmbientReading,
     CheckResult,
     CounterEventRecord,
     Counters,
     Device,
+    DeviceHistory,
     FirmwareInfo,
+    OperationRun,
     Operator,
     Session,
     SessionSummary,
@@ -59,6 +68,7 @@ log = logging.getLogger(__name__)
 
 RECORD_LANGUAGE = "en"
 """Language of the human-readable ``reject_reason`` stored with a device."""
+
 
 class ProductionRecords:
     def __init__(
@@ -132,24 +142,29 @@ class ProductionRecords:
         return session
 
     def end_session(self, reason: SessionEndReason) -> Session:
-        """Close the open session. An unfinished device is marked abandoned."""
+        """Close the open session. A board still on the bench is released: it waits for its
+        current operation, for any session to continue it."""
         with self._lock:
             session = self.require_session()
             operator = self.require_operator()
             now = self._repos.clock.now()
             with self._repos.db.transaction():
-                abandoned = self._repos.devices.abandon_in_session(session.id, now)
+                released = self._release(session.id, now)
                 self._repos.sessions.close(session.id, reason, now)
                 self._repos.audit.record(
                     operator.id,
                     "session.end",
-                    {"session_id": session.id, "reason": reason.value, "abandoned": abandoned},
+                    {
+                        "session_id": session.id,
+                        "reason": reason.value,
+                        "released": [released.device_row_id] if released else [],
+                    },
                 )
             self._session_id = None
             self._operator = None
             closed = self._repos.sessions.require(session.id)
-        for device_row_id in abandoned:
-            self._bus.publish(DeviceAbandoned(device_row_id))
+        if released is not None:
+            self._bus.publish(DeviceReleased(released.device_row_id, released.op_code))
         self._bus.publish(SessionEnded(session.id))
         return closed
 
@@ -181,28 +196,157 @@ class ProductionRecords:
 
     # ------------------------------------------------------------------ devices
     def start_device(self, mac: str, *, firmware_version: str | None = None) -> int:
-        """Register a new board on the bench. Returns the device row id."""
+        """Register a new board and put it on this session's bench for ``A_PROGRAM``.
+
+        Returns the device row id. A board that is already in progress is continued with
+        :meth:`claim` instead.
+        """
         normalised = normalise_mac(mac)
         with self._lock:
             session = self.require_session()
-            active = self._repos.devices.active_for_session(session.id)
-            if active is not None:
+            operator = self.require_operator()
+            self._require_free_bench(session.id)
+            known = self._repos.devices.find(mac=normalised)
+            if known is not None and known.status is DeviceStatus.IN_PROGRESS:
                 raise RecordStateError(
-                    f"device row {active.id} is still in progress; finish it first",
-                    context={"device_row_id": active.id},
+                    f"board {normalised} is already in progress (device row {known.id})",
+                    context={"device_row_id": known.id, "next_op": known.next_op},
                 )
-            device = self._repos.devices.create(session.id, normalised, firmware_version)
+            with self._repos.db.transaction():
+                device = self._repos.devices.create(session.id, normalised, firmware_version)
+                self._repos.runs.open(
+                    device.id,
+                    OpCode.A_PROGRAM,
+                    session_id=session.id,
+                    operator_id=operator.id,
+                    station_id=self._station_id,
+                    identified_by=IdentifyBy.NEW,
+                )
         log.info("device %s started (row %d)", normalised, device.id)
         return device.id
+
+    def claim(self, device_row_id: int, op: OpCode, identified_by: IdentifyBy) -> OperationRun:
+        """Put a waiting board on this session's bench for ``op`` (opens an operation run).
+
+        The board must be in progress and waiting for exactly ``op``, nobody else may hold it,
+        and this session must not hold another board.
+        """
+        if identified_by is IdentifyBy.NEW:
+            raise InputError("new boards are registered with start_device()")
+        with self._lock:
+            session = self.require_session()
+            operator = self.require_operator()
+            self._require_free_bench(session.id)
+            device = self._repos.devices.require(device_row_id)
+            if device.status is not DeviceStatus.IN_PROGRESS:
+                raise RecordStateError(
+                    f"device row {device_row_id} is already {device.status.value}",
+                    context={"device_row_id": device_row_id, "status": device.status.value},
+                )
+            if device.next_op is not op:
+                raise RecordStateError(
+                    f"device row {device_row_id} waits for {device.next_op}, not {op.value}",
+                    context={"device_row_id": device_row_id, "next_op": device.next_op},
+                )
+            held = self._repos.runs.open_for_device(device_row_id)
+            if held is not None:
+                raise RecordStateError(
+                    f"device row {device_row_id} is on the bench of {held.station_id}",
+                    context={
+                        "device_row_id": device_row_id,
+                        "station_id": held.station_id,
+                        "operator_id": held.operator_id,
+                    },
+                )
+            run = self._repos.runs.open(
+                device_row_id,
+                op,
+                session_id=session.id,
+                operator_id=operator.id,
+                station_id=self._station_id,
+                identified_by=identified_by,
+            )
+        log.info("device row %d claimed for %s (run %d)", device_row_id, op.value, run.id)
+        return run
+
+    def open_run(self) -> OperationRun | None:
+        """The run of the board on this session's bench, if any."""
+        session = self.session
+        if session is None:
+            return None
+        return self._repos.runs.open_for_session(session.id)
+
+    def pass_run(self) -> OpCode:
+        """The board on the bench passed its operation: close the run as passed; the board now
+        waits for the next operation, which is returned. The last operation of the line ends
+        with :meth:`complete_device` instead."""
+        with self._lock:
+            run = self._require_open_run()
+            following = run.op_code.next
+            if following is None:
+                raise RecordStateError(
+                    f"{run.op_code.value} is the last operation; complete the device",
+                    context={"device_row_id": run.device_row_id},
+                )
+            with self._repos.db.transaction():
+                self._repos.runs.close(run.id, RunOutcome.PASSED, self._repos.clock.now())
+                self._repos.devices.set_next_op(run.device_row_id, following)
+        log.info("device row %d passed %s", run.device_row_id, run.op_code.value)
+        return following
+
+    def release_run(self) -> OperationRun | None:
+        """Take the board off this session's bench unfinished (Finish later, end of session):
+        it waits for the same operation again. Returns the closed run, ``None`` if the bench
+        was empty."""
+        with self._lock:
+            released = self._release(self.require_session().id, self._repos.clock.now())
+        if released is not None:
+            self._bus.publish(DeviceReleased(released.device_row_id, released.op_code))
+        return released
+
+    def _release(self, session_id: int, at: datetime) -> OperationRun | None:
+        run = self._repos.runs.open_for_session(session_id)
+        if run is None:
+            return None
+        log.info("device row %d released from %s", run.device_row_id, run.op_code.value)
+        return self._repos.runs.close(run.id, RunOutcome.RELEASED, at)
+
+    def find_device(self, *, mac: str | None = None, device_id: str | None = None) -> Device | None:
+        """The board with this MAC or QR ID: its in-progress row, else its newest finished one
+        (so a bench can say "already complete" or "rejected at B")."""
+        if (mac is None) == (device_id is None):
+            raise InputError("give exactly one of mac / device_id")
+        if mac is not None:
+            return self._repos.devices.find(mac=normalise_mac(mac))
+        text = (device_id or "").strip()
+        if not text:
+            raise InputError("device ID must not be empty")
+        return self._repos.devices.find(device_id=text)
+
+    def queue(self, op: OpCode) -> list[Device]:
+        """Boards waiting for ``op`` (in progress, on nobody's bench), oldest first."""
+        return self._repos.devices.queue(op)
+
+    def queue_counts(self) -> dict[OpCode, int]:
+        """Number of boards waiting for each operation."""
+        return self._repos.devices.queue_counts()
+
+    def device_history(self, device_row_id: int) -> DeviceHistory:
+        """Everything recorded for one board, oldest first."""
+        return DeviceHistory(
+            device=self._repos.devices.require(device_row_id),
+            runs=self._repos.runs.list_for_device(device_row_id),
+            checks=self._repos.checks.list_for_device(device_row_id),
+            transitions=self._repos.transitions.list_for_device(device_row_id),
+        )
 
     def get_device(self, device_row_id: int) -> Device:
         return self._repos.devices.require(device_row_id)
 
     def active_device(self) -> Device | None:
-        session = self.session
-        if session is None:
-            return None
-        return self._repos.devices.active_for_session(session.id)
+        """The board on this session's bench, if any."""
+        run = self.open_run()
+        return None if run is None else self._repos.devices.require(run.device_row_id)
 
     def list_session_devices(self, session_id: int | None = None) -> list[Device]:
         sid = session_id if session_id is not None else self.require_session().id
@@ -211,20 +355,36 @@ class ProductionRecords:
     def checks_for_device(self, device_row_id: int) -> list[CheckResult]:
         return self._repos.checks.list_for_device(device_row_id)
 
-    def _require_in_progress(self, device_row_id: int) -> Device:
+    def _require_free_bench(self, session_id: int) -> None:
+        run = self._repos.runs.open_for_session(session_id)
+        if run is not None:
+            raise RecordStateError(
+                f"device row {run.device_row_id} is still on the bench; finish it first",
+                context={"device_row_id": run.device_row_id},
+            )
+
+    def _require_open_run(self) -> OperationRun:
+        run = self._repos.runs.open_for_session(self.require_session().id)
+        if run is None:
+            raise RecordStateError("no board on the bench")
+        return run
+
+    def _require_claimed(self, device_row_id: int) -> OperationRun:
+        """The open run through which this session works on the board."""
         device = self._repos.devices.require(device_row_id)
         session = self.require_session()
-        if device.session_id != session.id:
-            raise RecordStateError(
-                f"device row {device_row_id} belongs to another session",
-                context={"device_row_id": device_row_id},
-            )
         if device.status is not DeviceStatus.IN_PROGRESS:
             raise RecordStateError(
                 f"device row {device_row_id} is already {device.status.value}",
                 context={"device_row_id": device_row_id, "status": device.status.value},
             )
-        return device
+        run = self._repos.runs.open_for_session(session.id)
+        if run is None or run.device_row_id != device_row_id:
+            raise RecordStateError(
+                f"device row {device_row_id} is not on this session's bench",
+                context={"device_row_id": device_row_id},
+            )
+        return run
 
     def record_check(
         self,
@@ -239,7 +399,8 @@ class ProductionRecords:
         operator_marked: bool = False,
         value_text: str | None = None,
     ) -> CheckResult:
-        """Store one check result. Limits used for the decision are stored with it."""
+        """Store one check result, linked to the run of the board on this bench. Limits used
+        for the decision are stored with it."""
         if check_code.stage is not stage:
             raise RecordStateError(
                 f"{check_code.value} belongs to stage {check_code.stage.value}, not {stage.value}"
@@ -255,7 +416,7 @@ class ProductionRecords:
         elif isinstance(value, str):
             value_text = value if value_text is None else f"{value} | {value_text}"
         with self._lock:
-            self._require_in_progress(device_row_id)
+            run = self._require_claimed(device_row_id)
             return self._repos.checks.add(
                 device_row_id,
                 stage,
@@ -267,6 +428,7 @@ class ProductionRecords:
                 limit_high=high,
                 passed=passed,
                 operator_marked=operator_marked,
+                run_id=run.id,
             )
 
     def set_device_id(self, device_row_id: int, device_id: str, method: IdEntryMethod) -> None:
@@ -274,20 +436,21 @@ class ProductionRecords:
         if not device_id:
             raise InputError("device ID must not be empty")
         with self._lock:
-            self._require_in_progress(device_row_id)
+            self._require_claimed(device_row_id)
             self._repos.devices.set_device_id(device_row_id, device_id, method)
 
     def set_device_firmware(self, device_row_id: int, version: str) -> None:
         with self._lock:
-            self._require_in_progress(device_row_id)
+            self._require_claimed(device_row_id)
             self._repos.devices.set_firmware_version(device_row_id, version)
 
     def complete_device(self, device_row_id: int) -> Device:
         with self._lock:
-            self._require_in_progress(device_row_id)
-            self._repos.devices.finish(
-                device_row_id, DeviceStatus.COMPLETE, self._repos.clock.now()
-            )
+            run = self._require_claimed(device_row_id)
+            now = self._repos.clock.now()
+            with self._repos.db.transaction():
+                self._repos.runs.close(run.id, RunOutcome.PASSED, now)
+                self._repos.devices.finish(device_row_id, DeviceStatus.COMPLETE, now)
             device = self._repos.devices.require(device_row_id)
         self._publish_counters()
         return device
@@ -310,16 +473,19 @@ class ProductionRecords:
         params = dict(reason_params or {})
         reason_text = tr_message(RECORD_LANGUAGE, reason_key, params)
         with self._lock:
-            self._require_in_progress(device_row_id)
-            self._repos.devices.reject(
-                device_row_id,
-                stage=stage,
-                check_code=check_code,
-                reason=reason_text,
-                reason_key=reason_key,
-                reason_params=params,
-                finished_at=self._repos.clock.now(),
-            )
+            run = self._require_claimed(device_row_id)
+            now = self._repos.clock.now()
+            with self._repos.db.transaction():
+                self._repos.runs.close(run.id, RunOutcome.REJECTED, now)
+                self._repos.devices.reject(
+                    device_row_id,
+                    stage=stage,
+                    check_code=check_code,
+                    reason=reason_text,
+                    reason_key=reason_key,
+                    reason_params=params,
+                    finished_at=now,
+                )
             device = self._repos.devices.require(device_row_id)
         log.info(
             "device row %d rejected at %s (%s): %s",
@@ -334,25 +500,38 @@ class ProductionRecords:
     def record_transition(
         self, device_row_id: int, from_stage: Stage | None, to_stage: Stage
     ) -> StageTransition:
-        """Record a stage move of a device of the open session (any device status)."""
+        """Record a stage move (any device status), linked to the board's latest run, which
+        must be this session's."""
         session = self.require_session()
-        device = self._repos.devices.require(device_row_id)
-        if device.session_id != session.id:
+        self._repos.devices.require(device_row_id)
+        run = self._repos.runs.latest_for_device(device_row_id)
+        if run is None or run.session_id != session.id:
             raise RecordStateError(
-                f"device row {device_row_id} belongs to another session",
+                f"device row {device_row_id} is not worked on by this session",
                 context={"device_row_id": device_row_id},
             )
-        return self._repos.transitions.add(device_row_id, from_stage, to_stage)
+        return self._repos.transitions.add(device_row_id, from_stage, to_stage, run_id=run.id)
 
     def transitions_for_device(self, device_row_id: int) -> list[StageTransition]:
         return self._repos.transitions.list_for_device(device_row_id)
 
     def abandon_device(self, device_row_id: int) -> Device:
+        """Write a board off: it leaves the line for good, wherever it is (an open run on it
+        is closed as abandoned)."""
         with self._lock:
-            self._require_in_progress(device_row_id)
-            self._repos.devices.finish(
-                device_row_id, DeviceStatus.ABANDONED, self._repos.clock.now()
-            )
+            self.require_session()
+            device = self._repos.devices.require(device_row_id)
+            if device.status is not DeviceStatus.IN_PROGRESS:
+                raise RecordStateError(
+                    f"device row {device_row_id} is already {device.status.value}",
+                    context={"device_row_id": device_row_id, "status": device.status.value},
+                )
+            now = self._repos.clock.now()
+            with self._repos.db.transaction():
+                run = self._repos.runs.open_for_device(device_row_id)
+                if run is not None:
+                    self._repos.runs.close(run.id, RunOutcome.ABANDONED, now)
+                self._repos.devices.finish(device_row_id, DeviceStatus.ABANDONED, now)
             device = self._repos.devices.require(device_row_id)
         self._bus.publish(DeviceAbandoned(device_row_id))
         return device
@@ -388,7 +567,7 @@ class ProductionRecords:
                         {"session_id": session.id, "device_row_id": device_row_id},
                     )
             else:
-                self._require_in_progress(device_row_id)
+                self._require_claimed(device_row_id)
                 with self._repos.db.transaction():
                     record = self._repos.counters.add(session.id, event, operator.id, device_row_id)
                     self._repos.devices.increment_programming_attempts(device_row_id)
@@ -402,9 +581,8 @@ class ProductionRecords:
     def can_adjust_failure(self, device_row_id: int) -> bool:
         """True when the device had an upload failure followed by a success and has not
         been adjusted yet (at most once per device)."""
-        session = self.session
-        device = self._repos.devices.get(device_row_id)
-        if session is None or device is None or device.session_id != session.id:
+        run = self.open_run()
+        if run is None or run.device_row_id != device_row_id:
             return False
         seen_failure = False
         recovered = False

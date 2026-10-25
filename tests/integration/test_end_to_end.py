@@ -21,7 +21,9 @@ from parkomate.core.enums import (
     CheckCode,
     DeviceStatus,
     IdentityStatus,
+    OpCode,
     OutboxStatus,
+    RunOutcome,
     SessionEndReason,
     Stage,
 )
@@ -175,15 +177,18 @@ def test_session_close_reports_and_firmware_never_on_disk(ctx: AppContext, data_
     assert not any(firmware)
 
 
-def test_logout_with_device_on_bench_abandons(ctx: AppContext) -> None:
+def test_logout_with_device_on_bench_releases_it(ctx: AppContext) -> None:
     _login(ctx)
     hw = ctx.hardware
     hw.connect("COM4")
     ctx.workflow.start_device(hw.read_mac())
     row = outcome_row(ctx)
     result = ctx.station.logout(SessionEndReason.CLOSE)
-    assert result.summary.abandoned == 1
-    assert ctx.repos.devices.require(row).status is DeviceStatus.ABANDONED
+    assert result.summary.abandoned == 0 and result.summary.in_progress == 1
+    device = ctx.repos.devices.require(row)
+    assert device.status is DeviceStatus.IN_PROGRESS and device.next_op is OpCode.A_PROGRAM
+    run = ctx.repos.runs.latest_for_device(row)
+    assert run is not None and run.outcome is RunOutcome.RELEASED
 
 
 def test_email_outbox_survives_offline_and_recovery(data_dir: Path) -> None:
@@ -234,7 +239,7 @@ def test_email_outbox_survives_offline_and_recovery(data_dir: Path) -> None:
         configure_logging=False,
     )
     startup = restarted.station.startup()
-    assert startup.recovery.recovered and len(startup.recovery.abandoned_device_ids) == 1
+    assert startup.recovery.recovered and len(startup.recovery.released_device_ids) == 1
     assert len(startup.queued_reports) == 1
 
     class Online:
