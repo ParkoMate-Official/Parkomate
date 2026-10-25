@@ -54,13 +54,21 @@ Relative to the interface list in the build prompt:
   recovery **release** the board on the bench instead of abandoning it: it waits for its
   current step (`RecoveryResult.released_device_ids`, event `DeviceReleased`, login notice
   `notice.released_*`).
-* Engine bridge: the engine still works a stage at a time; at each stage change it passes the
-  remaining operations and claims the first one of the next stage on the same bench, so runs
-  and `next_op` follow the line order. The records layer does not yet check that a check
-  belongs to the run's operation (labeling ticks are recorded in the `C_CODE` run for now).
-* Not yet (task 3): `choose_steps`, `pick_up`, `finish_later`. **Until then a released board
-  cannot be continued from the station screens** - plugging it in again says it is already in
-  progress.
+* **WorkflowService works step by step** (task 3): `bench_steps()`, `selected_steps()`,
+  `choose_steps(ops)`, `add_step(op)`, `pick_up(DeviceKey)`, `current_operation()`,
+  `finish_later() -> StepResult`, `operation_checks(op)`; **`submit_and_next()` returns
+  `StepResult`** (stage, next step, `parked`) instead of `Stage`; `start_device(mac)` is a pick-up
+  by MAC, so a board in progress continues at its next step. `WorkflowEngine(..., bench=)` sets
+  the steps a bench can do (default all; `station.operations` setting is task 4).
+* Shared types: `DeviceKey`, `StepResult`, `DeviceState.op / passed_ops / resumed`,
+  `OpCode.label_key` (`op.*` texts), event `DeviceParked`, error codes `WIP_NOT_FOUND`,
+  `WIP_FINISHED`, `WIP_CLAIMED`, `WIP_WRONG_OPERATION`, `WIP_STEP_NOT_SELECTED` (EN + MR texts).
+  Error banners now translate `*_key` params (`op_key` -> `{op}`).
+* UI: **Finish later** button on every stage screen (not while hardware is busy); a board
+  connected on the programming screen opens the screen of the step it waits for; the green
+  toast says which tray a parked board goes to.
+* Not yet (task 5): Choose steps screen, QR pick-up screen for benches without serial,
+  "Add this step" button on the mix-up message, Put in tray takeover, stepper with steps.
 
 **Database - extra columns** (beyond the prompt's table list)
 * `devices.reject_reason_key`, `devices.reject_reason_params` - the reason is stored as an
@@ -116,6 +124,10 @@ Relative to the interface list in the build prompt:
 | W12 | Real-bench tests live in `tests/hil/`, are skipped unless `PARKOMATE_HIL=1`, use a golden board and a scratch database; flashing only with `PARKOMATE_HIL_FULL=1` | a plain `pytest` never touches hardware or the station data |
 | W13 | Stages are split into operations; labeling into `C_CODE` (QR read, ID write / read-back, C4 QR sticker), `C_CASING` (C1, C2) and `C_BRANDING` (C3) **(client)** | one worker can do one step for many boards, or stop and finish later |
 | W14 | Boards in progress when 0004 is applied restart at the first operation of their last stage | the old engine kept a board's progress in memory only |
+| W15 | A **sitting** = the board's current step plus the following steps of its stage that are chosen and possible on this bench; the gate is the sum of their checks, and a stage screen works as before when all its steps are chosen | the station screens stay stage-based while the records are per step |
+| W16 | Finish later: a finished sitting is submitted and the board parked for its next step (or completed after D); otherwise the finished steps of the sitting are kept and the unfinished one is released and starts again. The UI asks first only when that step already has results. End of session / window close does the same but never submits | nothing done is lost; a half-done step is never half-trusted |
+| W17 | A continued board's state is rebuilt from its **passed** runs; attempt counts (upload, communication, measurement) include every run | the retry limit cannot be reset by stopping and continuing |
+| W18 | A MAC or QR of a finished board (complete, rejected, written off) is refused at pick-up (`WIP_FINISHED`) instead of starting a new row **(client, open question 10)** | a finished board must not slip back onto the line |
 
 ## E-mail, reports, logs, secrets
 

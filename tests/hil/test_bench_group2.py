@@ -30,7 +30,7 @@ def _through_programming(wf: WorkflowEngine, hw: RealHardwareService) -> None:
     wf.start_device(hw.read_mac())
     wf.submit_check(CheckCode.A_WHITELIST, True, text="HIL: whitelist skipped")
     wf.submit_check(CheckCode.A_UPLOAD, True, text="HIL: firmware already on board")
-    assert wf.submit_and_next() is Stage.TESTING
+    assert wf.submit_and_next().stage is Stage.TESTING
 
 
 def _testing(wf: WorkflowEngine, hw: RealHardwareService, settings: Settings) -> None:
@@ -42,7 +42,7 @@ def _testing(wf: WorkflowEngine, hw: RealHardwareService, settings: Settings) ->
     outcomes = wf.evaluate_measurement(hw.measure(settings.timeouts.measurement_s))
     failed = [f"{o.check_code.value}={o.value_num}" for o in outcomes if o.passed is False]
     assert not failed, f"B3 out of limits on the golden board: {failed}"
-    assert wf.submit_and_next() is Stage.LABELING
+    assert wf.submit_and_next().stage is Stage.LABELING
 
 
 def _scan(hw: RealHardwareService, settings: Settings) -> str:
@@ -118,10 +118,10 @@ def test_golden_board_through_all_stages(
     assert identity.status in (IdentityStatus.MATCH, IdentityStatus.CONFIRMED)
     for code in (CheckCode.C1, CheckCode.C2, CheckCode.C3, CheckCode.C4):
         wf.submit_check(code, True)
-    assert wf.submit_and_next() is Stage.PACKAGING
+    assert wf.submit_and_next().stage is Stage.PACKAGING
     for code in (CheckCode.D1, CheckCode.D2, CheckCode.D3, CheckCode.D4):
         wf.submit_check(code, True)
-    assert wf.submit_and_next() is Stage.COMPLETE
+    assert wf.submit_and_next().stage is Stage.COMPLETE
 
     state = wf.current_device()
     assert state is not None and state.status is DeviceStatus.COMPLETE
@@ -164,5 +164,5 @@ def test_full_line_with_server_and_flashing(
     outcome = wf.submit_check(CheckCode.A_UPLOAD, result.success, text=info.version)
     assert outcome.passed, f"flash failed: {result.message}"
     assert progress[0] == 0 and progress[-1] == 100 and progress == sorted(progress)
-    assert wf.submit_and_next() is Stage.TESTING
+    assert wf.submit_and_next().stage is Stage.TESTING
     _testing(wf, hw, bench_settings)

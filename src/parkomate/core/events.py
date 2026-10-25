@@ -72,6 +72,14 @@ class DeviceReleased(Event):
 
 
 @dataclass(frozen=True, slots=True)
+class DeviceParked(Event):
+    """A board passed the worker's steps and left the bench; it waits for ``next_op``."""
+
+    device_row_id: int
+    next_op: OpCode
+
+
+@dataclass(frozen=True, slots=True)
 class CountersChanged(Event):
     session_id: int
 

@@ -264,6 +264,11 @@ class OpCode(StrEnum):
         return _OP_STAGES[self]
 
     @property
+    def label_key(self) -> str:
+        """i18n key of the step name (e.g. ``op.C_CODE`` = "C-1 Code insertion")."""
+        return f"op.{self.value}"
+
+    @property
     def next(self) -> OpCode | None:
         """The step after this one; ``None`` after the last (the board is complete)."""
         index = LINE_ORDER.index(self) + 1

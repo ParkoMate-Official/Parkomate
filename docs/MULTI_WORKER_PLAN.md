@@ -1,9 +1,10 @@
 # Multi-worker production line - architecture, workflow and plan
 
 Status: **phase 1 in progress** on branch `feature/multi-worker` - task 1 (operation catalogue,
-migration 0004) and task 2 (records API, migration 0005, end of session / crash recovery release
-boards) are done; task 3 (engine: choose steps, pick up, finish later) is next. Owner of the
-proposal: Piyush (workflow).
+migration 0004), task 2 (records API, migration 0005, end of session / crash recovery release
+boards) and task 3 (engine: choose steps, pick up, finish later, mix-up guard; Finish later
+button and continuing a board from the station screens) are done; tasks 4 (settings) and 5
+(Choose steps / QR pick-up screens) are next. Owner of the proposal: Piyush (workflow).
 Decisions that need the client or the team are collected in [section 12](#12-open-questions).
 
 ## 1. What we want

@@ -99,6 +99,15 @@ class StageViewModel(QObject):
     def status(self) -> StatusLine | None:
         return None
 
+    def finish_later_action(self) -> Action:
+        """Stop with this board; it waits for its next step (any bench can continue it)."""
+        return Action(
+            "action.finish_later",
+            self.c.request_finish_later,
+            variant="secondary",
+            name="finish_later",
+        )
+
     # -- keys ---------------------------------------------------------------------------
     def function_key(self, number: int) -> bool:
         """F1-F12 pressed; return True when handled."""

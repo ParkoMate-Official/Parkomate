@@ -1,22 +1,31 @@
 """WorkflowEngine - the production implementation of ``WorkflowService`` (owner: Piyush).
 
-One device at a time through an explicit state machine (:mod:`.transitions`):
+One board at a time on this bench, through the steps of the line (:mod:`.operations`):
 
-    PROGRAMMING → TESTING → LABELING → PACKAGING → COMPLETE,  any → REJECTED
+    A_PROGRAM → B_TEST → C_CODE → C_CASING → C_BRANDING → D_PACK → COMPLETE,  any → REJECTED
 
-Stage gates
+The worker chooses which of the bench's steps to do (default: all). A **sitting** is the
+board's current step plus the following steps of the same stage that are chosen and possible
+here; the gate is the sum of their checks. Passing a sitting moves the board on to its next
+step on this bench when that step is chosen, else the board is **parked** for the tray of
+that step. Any bench can **pick up** a waiting board later (by MAC or QR): its state is
+rebuilt from the database, so A today and B to D on another day - by anyone - is one flow.
+
+Stage gates (spread over the steps)
 * A: whitelist allowed AND firmware upload succeeded.
 * B: communication OK, exactly N readings, sensor marked OK, indicator marked OK,
   V_A / V_B / V_C within limits and (T_reg − ambient) ≤ margin.
-* C: C1–C4 ticked, QR read and identity reconciled (match, or written + read back).
+* C: C-1 QR read, identity reconciled, C4; C-2 C1, C2; C-3 C3.
 * D: D1–D4 ticked → COMPLETE.
 
 Rules
-* Validation is pure (:mod:`.validation`); retries follow :mod:`.policy`.
-* Every result, stage transition, reject and completion is persisted through
+* Validation is pure (:mod:`.validation`); retries follow :mod:`.policy`. Retry limits count
+  every attempt on the board, on any bench (a released step never resets them).
+* A released step (Finish later, end of session) starts again; passed steps are kept.
+* Every result, run, stage transition, reject and completion is persisted through
   :class:`~parkomate.data.records.ProductionRecords` and published on the event bus
   (``DeviceStarted``, ``StageChanged``, ``CheckRecorded``, ``DeviceCompleted``,
-  ``DeviceRejected``).
+  ``DeviceRejected``, ``DeviceParked``, ``DeviceReleased``).
 * A final failure rejects **inside the call**; the returned outcome carries ``reject`` with
   the stage, check, measured value, limits, i18n reason and the reject-box instruction.
 """
@@ -25,7 +34,7 @@ from __future__ import annotations
 
 import logging
 import threading
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
@@ -42,29 +51,36 @@ from parkomate.core.enums import (
     IdentityStatus,
     IdEntryMethod,
     OpCode,
+    RunOutcome,
     Stage,
 )
-from parkomate.core.errors import InputError, RecordStateError
+from parkomate.core.errors import ErrorCode, InputError, RecordStateError
 from parkomate.core.events import (
     CheckRecorded,
     DeviceCompleted,
+    DeviceParked,
     DeviceRejected,
     DeviceStarted,
+    Event,
     EventBus,
     StageChanged,
 )
 from parkomate.core.interfaces import CheckValue
 from parkomate.core.models import (
     CheckOutcome,
+    Device,
+    DeviceHistory,
+    DeviceKey,
     DeviceState,
     IdentityOutcome,
     Measurement,
     RejectInstruction,
+    StepResult,
 )
 from parkomate.data.records import ProductionRecords
-from parkomate.workflow.operations import operations_of
+from parkomate.workflow.operations import operation, operation_for_check, operations_of
 from parkomate.workflow.policy import RetryPolicy
-from parkomate.workflow.transitions import ORDER, check_transition, next_stage
+from parkomate.workflow.transitions import ORDER, check_transition
 from parkomate.workflow.validation import (
     id_format_ok,
     ids_match,
@@ -76,17 +92,25 @@ log = logging.getLogger(__name__)
 
 CHECKLISTS = frozenset(LABELING_CHECKLIST + PACKAGING_CHECKLIST)
 ELECTRICAL_CODES = (CheckCode.B3_V_A, CheckCode.B3_V_B, CheckCode.B3_V_C, CheckCode.B3_T_REG)
+OPERATOR_MARKS = frozenset({CheckCode.B2_SENSOR_OK, CheckCode.B2_INDICATOR_OK})
+ATTEMPT_COUNTED = frozenset({CheckCode.A_UPLOAD, CheckCode.B1_COMM, CheckCode.B3_V_A})
+"""Checks whose every submission counts as an attempt (B3_V_A: one per measurement)."""
 
 
 @dataclass(slots=True)
 class _Active:
-    """Mutable state of the device on the bench (snapshots go out as ``DeviceState``)."""
+    """Mutable state of the board on the bench (snapshots go out as ``DeviceState``)."""
 
     device_row_id: int
     mac_address: str
     started_at: datetime
     stage: Stage = Stage.PROGRAMMING
     op: OpCode = OpCode.A_PROGRAM
+    segment: tuple[OpCode, ...] = ()
+    """Steps of this sitting still to pass; ``segment[0]`` is ``op`` (its run is open)."""
+    identified_by: IdentifyBy = IdentifyBy.NEW
+    passed_ops: list[OpCode] = field(default_factory=list)
+    resumed: bool = False
     status: DeviceStatus = DeviceStatus.IN_PROGRESS
     attempts: dict[CheckCode, int] = field(default_factory=dict)
     upload_failures: int = 0
@@ -111,12 +135,18 @@ class WorkflowEngine:
         records: ProductionRecords,
         settings: Callable[[], Settings],
         bus: EventBus | None = None,
+        *,
+        bench: Iterable[OpCode] | None = None,
     ) -> None:
         self._records = records
         self._settings = settings
         self._bus = bus or records.bus
         self._lock = threading.RLock()
         self._active: _Active | None = None
+        self._bench = frozenset(OpCode) if bench is None else frozenset(bench)
+        if not self._bench:
+            raise InputError("a bench must be able to do at least one step")
+        self._selected = self._bench
 
     @property
     def records(self) -> ProductionRecords:
@@ -125,19 +155,179 @@ class WorkflowEngine:
     def _policy(self) -> RetryPolicy:
         return RetryPolicy(self._settings())
 
-    # ================================================================== lifecycle
-    def start_device(self, mac: str) -> DeviceState:
+    # ================================================================== steps
+    def bench_steps(self) -> list[OpCode]:
+        return [op for op in OpCode if op in self._bench]
+
+    def selected_steps(self) -> list[OpCode]:
         with self._lock:
-            if self._active is not None and self._active.status is DeviceStatus.IN_PROGRESS:
+            return [op for op in OpCode if op in self._selected]
+
+    def choose_steps(self, ops: Iterable[OpCode]) -> None:
+        chosen = frozenset(ops)
+        if not chosen:
+            raise InputError("choose at least one step")
+        if not chosen <= self._bench:
+            raise InputError(f"not done on this bench: {sorted(chosen - self._bench)}")
+        with self._lock:
+            if self._on_bench() is not None:
+                raise RecordStateError("finish or put back the board on the bench first")
+            self._selected = chosen
+
+    def add_step(self, op: OpCode) -> None:
+        if op not in self._bench:
+            raise InputError(f"{op.value} is not done on this bench")
+        with self._lock:
+            self._selected = self._selected | {op}
+            active = self._on_bench()
+            if active is not None:
+                active.segment = self._segment(active.op)
+
+    def _segment(self, op: OpCode) -> tuple[OpCode, ...]:
+        """``op`` and the following steps of its stage that are chosen and possible here."""
+        ops: list[OpCode] = []
+        current: OpCode | None = op
+        while (
+            current is not None
+            and current.stage is op.stage
+            and current in self._selected
+            and current in self._bench
+        ):
+            ops.append(current)
+            current = current.next
+        return tuple(ops)
+
+    def _require_here(self, op: OpCode) -> None:
+        """Mix-up guard: the board's next step must be possible here and chosen."""
+        params = {"op_key": op.label_key}
+        context = {"op": op.value}
+        if op not in self._bench:
+            raise RecordStateError(
+                f"{op.value} is not done on this bench",
+                code=ErrorCode.WIP_WRONG_OPERATION,
+                params=params,
+                context=context,
+            )
+        if op not in self._selected:
+            raise RecordStateError(
+                f"{op.value} is not one of the chosen steps",
+                code=ErrorCode.WIP_STEP_NOT_SELECTED,
+                params=params,
+                context=context,
+            )
+
+    # ================================================================== lifecycle
+    def pick_up(self, key: DeviceKey) -> DeviceState:
+        if key.by is IdentifyBy.NEW:
+            raise InputError("identify the board by MAC or QR")
+        with self._lock:
+            if self._on_bench() is not None:
                 raise RecordStateError("a device is already on the bench")
-            row_id = self._records.start_device(mac)
-            device = self._records.get_device(row_id)
-            self._active = _Active(row_id, device.mac_address, device.started_at)
-            self._records.record_transition(row_id, None, Stage.PROGRAMMING)
+            if key.by is IdentifyBy.MAC:
+                device = self._records.find_device(mac=key.value)
+            else:
+                device = self._records.find_device(device_id=key.value)
+            if device is None and key.by is not IdentifyBy.MAC:
+                raise RecordStateError(
+                    "no board with this ID",
+                    code=ErrorCode.WIP_NOT_FOUND,
+                    params={"value": key.value.strip()},
+                )
+            started = device is None
+            if device is None:
+                self._start_new(key.value)
+            elif device.status is not DeviceStatus.IN_PROGRESS:
+                raise RecordStateError(
+                    f"device row {device.id} is already {device.status.value}",
+                    code=ErrorCode.WIP_FINISHED,
+                    params={"status_key": device.status.label_key},
+                    context={"device_row_id": device.id},
+                )
+            else:
+                self._resume(device, key.by)
             snapshot = self._snapshot()
-        self._bus.publish(DeviceStarted(row_id, device.mac_address))
         assert snapshot is not None
+        if started:
+            self._bus.publish(DeviceStarted(snapshot.device_row_id, snapshot.mac_address))
         return snapshot
+
+    def start_device(self, mac: str) -> DeviceState:
+        return self.pick_up(DeviceKey.mac(mac))
+
+    def _start_new(self, mac: str) -> None:
+        self._require_here(OpCode.A_PROGRAM)
+        row_id = self._records.start_device(mac)
+        device = self._records.get_device(row_id)
+        self._active = _Active(
+            row_id,
+            device.mac_address,
+            device.started_at,
+            segment=self._segment(OpCode.A_PROGRAM),
+        )
+        self._records.record_transition(row_id, None, Stage.PROGRAMMING)
+
+    def _resume(self, device: Device, by: IdentifyBy) -> None:
+        op = device.next_op
+        if op is None:  # pragma: no cover - every in-progress row waits for a step
+            raise RecordStateError(f"device row {device.id} waits for no step")
+        history = self._records.device_history(device.id)
+        held = history.open_run
+        if held is not None:
+            raise RecordStateError(
+                f"device row {device.id} is on the bench of {held.station_id}",
+                code=ErrorCode.WIP_CLAIMED,
+                params={"station": held.station_id},
+                context={"device_row_id": device.id, "run_id": held.id},
+            )
+        self._require_here(op)
+        self._records.claim(device.id, op, by)
+        self._active = self._rebuild(history, op, by)
+        log.info("device row %d picked up at %s (by %s)", device.id, op.value, by.value)
+
+    def _rebuild(self, history: DeviceHistory, op: OpCode, by: IdentifyBy) -> _Active:
+        """State of a board continued here: results of its passed steps; attempt counts of
+        every step (a released step starts again, but its attempts still count)."""
+        device = history.device
+        passed_runs = {r.id for r in history.runs if r.outcome is RunOutcome.PASSED}
+        active = _Active(
+            device.id,
+            device.mac_address,
+            device.started_at,
+            stage=op.stage,
+            op=op,
+            segment=self._segment(op),
+            identified_by=by,
+            passed_ops=history.passed_ops,
+            resumed=True,
+        )
+        for check in history.checks:
+            code = check.check_code
+            if code in ATTEMPT_COUNTED:
+                active.bump(code)
+                if code is CheckCode.A_UPLOAD and check.passed is False:
+                    active.upload_failures += 1
+            if check.run_id not in passed_runs:
+                continue
+            active.outcomes[code] = CheckOutcome(
+                check_code=code,
+                stage=check.stage,
+                passed=check.passed,
+                value_num=check.value_num,
+                value_text=check.value_text,
+                unit=check.unit,
+                limit_low=check.limit_low,
+                limit_high=check.limit_high,
+            )
+            if code.reading_index is not None and check.value_num is not None:
+                active.readings.append(check.value_num)
+            if code in CHECKLISTS or code in OPERATOR_MARKS:
+                active.marks[code] = check.passed is True
+        sync = active.outcomes.get(CheckCode.C_ID_SYNC)
+        if sync is not None and sync.passed:
+            active.device_id = active.qr_id = device.device_id
+            matched = (sync.value_text or "").startswith("match")
+            active.identity = IdentityStatus.MATCH if matched else IdentityStatus.CONFIRMED
+        return active
 
     def current_device(self) -> DeviceState | None:
         with self._lock:
@@ -147,37 +337,60 @@ class WorkflowEngine:
         with self._lock:
             return self._active.stage if self._active else Stage.PROGRAMMING
 
+    def current_operation(self) -> OpCode | None:
+        with self._lock:
+            active = self._on_bench()
+            return active.op if active is not None else None
+
+    def finish_later(self) -> StepResult:
+        with self._lock:
+            active = self._require_active()
+            if not self.missing_checks():
+                result, events = self._finish_sitting(active, park=True)
+            else:
+                result, events = self._release(active), []
+        for event in events:
+            self._bus.publish(event)
+        return result
+
     def release_device(self) -> None:
         with self._lock:
-            active = self._active
-            self._active = None
-            if active is not None and active.status is DeviceStatus.IN_PROGRESS:
-                self._records.release_run()
+            active = self._on_bench()
+            if active is None:
+                self._active = None
+                return
+            self._release(active)
+
+    def _release(self, active: _Active) -> StepResult:
+        """Keep the steps of this sitting that are complete, release the first unfinished
+        one (it starts again next time) and take the board off the bench."""
+        while len(active.segment) > 1 and self._op_done(active, active.op):
+            self._record_ticks(active, active.op)
+            self._pass_and_claim(active, active.segment[1])
+            active.segment = active.segment[1:]
+        self._records.release_run()
+        self._active = None
+        log.info("device row %d released at %s", active.device_row_id, active.op.value)
+        return StepResult(stage=active.op.stage, next_op=active.op, parked=True)
 
     def clear_finished(self) -> None:
         with self._lock:
-            if self._active is not None and self._active.status is DeviceStatus.IN_PROGRESS:
+            if self._on_bench() is not None:
                 raise RecordStateError("the device on the bench is not finished")
             self._active = None
 
     # ================================================================== gates
-    def required_checks(self, stage: Stage) -> list[CheckCode]:
+    def operation_checks(self, op: OpCode) -> list[CheckCode]:
         count = self._settings().limits.sensor_reading_count
-        if stage is Stage.PROGRAMMING:
-            return [CheckCode.A_WHITELIST, CheckCode.A_UPLOAD]
-        if stage is Stage.TESTING:
-            return [
-                CheckCode.B1_COMM,
-                *(CheckCode.reading(i) for i in range(1, count + 1)),
-                CheckCode.B2_SENSOR_OK,
-                CheckCode.B2_INDICATOR_OK,
-                *ELECTRICAL_CODES,
-            ]
-        if stage is Stage.LABELING:
-            return [*LABELING_CHECKLIST, CheckCode.C_QR_READ, CheckCode.C_ID_SYNC]
-        if stage is Stage.PACKAGING:
-            return list(PACKAGING_CHECKLIST)
-        return []
+        return [
+            code
+            for code in operation(op).checks
+            if code is not CheckCode.B3_T_AMB
+            and (code.reading_index is None or code.reading_index <= count)
+        ]
+
+    def required_checks(self, stage: Stage) -> list[CheckCode]:
+        return [code for op in operations_of(stage) for code in self.operation_checks(op.code)]
 
     @staticmethod
     def _satisfied(active: _Active, code: CheckCode) -> bool:
@@ -190,12 +403,20 @@ class WorkflowEngine:
             return True
         return outcome.passed is True
 
+    def _op_done(self, active: _Active, op: OpCode) -> bool:
+        return all(self._satisfied(active, code) for code in self.operation_checks(op))
+
     def missing_checks(self) -> list[CheckCode]:
         with self._lock:
-            active = self._active
-            if active is None or active.status is not DeviceStatus.IN_PROGRESS:
+            active = self._on_bench()
+            if active is None:
                 return []
-            return [c for c in self.required_checks(active.stage) if not self._satisfied(active, c)]
+            return [
+                code
+                for op in active.segment
+                for code in self.operation_checks(op)
+                if not self._satisfied(active, code)
+            ]
 
     def is_stage_complete(self, stage: Stage) -> bool:
         with self._lock:
@@ -205,7 +426,11 @@ class WorkflowEngine:
             current, target = ORDER.index(active.stage), ORDER.index(stage)
             if target != current:
                 return target < current
-            return all(self._satisfied(active, c) for c in self.required_checks(stage))
+            return all(
+                op.code in active.passed_ops
+                or (op.code in active.segment and self._op_done(active, op.code))
+                for op in operations_of(stage)
+            )
 
     def can_submit(self) -> bool:
         with self._lock:
@@ -222,10 +447,7 @@ class WorkflowEngine:
     ) -> CheckOutcome:
         with self._lock:
             active = self._require_active()
-            if check_code.stage is not active.stage:
-                raise RecordStateError(
-                    f"{check_code.value} cannot be submitted during {active.stage.value}"
-                )
+            self._require_in_sitting(active, check_code)
             if check_code in (*ELECTRICAL_CODES, CheckCode.B3_T_AMB):
                 raise RecordStateError("electrical checks go through evaluate_measurement()")
             if check_code is CheckCode.C_ID_SYNC:
@@ -240,11 +462,23 @@ class WorkflowEngine:
                 return self._comm(active, _as_bool(value, check_code), text)
             if check_code.reading_index is not None:
                 return self._reading(active, check_code, value)
-            if check_code in (CheckCode.B2_SENSOR_OK, CheckCode.B2_INDICATOR_OK):
+            if check_code in OPERATOR_MARKS:
                 return self._operator_mark(active, check_code, _as_bool(value, check_code))
             if check_code is CheckCode.C_QR_READ:
                 return self._qr_read(active, value)
         raise RecordStateError(f"unsupported check {check_code.value}")  # pragma: no cover
+
+    def _require_in_sitting(self, active: _Active, code: CheckCode) -> None:
+        """Only checks of the steps on the bench; results other than checklist ticks belong
+        to the step whose run is open."""
+        op = operation_for_check(code).code
+        if op not in active.segment:
+            raise RecordStateError(
+                f"{code.value} belongs to {op.value}, which is not on the bench now",
+                context={"op": op.value},
+            )
+        if op is not active.op and code not in CHECKLISTS:
+            raise RecordStateError(f"finish {active.op.value} before {code.value}")
 
     def _tick(self, active: _Active, code: CheckCode, ticked: bool) -> CheckOutcome:
         active.marks[code] = ticked
@@ -362,8 +596,8 @@ class WorkflowEngine:
             active.device_id = None
         return self._record(active, CheckCode.C_QR_READ, passed=True, value_text=qr)
 
-    # ================================================================== stage flow
-    def submit_and_next(self) -> Stage:
+    # ================================================================== step flow
+    def submit_and_next(self) -> StepResult:
         with self._lock:
             active = self._require_active()
             missing = self.missing_checks()
@@ -371,27 +605,69 @@ class WorkflowEngine:
                 raise RecordStateError(
                     "stage gate not satisfied", context={"missing": [c.value for c in missing]}
                 )
-            old = active.stage
-            new = next_stage(old)
-            check_transition(old, new)
-            if old in (Stage.LABELING, Stage.PACKAGING):
-                checklist = LABELING_CHECKLIST if old is Stage.LABELING else PACKAGING_CHECKLIST
-                for code in checklist:
-                    self._record(active, code, passed=True, operator_marked=True, publish=False)
-            if new is Stage.COMPLETE:
-                self._records.complete_device(active.device_row_id)
-                active.status = DeviceStatus.COMPLETE
-            self._records.record_transition(active.device_row_id, old, new)
-            if new is not Stage.COMPLETE:
-                self._advance_runs(active, new)
-            active.stage = new
-            device_id = active.device_id
-            row_id = active.device_row_id
-        self._bus.publish(StageChanged(row_id, old, new))
-        if new is Stage.COMPLETE:
-            self._bus.publish(DeviceCompleted(row_id, device_id))
-        log.info("device row %d: %s -> %s", row_id, old.value, new.value)
-        return new
+            result, events = self._finish_sitting(active, park=False)
+        for event in events:
+            self._bus.publish(event)
+        return result
+
+    def _finish_sitting(self, active: _Active, *, park: bool) -> tuple[StepResult, list[Event]]:
+        """Pass every step of the sitting, then continue with the board's next step on this
+        bench (chosen and possible here, unless ``park``) or park it for that step's tray."""
+        events: list[Event] = []
+        row = active.device_row_id
+        old_stage = active.stage
+        sitting = active.segment
+        for index, op in enumerate(sitting):
+            self._record_ticks(active, op)
+            if index + 1 < len(sitting):
+                self._pass_and_claim(active, sitting[index + 1])
+                active.segment = sitting[index + 1 :]
+        last = active.op
+        following = last.next
+        if following is None:
+            self._records.complete_device(row)
+            self._records.record_transition(row, old_stage, Stage.COMPLETE)
+            active.passed_ops.append(last)
+            active.status = DeviceStatus.COMPLETE
+            active.stage = Stage.COMPLETE
+            active.segment = ()
+            events += [
+                StageChanged(row, old_stage, Stage.COMPLETE),
+                DeviceCompleted(row, active.device_id),
+            ]
+            log.info("device row %d complete", row)
+            return StepResult(stage=Stage.COMPLETE), events
+        new_stage = following.stage
+        if new_stage is not old_stage:
+            check_transition(old_stage, new_stage)
+            self._records.record_transition(row, old_stage, new_stage)
+            events.append(StageChanged(row, old_stage, new_stage))
+        if not park and following in self._selected and following in self._bench:
+            self._pass_and_claim(active, following)
+            active.stage = new_stage
+            active.segment = self._segment(following)
+            log.info("device row %d continues with %s", row, following.value)
+            return StepResult(stage=new_stage, next_op=following), events
+        self._records.pass_run()
+        active.passed_ops.append(last)
+        self._active = None
+        events.append(DeviceParked(row, following))
+        log.info("device row %d parked for %s", row, following.value)
+        return StepResult(stage=new_stage, next_op=following, parked=True), events
+
+    def _pass_and_claim(self, active: _Active, following: OpCode) -> None:
+        """Pass the open step and claim ``following`` for the board that stays on the bench."""
+        self._records.pass_run()
+        active.passed_ops.append(active.op)
+        by = IdentifyBy.MAC if active.identified_by is IdentifyBy.NEW else active.identified_by
+        self._records.claim(active.device_row_id, following, by)
+        active.op = following
+
+    def _record_ticks(self, active: _Active, op: OpCode) -> None:
+        """Checklist ticks are written when their step is passed (W8)."""
+        for code in operation(op).checks:
+            if code in CHECKLISTS:
+                self._record(active, code, passed=True, operator_marked=True, publish=False)
 
     def reject(
         self,
@@ -401,9 +677,9 @@ class WorkflowEngine:
     ) -> RejectInstruction:
         with self._lock:
             active = self._require_active()
-            if check_code.stage is not active.stage:
+            if operation_for_check(check_code).code not in active.segment:
                 raise RecordStateError(
-                    f"cannot reject for {check_code.value} during {active.stage.value}"
+                    f"cannot reject for {check_code.value} during {active.op.value}"
                 )
             last = active.outcomes.get(check_code)
             if last is None or last.passed is not False:
@@ -415,10 +691,8 @@ class WorkflowEngine:
 
     def can_retry_programming(self) -> bool:
         with self._lock:
-            active = self._active
-            if active is None or active.status is not DeviceStatus.IN_PROGRESS:
-                return False
-            if active.stage is not Stage.PROGRAMMING:
+            active = self._on_bench()
+            if active is None or active.op is not OpCode.A_PROGRAM:
                 return False
             last = active.outcomes.get(CheckCode.A_UPLOAD)
             return (
@@ -432,8 +706,8 @@ class WorkflowEngine:
     def evaluate_measurement(self, measurement: Measurement) -> list[CheckOutcome]:
         with self._lock:
             active = self._require_active()
-            if active.stage is not Stage.TESTING:
-                raise RecordStateError("measurement outside the testing stage")
+            if active.op is not OpCode.B_TEST:
+                raise RecordStateError("measurement outside the testing step")
             total = self._settings().limits.sensor_reading_count
             if not (
                 self._satisfied(active, CheckCode.B1_COMM)
@@ -492,8 +766,8 @@ class WorkflowEngine:
     ) -> IdentityOutcome:
         with self._lock:
             active = self._require_active()
-            if active.stage is not Stage.LABELING:
-                raise RecordStateError("identity is reconciled in the labeling stage")
+            if active.op is not OpCode.C_CODE:
+                raise RecordStateError("identity is reconciled in the code insertion step")
             qr = qr_id.strip()
             if active.qr_id is None or qr != active.qr_id:
                 raise RecordStateError("read the QR code first")
@@ -537,18 +811,10 @@ class WorkflowEngine:
         return IdentityOutcome(status=status, qr_id=qr, device_id=qr)
 
     # ================================================================== internals
-    def _advance_runs(self, active: _Active, stage: Stage) -> None:
-        """Pass every remaining operation up to the first one of ``stage``, on this bench.
-
-        Bridge while the engine still works a whole stage at a time (multi-worker phase 1,
-        task 3 moves it to one operation at a time): the board's runs and ``next_op`` stay in
-        line order, so a board released later is continued at the right step.
-        """
-        target = operations_of(stage)[0].code
-        while active.op is not target:
-            following = self._records.pass_run()
-            self._records.claim(active.device_row_id, following, IdentifyBy.MAC)
-            active.op = following
+    def _on_bench(self) -> _Active | None:
+        """The board being worked on (``None`` when idle or the board is finished)."""
+        active = self._active
+        return active if active is not None and active.status is DeviceStatus.IN_PROGRESS else None
 
     def _require_active(self) -> _Active:
         active = self._active
@@ -668,6 +934,9 @@ class WorkflowEngine:
             outcomes=dict(active.outcomes),
             identity=active.identity,
             reject=active.reject,
+            op=active.op if active.status is DeviceStatus.IN_PROGRESS else None,
+            passed_ops=list(active.passed_ops),
+            resumed=active.resumed,
         )
 
 

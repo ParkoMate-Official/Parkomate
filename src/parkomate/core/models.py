@@ -408,8 +408,44 @@ class DeviceState(_Frozen):
     outcomes: dict[CheckCode, CheckOutcome] = Field(default_factory=dict)
     identity: IdentityStatus | None = None
     reject: RejectInstruction | None = None
+    op: OpCode | None = None
+    """Step being worked on (``None`` once the board is finished)."""
+    passed_ops: list[OpCode] = Field(default_factory=list)
+    """Steps already passed - on this bench or earlier, by anyone."""
+    resumed: bool = False
+    """True when the board was picked up to continue (it did not start on this bench now)."""
 
     @property
     def display_id(self) -> str:
         """Best human identifier: QR/device ID when known, else MAC."""
         return self.device_id or self.qr_id or self.mac_address
+
+
+class DeviceKey(_Frozen):
+    """How a worker identifies a board when picking it up."""
+
+    by: IdentifyBy
+    value: str
+
+    @classmethod
+    def mac(cls, value: str) -> DeviceKey:
+        return cls(by=IdentifyBy.MAC, value=value)
+
+    @classmethod
+    def qr(cls, value: str) -> DeviceKey:
+        return cls(by=IdentifyBy.QR, value=value)
+
+
+class StepResult(_Frozen):
+    """What happened when the worker finished the steps on the bench."""
+
+    stage: Stage
+    """Stage the board is at now (``COMPLETE`` when finished)."""
+    next_op: OpCode | None = None
+    """Step the board continues with, or waits for when parked."""
+    parked: bool = False
+    """True: the board left the bench - put it in the tray for ``next_op``."""
+
+    @property
+    def complete(self) -> bool:
+        return self.stage is Stage.COMPLETE

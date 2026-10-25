@@ -63,18 +63,25 @@ The brain: stage order, stage gates, limit checks, reject / retry / complete. It
 result through `ProductionRecords` (Yugant) and publishes events on the shared `EventBus`.
 
 ```python
-start_device(mac) -> DeviceState                      # new device at PROGRAMMING
+bench_steps() -> list[OpCode]                         # steps this bench can do
+selected_steps() -> list[OpCode]                      # steps the worker does now (default all)
+choose_steps(ops) / add_step(op) -> None
+pick_up(DeviceKey) -> DeviceState                     # new MAC starts at A; a board in progress
+                                                      # continues at its next step (WIP_* errors)
+start_device(mac) -> DeviceState                      # pick_up by MAC
 current_device() -> DeviceState | None                # None = bench idle
 current_stage() -> Stage                              # PROGRAMMING when idle
+current_operation() -> OpCode | None
+finish_later() -> StepResult                          # stop with this board; done steps kept
 release_device() -> None                              # session ends with a board on the bench:
                                                       # it waits for its current step
 clear_finished() -> None                              # forget a completed/rejected device
-required_checks(stage) -> list[CheckCode]
+required_checks(stage) / operation_checks(op) -> list[CheckCode]
 missing_checks() -> list[CheckCode]                   # drives "Still needed: ..." and gates
 is_stage_complete(stage) -> bool
 submit_check(code, value=None, *, text=None) -> CheckOutcome
 can_submit() -> bool
-submit_and_next() -> Stage                            # COMPLETE after packaging
+submit_and_next() -> StepResult                       # continue, parked for a tray, or COMPLETE
 reject(code, reason_key="reject.reason.manual", **params) -> RejectInstruction
 can_retry_programming() -> bool
 evaluate_measurement(Measurement) -> list[CheckOutcome]

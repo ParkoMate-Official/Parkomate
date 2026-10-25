@@ -69,7 +69,7 @@ def _programming(wf: WorkflowEngine) -> None:
     wf.start_device(MAC)
     wf.submit_check(CheckCode.A_WHITELIST, True)
     wf.submit_check(CheckCode.A_UPLOAD, True, text="2.3.1")
-    assert wf.submit_and_next() is Stage.TESTING
+    assert wf.submit_and_next().stage is Stage.TESTING
 
 
 def _testing_until_measure(wf: WorkflowEngine) -> None:
@@ -84,7 +84,7 @@ def _to_labeling(wf: WorkflowEngine) -> None:
     _programming(wf)
     _testing_until_measure(wf)
     assert all(o.passed for o in wf.evaluate_measurement(_measurement()))
-    assert wf.submit_and_next() is Stage.LABELING
+    assert wf.submit_and_next().stage is Stage.LABELING
 
 
 # ------------------------------------------------------------------ pure validation
@@ -139,10 +139,10 @@ def test_happy_path_publishes_events(wf: WorkflowEngine, bus: EventBus) -> None:
         wf.submit_check(code, True)
     assert not wf.can_submit() and wf.missing_checks() == [CheckCode.C4]
     wf.submit_check(CheckCode.C4, True)
-    assert wf.submit_and_next() is Stage.PACKAGING
+    assert wf.submit_and_next().stage is Stage.PACKAGING
     for code in (CheckCode.D1, CheckCode.D2, CheckCode.D3, CheckCode.D4):
         wf.submit_check(code, True)
-    assert wf.submit_and_next() is Stage.COMPLETE
+    assert wf.submit_and_next().stage is Stage.COMPLETE
     state = wf.current_device()
     assert state is not None and state.status is DeviceStatus.COMPLETE
     assert state.device_id == "PKM-000519" and state.display_id == "PKM-000519"
@@ -494,7 +494,7 @@ def test_measurement_retry_when_configured(
     assert wf.missing_checks() == [CheckCode.B3_V_B]
     passed = wf.evaluate_measurement(_measurement())
     assert all(o.passed for o in passed) and passed[0].attempt == 2
-    assert wf.submit_and_next() is Stage.LABELING
+    assert wf.submit_and_next().stage is Stage.LABELING
 
 
 def test_measurement_retry_exhausted_rejects_first_failure(
@@ -537,7 +537,7 @@ def test_rescan_after_match_needs_new_identity(wf: WorkflowEngine) -> None:
     wf.reconcile_identity("PKM-000777", "PKM-000777", after_write=True)
     for code in (CheckCode.C1, CheckCode.C2, CheckCode.C3, CheckCode.C4):
         wf.submit_check(code, True)
-    assert wf.submit_and_next() is Stage.PACKAGING
+    assert wf.submit_and_next().stage is Stage.PACKAGING
     device = wf._records.get_device(state.device_row_id)
     assert device.device_id == "PKM-000777"
 

@@ -97,7 +97,7 @@ def run_device(ctx: AppContext) -> Stage:
     wf.submit_and_next()
     for code in (CheckCode.D1, CheckCode.D2, CheckCode.D3, CheckCode.D4):
         wf.submit_check(code, True)
-    assert wf.submit_and_next() is Stage.COMPLETE
+    assert wf.submit_and_next().stage is Stage.COMPLETE
     return finish(ctx)
 
 

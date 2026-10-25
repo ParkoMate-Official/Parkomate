@@ -36,10 +36,22 @@ class ChecklistMixin(StageViewModel):
 
     def reset_checklist(self) -> None:
         self.ticks: dict[CheckCode, bool] = dict.fromkeys(self.checklist, False)
+        self.locked: set[CheckCode] = set()
+        """Ticks of steps already passed (board continued from another sitting)."""
         self.choosing_reject = False
 
+    def sync_passed_ticks(self) -> None:
+        """A board continued here: rows of its passed steps show ticked and stay ticked."""
+        device = self.c.device
+        if device is None or not device.resumed:
+            return
+        for code in self.checklist:
+            if device.marks.get(code):
+                self.ticks[code] = True
+                self.locked.add(code)
+
     def toggle(self, code: CheckCode) -> None:
-        if code not in self.ticks or not self.c.device_in_progress:
+        if code not in self.ticks or code in self.locked or not self.c.device_in_progress:
             return
         value = not self.ticks[code]
         if self.guard(lambda: self.c.ctx.workflow.submit_check(code, value)) is not None:
@@ -111,9 +123,22 @@ class LabelingViewModel(ChecklistMixin):
         return self.identity in (IdentityStatus.MATCH, IdentityStatus.CONFIRMED)
 
     def enter(self) -> None:
+        self._sync_identity()
         if self.qr_id is None and self.camera_state is StepState.PENDING:
             self.scan()  # automatic on entering Labeling
         self.notify()
+
+    def _sync_identity(self) -> None:
+        """A board continued after code insertion keeps its identity: no new scan."""
+        self.sync_passed_ticks()
+        device = self.c.device
+        if device is None or not device.resumed or self.qr_id is not None:
+            return
+        if device.qr_id and device.identity in (IdentityStatus.MATCH, IdentityStatus.CONFIRMED):
+            self.qr_id = device.qr_id
+            self.identity = device.identity
+            self.camera_state = StepState.PASS
+            self.identity_state = StepState.PASS
 
     def leave(self) -> None:
         if self.camera_open:
@@ -343,6 +368,8 @@ class LabelingViewModel(ChecklistMixin):
             actions.append(
                 Action("action.reject_device", self.start_reject, variant="danger", name="reject")
             )
+            if self.camera_state is not StepState.WORKING:
+                actions.append(self.finish_later_action())
         return actions
 
     def status(self) -> StatusLine | None:
@@ -387,7 +414,10 @@ class PackagingViewModel(ChecklistMixin):
     def secondary(self) -> list[Action]:
         if not self.c.device_in_progress:
             return []
-        return [Action("action.reject_device", self.start_reject, variant="danger", name="reject")]
+        return [
+            Action("action.reject_device", self.start_reject, variant="danger", name="reject"),
+            self.finish_later_action(),
+        ]
 
     def status(self) -> StatusLine | None:
         if self.missing_ticks:

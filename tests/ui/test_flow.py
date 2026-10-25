@@ -9,7 +9,7 @@ import pytest
 from PySide6.QtCore import QTimer
 from PySide6.QtWidgets import QAbstractButton, QLabel, QWidget
 
-from parkomate.core.enums import CheckCode, DeviceStatus, SessionEndReason, Stage
+from parkomate.core.enums import CheckCode, DeviceStatus, OpCode, SessionEndReason, Stage
 from parkomate.core.errors import ErrorCode
 from parkomate.hardware.mocks import MockScenario
 from parkomate.i18n import load_catalogue
@@ -241,6 +241,51 @@ def test_end_session_with_device_releases_it(driver: StationDriver) -> None:
     # The board waits for its current step; any session can continue it.
     assert d.ctx.repos.devices.require(row).status is DeviceStatus.IN_PROGRESS
     assert d.ctx.repos.runs.open_for_device(row) is None
+
+
+def _finish_later_button(d: StationDriver) -> None:
+    vm = d.c.current_vm
+    assert vm is not None
+    action = next(a for a in vm.secondary() if a.name == "finish_later")
+    action.trigger()
+
+
+def test_finish_later_after_a_and_continue_with_the_same_board(driver: StationDriver) -> None:
+    """A today: Finish later; the same board plugged in again continues at Testing."""
+    d = driver
+    d.connect()
+    d.upload_until_done()
+    board = d.ctx.hardware._board  # type: ignore[attr-defined]
+    _finish_later_button(d)  # A is done: no question, nothing lost
+    assert d.c.confirm is None
+    d.wait(lambda: d.c.device is None and d.c.stage is Stage.PROGRAMMING, what="parked")
+    toast = d.window.shell.toast
+    assert toast.isVisible()
+    assert toast.label.text() == f"Device {board.mac} saved - put it in the tray for Testing"
+    d.idle()
+
+    d.ctx.hardware._board = board  # type: ignore[attr-defined]  # the same board, plugged in
+    d.c.programming.connect_board()
+    d.wait(lambda: d.c.stage is Stage.TESTING, what="continued at testing")
+    state = d.c.device
+    assert state is not None and state.resumed and state.op is OpCode.B_TEST
+    assert state.passed_ops == [OpCode.A_PROGRAM]
+    d.through_testing()
+    d.through_labeling()
+    d.through_packaging()
+    assert d.c.counters is not None and d.c.counters.completed == 1
+
+
+def test_finish_later_mid_step_asks_first(driver: StationDriver) -> None:
+    d = driver
+    d.through_programming()
+    d.wait(lambda: d.c.testing.comm_state.value == "pass", what="comm test")
+    _finish_later_button(d)  # the communication test already ran: it would be redone
+    assert d.c.confirm is not None
+    assert d.c.confirm.message_key == "confirm.finish_later_mid_step"
+    d.c.answer(True)
+    d.wait(lambda: d.c.device is None and d.c.stage is Stage.PROGRAMMING, what="parked")
+    assert d.window.shell.toast.label.text().endswith("put it in the tray for Testing")
 
 
 def test_crash_recovery_notice(make_driver: DriverFactory) -> None:

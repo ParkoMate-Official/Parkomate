@@ -11,7 +11,7 @@ from typing import Any
 from PySide6.QtCore import QObject, Signal
 
 from parkomate.core.errors import ParkomateError
-from parkomate.i18n import add_language_listener, t
+from parkomate.i18n import add_language_listener, resolve_params, t
 
 
 class LanguageNotifier(QObject):
@@ -57,14 +57,19 @@ class TextKey:
         return f"TextKey({self.key!r}, {self.params!r})"
 
 
+def _params(error: ParkomateError) -> dict[str, Any]:
+    """Error params with ``*_key`` values translated (e.g. ``op_key`` -> ``{op}``)."""
+    return resolve_params(None, error.params)
+
+
 def error_title(error: ParkomateError) -> str:
-    return t(error.title_key, **error.params)
+    return t(error.title_key, **_params(error))
 
 
 def error_cause(error: ParkomateError) -> str:
-    return t(error.cause_key, **error.params)
+    return t(error.cause_key, **_params(error))
 
 
 def error_steps(error: ParkomateError) -> list[str]:
-    text = t(error.action_key, **error.params)
+    text = t(error.action_key, **_params(error))
     return [line.strip() for line in text.splitlines() if line.strip()]
