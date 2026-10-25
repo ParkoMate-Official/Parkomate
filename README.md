@@ -119,7 +119,7 @@ src/parkomate/
   mail/         SMTP + OAuth2 mailers, outbox with retry, session reporter
   i18n/         en.json, mr.json, t()/tr()
   hardware/     mocks/ (Aditya replaces with the real service)
-  workflow/     stub/ (Piyush replaces with the real state machine)
+  workflow/     engine.py (WorkflowEngine), transitions, validation, retry policy
   ui/           theme/, components/, viewmodels/, views/, workers/, screenshots.py
   station.py    login / logout / start-up facade      app.py   composition root
 tests/          unit/, integration/, ui/

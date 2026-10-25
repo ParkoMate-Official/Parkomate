@@ -7,7 +7,7 @@ replace the stand-ins without touching UI or data code.
 | Owner | Implements | Lives in | Stand-in used today |
 |---|---|---|---|
 | Aditya | `HardwareService` | `src/parkomate/hardware/` | `hardware/mocks/MockHardwareService` |
-| Piyush | `WorkflowService` | `src/parkomate/workflow/` | `workflow/stub/StubWorkflowService` |
+| Piyush | `WorkflowService` | `src/parkomate/workflow/` | - (`WorkflowEngine` is the real one) |
 | Yugant | records API, reports, mail, auth, settings, logs, i18n, UI | everything else | - |
 
 Shared types live in `src/parkomate/core/`: `models.py` (pydantic, frozen), `enums.py`

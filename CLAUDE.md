@@ -22,7 +22,7 @@ Login → A Programming → B Testing → C Labeling → D Packaging → Complet
 | Owner | Folder | Role |
 |---|---|---|
 | Aditya | `src/parkomate/hardware/` | `HardwareService`: serial, esptool, server API, measuring device, camera. Today only `hardware/mocks/`. |
-| Piyush | `src/parkomate/workflow/` | `WorkflowService`: state machine, gates, limits, reject/retry. Today only `workflow/stub/` (STUB). |
+| Piyush | `src/parkomate/workflow/` | `WorkflowService`: state machine, gates, limits, reject/retry. `WorkflowEngine` (engine, transitions, validation, policy). |
 | Yugant | everything else | `core/` contracts, `config/`, `data/`, `auth/`, `reports/`, `mail/`, `i18n/`, `logging_setup.py`, `station.py`, `app.py`, `ui/` |
 
 Contracts: `src/parkomate/core/interfaces.py` + `CONTRACTS.md`. Decisions: `DECISIONS.md`
@@ -41,6 +41,7 @@ PARKOMATE_MOCK_SCENARIO=v_c_out_of_range uv run python -m parkomate --mock
 uv run python -m parkomate admin create       # first administrator
 uv run pytest                                 # all tests (unit, integration, ui)
 uv run pytest --cov=parkomate                 # with coverage
+PARKOMATE_HIL=1 uv run pytest tests/hil -v    # real bench only (docs/HIL_TESTING.md)
 uv run ruff check src tests && uv run ruff format --check src tests
 uv run mypy                                   # strict, whole package
 uv run python -m parkomate.ui.screenshots --out docs/screenshots   # EN + MR PNGs

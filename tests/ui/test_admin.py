@@ -78,6 +78,23 @@ def test_settings_editor_validates_and_audits(driver: StationDriver) -> None:
     assert tab.result.text() == "Nothing changed"
 
 
+def test_settings_editor_saves_list_settings(driver: StationDriver) -> None:
+    d = driver
+    _open_admin(d)
+    tab = d.window.admin.settings_tab
+    retriable = tab.editors["workflow.retriable_checks"]
+    assert isinstance(retriable, QLineEdit) and retriable.text() == "A_UPLOAD"
+    retriable.setText("A_UPLOAD, b1_comm")
+    tab.save_settings()
+    assert tab.result.text().startswith("✓  Saved - 1 change(s)")
+    assert d.ctx.settings.workflow.retriable_checks == ["A_UPLOAD", "B1_COMM"]
+    assert retriable.text() == "A_UPLOAD, B1_COMM"
+    retriable.setText("A_UPLOAD, B9_NOPE")
+    tab.save_settings()
+    assert not tab.errors["workflow.retriable_checks"].isHidden()
+    assert d.ctx.settings.workflow.retriable_checks == ["A_UPLOAD", "B1_COMM"]  # not saved
+
+
 def test_email_settings_need_fields(driver: StationDriver) -> None:
     d = driver
     _open_admin(d)

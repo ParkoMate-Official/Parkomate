@@ -52,6 +52,8 @@ testpaths = ["tests"]
 addopts = "-ra --strict-markers"
 markers = [
     "slow: tests that deliberately wait (worker / timing tests)",
+    "hil: real bench only (tests/hil, skipped unless PARKOMATE_HIL=1)",
+    "hil_full: real bench + server + flashing (also needs PARKOMATE_HIL_FULL=1)",
 ]
 qt_api = "pyside6"
 filterwarnings = [
