@@ -245,6 +245,65 @@ PACKAGING_CHECKLIST: tuple[CheckCode, ...] = (
 VOLTAGE_CHECKS: tuple[CheckCode, ...] = (CheckCode.B3_V_A, CheckCode.B3_V_B, CheckCode.B3_V_C)
 
 
+class OpCode(StrEnum):
+    """Operations: the steps one worker does on one board in one sitting, in line order.
+
+    Every stage is split into one or more operations (catalogue: ``workflow/operations.py``).
+    Stored verbatim in ``operation_runs.op_code`` and ``devices.next_op``.
+    """
+
+    A_PROGRAM = "A_PROGRAM"
+    B_TEST = "B_TEST"
+    C_CODE = "C_CODE"
+    C_CASING = "C_CASING"
+    C_BRANDING = "C_BRANDING"
+    D_PACK = "D_PACK"
+
+    @property
+    def stage(self) -> Stage:
+        return _OP_STAGES[self]
+
+
+_OP_STAGES: dict[OpCode, Stage] = {
+    OpCode.A_PROGRAM: Stage.PROGRAMMING,
+    OpCode.B_TEST: Stage.TESTING,
+    OpCode.C_CODE: Stage.LABELING,
+    OpCode.C_CASING: Stage.LABELING,
+    OpCode.C_BRANDING: Stage.LABELING,
+    OpCode.D_PACK: Stage.PACKAGING,
+}
+
+LINE_ORDER: tuple[OpCode, ...] = tuple(OpCode)
+"""Operations in the order every board passes them."""
+
+
+class IdentifyBy(StrEnum):
+    """How a board is recognised when it is picked up (``operation_runs.identified_by``)."""
+
+    NEW = "new"  # MAC not in progress anywhere: a new board, starts at A_PROGRAM
+    MAC = "mac"  # read over the serial port
+    QR = "qr"  # QR code scanned by the camera
+    MANUAL = "manual"  # ID typed twice (camera.allow_manual_entry)
+
+
+class RunOutcome(StrEnum):
+    """How an operation run ended (``operation_runs.outcome``)."""
+
+    PASSED = "passed"
+    REJECTED = "rejected"
+    RELEASED = "released"  # Finish later, logout or crash: the board waits for this step again
+    ABANDONED = "abandoned"  # an admin wrote the board off
+
+
+class BenchNeed(StrEnum):
+    """Equipment a bench must have to perform an operation."""
+
+    SERIAL = "serial"
+    SERVER = "server"
+    MEASUREMENT = "measurement"
+    CAMERA = "camera"
+
+
 class IdentityStatus(StrEnum):
     """Result of comparing the QR ID with the ID stored in the device."""
 

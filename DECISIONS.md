@@ -34,6 +34,17 @@ Relative to the interface list in the build prompt:
   `REPORT_FAILED`, `AUTH_*`, `PERMISSION_DENIED`, `INVALID_STATE`, `INVALID_INPUT`,
   `NOT_FOUND`, `ALREADY_RUNNING`, `UNEXPECTED`.
 
+**Multi-worker line, phase 1** (`docs/MULTI_WORKER_PLAN.md`) - added so far
+* `OpCode` (`A_PROGRAM`, `B_TEST`, `C_CODE`, `C_CASING`, `C_BRANDING`, `D_PACK`; line order
+  `LINE_ORDER`), `IdentifyBy`, `RunOutcome`, `BenchNeed` in `core/enums.py`.
+* Operation catalogue `workflow/operations.py`: the checks each step records, how a board is
+  identified when picked up, what the bench needs.
+* Migration `0004_operations`: `operation_runs` (one open run per board and one per session,
+  closed once, never deleted), `devices.next_op` (default `A_PROGRAM`, NULL once finished),
+  `check_results.run_id`, `stage_transitions.run_id`; index `ux_devices_one_active` dropped.
+* Not yet: the `WorkflowService` methods (`choose_steps`, `pick_up`, `finish_later`, ...) and
+  the records API. Until then the engine still runs one board per session as before.
+
 **Database - extra columns** (beyond the prompt's table list)
 * `devices.reject_reason_key`, `devices.reject_reason_params` - the reason is stored as an
   i18n key + parameters so reports can render it in either language; `reject_reason` keeps
@@ -62,7 +73,7 @@ Relative to the interface list in the build prompt:
 | D4 | WAL + `synchronous=NORMAL` | survives app crashes; a power cut can lose at most the last transaction |
 | D5 | Migration runner backs up the DB (`backups/`) before upgrading an existing schema; refuses a DB newer than the app | safe upgrades in the field |
 | D6 | `Stage` values are names (`programming`…), with `.letter` A–D for boxes and reports; terminal `complete` / `rejected` | readable in SQL and logs |
-| D7 | One device in progress per session, enforced in code **and** by a unique partial index | matches "one device at a time" |
+| D7 | One device in progress per session, enforced in code **and** by a unique partial index. **0004 drops that index**: a session may leave boards waiting for later steps; one board *on the bench* per session is enforced by `ux_runs_open_session` | matches "one device at a time"; multi-worker line |
 | D8 | MAC addresses normalised to `AA:BB:CC:DD:EE:FF` | consistent search and reports |
 | D9 | Counter **reset** (admin only) restarts the *live* counters; the session summary and reports always cover the whole session | history stays auditable |
 | D10 | "Reduce failure count by 1": only after a failure *followed by* a success on the same device, once per device (unique index + check), audited | prompt rule |
@@ -86,6 +97,8 @@ Relative to the interface list in the build prompt:
 | W10 | Communication test and measurement can be made retriable (`workflow.retriable_checks` + `workflow.max_attempts`); a retried measurement re-checks all four values and, when attempts run out, rejects on the **first** failing value | default stays "only programming retries" (W1); first failure = the reason printed on the box |
 | W11 | A new valid QR scan in Labeling clears an earlier identity result: the ID must be reconciled again for the sticker now on the bench | a match for an old sticker must never complete a board with a different label |
 | W12 | Real-bench tests live in `tests/hil/`, are skipped unless `PARKOMATE_HIL=1`, use a golden board and a scratch database; flashing only with `PARKOMATE_HIL_FULL=1` | a plain `pytest` never touches hardware or the station data |
+| W13 | Stages are split into operations; labeling into `C_CODE` (QR read, ID write / read-back, C4 QR sticker), `C_CASING` (C1, C2) and `C_BRANDING` (C3) **(client)** | one worker can do one step for many boards, or stop and finish later |
+| W14 | Boards in progress when 0004 is applied restart at the first operation of their last stage | the old engine kept a board's progress in memory only |
 
 ## E-mail, reports, logs, secrets
 
@@ -168,3 +181,5 @@ Relative to the interface list in the build prompt:
 12. **Marathi texts**: native-speaker review (`src/parkomate/i18n/REVIEW.md`).
 13. Retention period for sent e-mail files (90 days) and whether the database needs a
     scheduled backup / export to a server.
+14. **Multi-worker line**: labeling split, one PC or several, QR camera vs. hand scanner and
+    the other questions in `docs/MULTI_WORKER_PLAN.md`, section 12.

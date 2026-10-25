@@ -101,8 +101,8 @@ def test_device_repo(repos: Repositories, clock: FakeClock) -> None:
     device = repos.devices.create(session.id, "AA:BB:CC:DD:EE:01", "2.0")
     assert device.status is DeviceStatus.IN_PROGRESS and device.firmware_version == "2.0"
     assert repos.devices.active_for_session(session.id) == device
-    with pytest.raises(DatabaseError):  # one in-progress device per session (unique index)
-        repos.devices.create(session.id, "AA:BB:CC:DD:EE:02")
+    # Since 0004 the table allows several boards in progress per session (boards waiting for a
+    # later step, test_migration_operations); ProductionRecords still enforces one for now.
     repos.devices.set_device_id(device.id, "PKM-000001", IdEntryMethod.CAMERA)
     repos.devices.set_firmware_version(device.id, "2.1")
     repos.devices.increment_programming_attempts(device.id)

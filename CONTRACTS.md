@@ -11,7 +11,7 @@ replace the stand-ins without touching UI or data code.
 | Yugant | records API, reports, mail, auth, settings, logs, i18n, UI | everything else | - |
 
 Shared types live in `src/parkomate/core/`: `models.py` (pydantic, frozen), `enums.py`
-(`Stage`, `CheckCode`, ...), `errors.py` (`ParkomateError` + `ErrorCode`), `events.py`
+(`Stage`, `CheckCode`, `OpCode`, ...), `errors.py` (`ParkomateError` + `ErrorCode`), `events.py`
 (`EventBus` + event classes).
 
 > Changes against the list in the build prompt are recorded at the top of `DECISIONS.md`.
