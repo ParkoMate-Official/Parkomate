@@ -1,0 +1,1072 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Parkomate Station 2.0 - Multi-User Workflow & System Architecture</title>
+    <style>
+        :root {
+            --brand-dark: #1b260f;
+            --brand-primary: #4C6B1D;
+            --brand-primary-light: #5A7928;
+            --brand-primary-hover: #3F5917;
+            --brand-sage-bg: #DEE7D4;
+            --brand-sage-container: #E6ECE0;
+            --brand-surface: #FFFFFF;
+            --brand-surface-2: #EFF2EA;
+            --brand-surface-3: #E4E8DE;
+            --brand-outline: #CCD4C4;
+            --brand-outline-soft: #D8E0D0;
+            --brand-text: #181C13;
+            --brand-text-secondary: #4A5241;
+            --brand-text-muted: #66725B;
+            --status-success: #1E8E4E;
+            --status-success-cont: #E3F4EA;
+            --status-warning: #B26A00;
+            --status-warning-cont: #FFF2DA;
+            --status-danger: #C62828;
+            --status-danger-cont: #FCE8E8;
+            --status-info: #286A7B;
+            --status-info-cont: #E2F0F4;
+            --radius-sm: 8px;
+            --radius-md: 12px;
+            --radius-lg: 16px;
+            --radius-xl: 24px;
+            --shadow-subtle: 0 4px 20px -2px rgba(24, 28, 19, 0.06);
+            --shadow-card: 0 8px 30px rgba(0, 0, 0, 0.05);
+            --shadow-floating: 0 16px 40px -4px rgba(24, 28, 19, 0.12);
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: var(--brand-sage-bg);
+            color: var(--brand-text);
+            line-height: 1.6;
+            -webkit-font-smoothing: antialiased;
+            padding-bottom: 60px;
+        }
+
+        /* Header Bar */
+        header.top-nav {
+            background-color: var(--brand-dark);
+            color: #FFFFFF;
+            padding: 16px 36px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            box-shadow: 0 2px 12px rgba(0,0,0,0.15);
+            position: sticky;
+            top: 0;
+            z-index: 1000;
+        }
+
+        .brand-container {
+            display: flex;
+            align-items: center;
+            gap: 14px;
+        }
+
+        .brand-logo {
+            width: 36px;
+            height: 36px;
+            background: var(--brand-primary-light);
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 800;
+            font-size: 20px;
+            color: #FFFFFF;
+            border: 2px solid rgba(255,255,255,0.2);
+        }
+
+        .brand-title {
+            font-size: 19px;
+            font-weight: 700;
+            letter-spacing: -0.3px;
+        }
+
+        .brand-subtitle {
+            font-size: 12px;
+            color: var(--brand-sage-container);
+            opacity: 0.85;
+            text-transform: uppercase;
+            letter-spacing: 0.8px;
+        }
+
+        .version-tag {
+            background: rgba(255,255,255,0.12);
+            padding: 5px 12px;
+            border-radius: 999px;
+            font-size: 12px;
+            font-weight: 600;
+            color: #E6ECE0;
+            border: 1px solid rgba(255,255,255,0.18);
+        }
+
+        /* Container */
+        .page-wrapper {
+            max-width: 1400px;
+            margin: 32px auto;
+            padding: 0 28px;
+        }
+
+        /* Hero Banner */
+        .hero-banner {
+            background: linear-gradient(135deg, #243214 0%, #3d5220 50%, #5E7930 100%);
+            border-radius: var(--radius-xl);
+            color: #FFFFFF;
+            padding: 44px 48px;
+            margin-bottom: 28px;
+            box-shadow: var(--shadow-floating);
+            position: relative;
+            overflow: hidden;
+            border: 1px solid rgba(255,255,255,0.1);
+        }
+
+        .hero-banner::after {
+            content: '';
+            position: absolute;
+            top: -40%;
+            right: -10%;
+            width: 460px;
+            height: 460px;
+            background: radial-gradient(circle, rgba(197, 212, 154, 0.22) 0%, transparent 70%);
+            pointer-events: none;
+        }
+
+        .hero-tag {
+            display: inline-block;
+            background: rgba(197, 212, 154, 0.2);
+            color: #C5D49A;
+            padding: 4px 14px;
+            border-radius: 999px;
+            font-size: 12px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.8px;
+            margin-bottom: 14px;
+            border: 1px solid rgba(197, 212, 154, 0.35);
+        }
+
+        .hero-title {
+            font-size: 34px;
+            font-weight: 800;
+            line-height: 1.25;
+            margin-bottom: 12px;
+            letter-spacing: -0.5px;
+        }
+
+        .hero-lead {
+            font-size: 16px;
+            color: #E6ECE0;
+            max-width: 880px;
+            line-height: 1.6;
+        }
+
+        /* Navigation Tabs */
+        .tabs-header {
+            display: flex;
+            gap: 10px;
+            background: var(--brand-surface-2);
+            padding: 6px;
+            border-radius: var(--radius-md);
+            margin-bottom: 28px;
+            border: 1px solid var(--brand-outline);
+            overflow-x: auto;
+        }
+
+        .tab-btn {
+            background: transparent;
+            border: none;
+            padding: 10px 22px;
+            font-size: 14px;
+            font-weight: 600;
+            color: var(--brand-text-secondary);
+            border-radius: var(--radius-sm);
+            cursor: pointer;
+            transition: all 0.2s ease;
+            white-space: nowrap;
+        }
+
+        .tab-btn:hover {
+            color: var(--brand-text);
+            background: rgba(255, 255, 255, 0.5);
+        }
+
+        .tab-btn.active {
+            background: var(--brand-surface);
+            color: var(--brand-primary);
+            box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+        }
+
+        /* Tab Content */
+        .tab-content {
+            display: none;
+            animation: fadeIn 0.25s ease-in-out;
+        }
+
+        .tab-content.active {
+            display: block;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(6px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        /* Cards & Grid */
+        .card {
+            background: var(--brand-surface);
+            border-radius: var(--radius-lg);
+            border: 1px solid var(--brand-outline);
+            padding: 30px;
+            margin-bottom: 24px;
+            box-shadow: var(--shadow-card);
+        }
+
+        .card-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 20px;
+            padding-bottom: 14px;
+            border-bottom: 1px solid var(--brand-outline-soft);
+        }
+
+        .card-title {
+            font-size: 20px;
+            font-weight: 700;
+            color: var(--brand-text);
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .grid-2 {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 24px;
+        }
+
+        .grid-4 {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 20px;
+        }
+
+        @media (max-width: 1024px) {
+            .grid-2, .grid-4 {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        /* Stage Tiles */
+        .stage-card {
+            background: var(--brand-surface);
+            border: 1px solid var(--brand-outline);
+            border-radius: var(--radius-md);
+            padding: 22px;
+            position: relative;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+
+        .stage-card:hover {
+            transform: translateY(-2px);
+            box-shadow: var(--shadow-subtle);
+        }
+
+        .stage-badge {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 32px;
+            height: 32px;
+            border-radius: 8px;
+            font-weight: 700;
+            font-size: 15px;
+            color: #FFFFFF;
+            background: var(--brand-primary);
+            margin-bottom: 12px;
+        }
+
+        .stage-title {
+            font-size: 17px;
+            font-weight: 700;
+            margin-bottom: 6px;
+            color: var(--brand-text);
+        }
+
+        .stage-desc {
+            font-size: 13px;
+            color: var(--brand-text-secondary);
+            line-height: 1.5;
+        }
+
+        .stage-meta {
+            margin-top: 14px;
+            padding-top: 10px;
+            border-top: 1px solid var(--brand-outline-soft);
+            font-size: 12px;
+            color: var(--brand-text-muted);
+            font-family: monospace;
+        }
+
+        /* Callout Box */
+        .callout {
+            padding: 18px 22px;
+            border-radius: var(--radius-md);
+            margin: 18px 0;
+            display: flex;
+            gap: 14px;
+            align-items: flex-start;
+        }
+
+        .callout-info {
+            background: var(--status-info-cont);
+            border-left: 4px solid var(--status-info);
+            color: #17424e;
+        }
+
+        .callout-success {
+            background: var(--status-success-cont);
+            border-left: 4px solid var(--status-success);
+            color: #11572f;
+        }
+
+        .callout-warning {
+            background: var(--status-warning-cont);
+            border-left: 4px solid var(--status-warning);
+            color: #633a00;
+        }
+
+        /* Tables */
+        .spec-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 14px;
+            margin: 16px 0;
+            background: var(--brand-surface);
+            border-radius: var(--radius-sm);
+            overflow: hidden;
+        }
+
+        .spec-table th {
+            background: var(--brand-surface-2);
+            color: var(--brand-text);
+            text-align: left;
+            padding: 12px 16px;
+            font-weight: 600;
+            border-bottom: 1px solid var(--brand-outline);
+        }
+
+        .spec-table td {
+            padding: 12px 16px;
+            border-bottom: 1px solid var(--brand-outline-soft);
+            color: var(--brand-text);
+        }
+
+        .spec-table tr:hover td {
+            background: #fafbfa;
+        }
+
+        .badge-pill {
+            display: inline-block;
+            padding: 3px 10px;
+            border-radius: 999px;
+            font-size: 12px;
+            font-weight: 600;
+        }
+
+        .badge-success { background: var(--status-success-cont); color: var(--status-success); }
+        .badge-warning { background: var(--status-warning-cont); color: var(--status-warning); }
+        .badge-info { background: var(--status-info-cont); color: var(--status-info); }
+        .badge-neutral { background: var(--brand-surface-2); color: var(--brand-text-secondary); }
+
+        /* Code Blocks */
+        pre {
+            background: #181c13;
+            color: #f7f8f5;
+            padding: 18px;
+            border-radius: var(--radius-md);
+            overflow-x: auto;
+            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+            font-size: 13px;
+            line-height: 1.5;
+            margin: 14px 0;
+            border: 1px solid rgba(255,255,255,0.08);
+        }
+
+        code {
+            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+            background: var(--brand-surface-2);
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-size: 12.5px;
+            color: var(--brand-primary);
+        }
+
+        pre code {
+            background: transparent;
+            color: inherit;
+            padding: 0;
+        }
+
+        /* SVG Diagram Containers */
+        .diagram-container {
+            background: var(--brand-surface-2);
+            border: 1px solid var(--brand-outline);
+            border-radius: var(--radius-md);
+            padding: 24px;
+            margin: 20px 0;
+            text-align: center;
+            overflow-x: auto;
+        }
+
+        .diagram-svg {
+            max-width: 100%;
+            height: auto;
+        }
+
+        /* Steps Timeline */
+        .step-timeline {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+            margin: 24px 0;
+            position: relative;
+        }
+
+        .step-item {
+            display: flex;
+            gap: 20px;
+            position: relative;
+        }
+
+        .step-marker {
+            flex-shrink: 0;
+            width: 38px;
+            height: 38px;
+            border-radius: 50%;
+            background: var(--brand-primary);
+            color: #FFFFFF;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 700;
+            font-size: 15px;
+            box-shadow: 0 0 0 5px var(--brand-surface-2);
+            z-index: 2;
+        }
+
+        .step-content {
+            background: var(--brand-surface);
+            border: 1px solid var(--brand-outline);
+            border-radius: var(--radius-md);
+            padding: 18px 22px;
+            flex-grow: 1;
+        }
+
+        .step-header {
+            font-size: 16px;
+            font-weight: 700;
+            margin-bottom: 6px;
+            color: var(--brand-text);
+        }
+
+        .step-body {
+            font-size: 14px;
+            color: var(--brand-text-secondary);
+            line-height: 1.5;
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Header Navigation -->
+    <header class="top-nav">
+        <div class="brand-container">
+            <div class="brand-logo">P</div>
+            <div>
+                <div class="brand-title">Parkomate Station 2.0</div>
+                <div class="brand-subtitle">Multi-User Task Assignment &amp; Work Queue Architecture</div>
+            </div>
+        </div>
+        <div class="version-tag">Production Release · v2.0</div>
+    </header>
+
+    <div class="page-wrapper">
+
+        <!-- Hero Section -->
+        <section class="hero-banner">
+            <span class="hero-tag">System Architecture &amp; Workflow Specification</span>
+            <h1 class="hero-title">Multi-User Factory Floor Task Flow</h1>
+            <p class="hero-lead">
+                An industrial-grade, decoupled task coordination system allowing factory administrators to assign operators any combination of the four production phases—Programming, Testing, Labeling, and Packaging. Powered by an asynchronous SQLite-backed Work Queue, instant board handoffs, state rehydration, and zero bottlenecking across single or networked stations.
+            </p>
+        </section>
+
+        <!-- Navigation Tabs -->
+        <nav class="tabs-header">
+            <button class="tab-btn active" onclick="switchTab('overview')">1. System Overview</button>
+            <button class="tab-btn" onclick="switchTab('architecture')">2. High-Level Architecture</button>
+            <button class="tab-btn" onclick="switchTab('workflow')">3. 4-Stage Task Flow &amp; Handoff</button>
+            <button class="tab-btn" onclick="switchTab('topology')">4. Multi-PC Station Topology</button>
+            <button class="tab-btn" onclick="switchTab('schema')">5. Database Schema &amp; State</button>
+            <button class="tab-btn" onclick="switchTab('edgecases')">6. Recovery &amp; Edge Cases</button>
+        </nav>
+
+        <!-- TAB 1: OVERVIEW -->
+        <div id="overview" class="tab-content active">
+            <div class="card">
+                <div class="card-header">
+                    <h2 class="card-title">Production Problem &amp; Solution Model</h2>
+                    <span class="badge-pill badge-success">Fully Implemented</span>
+                </div>
+                <p style="font-size: 15px; margin-bottom: 20px;">
+                    In previous generation bench setups, a single technician was required to flash the board, measure ambient temperature and voltages, scan QR labels, and box the finished device consecutively on one PC. If a hardware flasher lagged or a thermal probe required stabilization, the entire production pipeline stalled.
+                </p>
+
+                <div class="grid-2">
+                    <div style="background: var(--brand-surface-2); padding: 22px; border-radius: var(--radius-md); border: 1px solid var(--brand-outline);">
+                        <h3 style="font-size: 16px; font-weight: 700; margin-bottom: 10px; color: var(--status-danger);">❌ Legacy Bottlenecks</h3>
+                        <ul style="padding-left: 20px; font-size: 14px; color: var(--brand-text-secondary); line-height: 1.8;">
+                            <li>Single operator tied to all 4 stages consecutively.</li>
+                            <li>No task specialization (one person doing hardware flashing, electrical testing, and packaging).</li>
+                            <li>Idle factory PCs unable to pick up already-flashed boards.</li>
+                            <li>If Station 1 rebooted or logged out, board state was abandoned.</li>
+                        </ul>
+                    </div>
+
+                    <div style="background: var(--brand-surface-2); padding: 22px; border-radius: var(--radius-md); border: 1px solid var(--brand-outline);">
+                        <h3 style="font-size: 16px; font-weight: 700; margin-bottom: 10px; color: var(--brand-primary);">✅ Parkomate 2.0 Multi-User Flow</h3>
+                        <ul style="padding-left: 20px; font-size: 14px; color: var(--brand-text-secondary); line-height: 1.8;">
+                            <li><strong>Flexible Task Granularity:</strong> Admin can assign 1, 2, 3, or all 4 tasks per operator.</li>
+                            <li><strong>Asynchronous Work Queue:</strong> Automatic handoff to SQLite <code>work_queue</code> when next stage is unassigned.</li>
+                            <li><strong>AppBar Queue Popup:</strong> Downstream operators see waiting boards with one-click "Pick Up".</li>
+                            <li><strong>Deep State Rehydration:</strong> All previous check outcomes, telemetry readings, and MAC/QR data seamlessly restore.</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+
+            <!-- The 4 Stages -->
+            <div class="card">
+                <div class="card-header">
+                    <h2 class="card-title">The Four Core Production Stages</h2>
+                </div>
+                <div class="grid-4">
+                    <div class="stage-card">
+                        <div class="stage-badge">A</div>
+                        <h3 class="stage-title">Programming</h3>
+                        <p class="stage-desc">ESP32 USB/UART bridge detection, bootloader handshake, firmware flashing, and SHA-256 verification.</p>
+                        <div class="stage-meta">ID: <code>PROGRAMMING</code></div>
+                    </div>
+                    <div class="stage-card">
+                        <div class="stage-badge">B</div>
+                        <h3 class="stage-title">Testing</h3>
+                        <p class="stage-desc">Continuous sensor readings, Wi-Fi RSSI sweep, and Point A/B/C high-precision voltage limit validation.</p>
+                        <div class="stage-meta">ID: <code>TESTING</code></div>
+                    </div>
+                    <div class="stage-card">
+                        <div class="stage-badge">C</div>
+                        <h3 class="stage-title">Labeling</h3>
+                        <p class="stage-desc">High-speed live camera QR scanner, MAC-to-DeviceID reconciliation, and identity pairing confirmation.</p>
+                        <div class="stage-meta">ID: <code>LABELING</code></div>
+                    </div>
+                    <div class="stage-card">
+                        <div class="stage-badge">D</div>
+                        <h3 class="stage-title">Packaging</h3>
+                        <p class="stage-desc">Boxing checklist (cables, harness, enclosure integrity) and cryptographic sealing of the unit record.</p>
+                        <div class="stage-meta">ID: <code>PACKAGING</code></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Admin Assignment Matrix -->
+            <div class="card">
+                <div class="card-header">
+                    <h2 class="card-title">Administrator Stage Assignment Possibilities</h2>
+                </div>
+                <p style="font-size: 14px; color: var(--brand-text-secondary); margin-bottom: 16px;">
+                    The system architecture accommodates all factory floor operational models. An administrator can configure any operator with custom permissions directly from the <strong>Admin &gt; Operators</strong> tab:
+                </p>
+                <table class="spec-table">
+                    <thead>
+                        <tr>
+                            <th>Configuration Model</th>
+                            <th>Assigned Stages</th>
+                            <th>Factory Floor Scenario</th>
+                            <th>Handoff Behavior</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><strong>Single-Stage Specialist</strong></td>
+                            <td><span class="badge-pill badge-info">A only</span></td>
+                            <td>Dedicated High-Speed Flashing Bench</td>
+                            <td>Auto-enqueues board to <code>work_queue</code> for Stage B immediately upon flash completion.</td>
+                        </tr>
+                        <tr>
+                            <td><strong>Electrical QA Specialist</strong></td>
+                            <td><span class="badge-pill badge-info">B only</span></td>
+                            <td>Dedicated Oscilloscope &amp; Multimeter Bench</td>
+                            <td>Picks up flashed boards from Queue; auto-enqueues to Stage C after voltage checks pass.</td>
+                        </tr>
+                        <tr>
+                            <td><strong>Finishing &amp; Logistics</strong></td>
+                            <td><span class="badge-pill badge-info">C, D</span></td>
+                            <td>Packaging &amp; Labeling Station</td>
+                            <td>Picks up tested boards from Queue; runs Stage C then seamlessly transitions to Stage D locally.</td>
+                        </tr>
+                        <tr>
+                            <td><strong>Full-Pipeline Operator</strong></td>
+                            <td><span class="badge-pill badge-success">A, B, C, D (All)</span></td>
+                            <td>Standalone Single-Bench Facility</td>
+                            <td>Executes A &rarr; B &rarr; C &rarr; D locally with zero queue interruptions.</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- TAB 2: ARCHITECTURE -->
+        <div id="architecture" class="tab-content">
+            <div class="card">
+                <div class="card-header">
+                    <h2 class="card-title">High-Level System Architecture Diagram</h2>
+                    <span class="badge-pill badge-info">SVG Vector Blueprint</span>
+                </div>
+                <p style="font-size: 14px; color: var(--brand-text-secondary); margin-bottom: 20px;">
+                    The diagram below shows how the Presentation Layer (PySide6 / Qt), Controller / State Machine Layer, Core Engine, and Shared Data Layer interact during multi-user task delegation:
+                </p>
+
+                <div class="diagram-container">
+                    <svg class="diagram-svg" viewBox="0 0 1060 620" width="1060" height="620" xmlns="http://www.w3.org/2000/svg">
+                        <defs>
+                            <linearGradient id="grad-bar" x1="0%" y1="0%" x2="100%" y2="0%">
+                                <stop offset="0%" stop-color="#243214" />
+                                <stop offset="100%" stop-color="#4C6B1D" />
+                            </linearGradient>
+                            <linearGradient id="grad-card" x1="0%" y1="0%" x2="0%" y2="100%">
+                                <stop offset="0%" stop-color="#FFFFFF" />
+                                <stop offset="100%" stop-color="#F7F9F5" />
+                            </linearGradient>
+                            <filter id="shadow" x="-5%" y="-5%" width="110%" height="115%">
+                                <feDropShadow dx="0" dy="4" stdDeviation="6" flood-opacity="0.08" />
+                            </filter>
+                        </defs>
+
+                        <!-- Background Framing -->
+                        <rect x="10" y="10" width="1040" height="600" rx="16" fill="#F4F7F1" stroke="#CCD4C4" stroke-width="1.5" />
+
+                        <!-- UI LAYER -->
+                        <rect x="35" y="35" width="990" height="150" rx="12" fill="url(#grad-card)" stroke="#CCD4C4" stroke-width="1" filter="url(#shadow)" />
+                        <rect x="35" y="35" width="990" height="36" rx="12" fill="url(#grad-bar)" />
+                        <text x="50" y="58" font-size="14" font-weight="700" fill="#FFFFFF">1. PRESENTATION LAYER (PySide6 / Qt UI Shell &amp; Views)</text>
+
+                        <!-- UI Nodes -->
+                        <rect x="55" y="85" width="220" height="80" rx="8" fill="#FFFFFF" stroke="#CCD4C4" />
+                        <text x="70" y="112" font-size="13" font-weight="700" fill="#181C13">ProductionShell</text>
+                        <text x="70" y="132" font-size="11" fill="#4A5241">• 4-Stage Stepper Header</text>
+                        <text x="70" y="148" font-size="11" fill="#4A5241">• Action Bar &amp; Status Line</text>
+
+                        <rect x="295" y="85" width="220" height="80" rx="8" fill="#FFFFFF" stroke="#4C6B1D" stroke-width="1.5" />
+                        <text x="310" y="112" font-size="13" font-weight="700" fill="#4C6B1D">WorkQueuePopup</text>
+                        <text x="310" y="132" font-size="11" fill="#4A5241">• Real-time Inbox Badge</text>
+                        <text x="310" y="148" font-size="11" fill="#4A5241">• One-Click "Pick Up" Action</text>
+
+                        <rect x="535" y="85" width="220" height="80" rx="8" fill="#FFFFFF" stroke="#CCD4C4" />
+                        <text x="550" y="112" font-size="13" font-weight="700" fill="#181C13">Stage Views (A, B, C, D)</text>
+                        <text x="550" y="132" font-size="11" fill="#4A5241">• ProgrammingView (ESP32)</text>
+                        <text x="550" y="148" font-size="11" fill="#4A5241">• TestingView (Live Readings)</text>
+
+                        <rect x="775" y="85" width="230" height="80" rx="8" fill="#FFFFFF" stroke="#CCD4C4" />
+                        <text x="790" y="112" font-size="13" font-weight="700" fill="#181C13">Admin Operator Mgmt</text>
+                        <text x="790" y="132" font-size="11" fill="#4A5241">• Stage Checkboxes (A,B,C,D)</text>
+                        <text x="790" y="148" font-size="11" fill="#4A5241">• Effective Stages Resolution</text>
+
+                        <!-- CONTROLLER & ENGINE LAYER -->
+                        <rect x="35" y="215" width="990" height="175" rx="12" fill="url(#grad-card)" stroke="#CCD4C4" stroke-width="1" filter="url(#shadow)" />
+                        <rect x="35" y="215" width="990" height="36" rx="12" fill="url(#grad-bar)" />
+                        <text x="50" y="238" font-size="14" font-weight="700" fill="#FFFFFF">2. ORCHESTRATION &amp; WORKFLOW ENGINE LAYER</text>
+
+                        <!-- Controller Nodes -->
+                        <rect x="55" y="265" width="280" height="105" rx="8" fill="#FFFFFF" stroke="#CCD4C4" />
+                        <text x="70" y="290" font-size="13" font-weight="700" fill="#181C13">StationController</text>
+                        <text x="70" y="310" font-size="11" fill="#4A5241">• <code>advance()</code>: Submit &amp; Next Stage</text>
+                        <text x="70" y="328" font-size="11" fill="#4A5241">• Permission Gate: <code>new in op.effective_stages</code></text>
+                        <text x="70" y="346" font-size="11" fill="#4A5241">• <code>pick_queue_item(id)</code>: Resume &amp; Switch</text>
+
+                        <rect x="355" y="265" width="310" height="105" rx="8" fill="#FFFFFF" stroke="#4C6B1D" stroke-width="1.5" />
+                        <text x="370" y="290" font-size="13" font-weight="700" fill="#4C6B1D">WorkflowEngine</text>
+                        <text x="370" y="310" font-size="11" fill="#4A5241">• State Machine: PENDING &rarr; PASS / FAIL</text>
+                        <text x="370" y="328" font-size="11" fill="#4A5241">• <code>resume_device(row_id, target_stage)</code></text>
+                        <text x="370" y="346" font-size="11" fill="#4A5241">• Event Bus: <code>DeviceStarted</code>, <code>StageChanged</code></text>
+
+                        <rect x="685" y="265" width="320" height="105" rx="8" fill="#FFFFFF" stroke="#CCD4C4" />
+                        <text x="700" y="290" font-size="13" font-weight="700" fill="#181C13">Hardware &amp; Recovery Service</text>
+                        <text x="700" y="310" font-size="11" fill="#4A5241">• <code>_release_board()</code> on stage handoff</text>
+                        <text x="700" y="328" font-size="11" fill="#4A5241">• Closes COM serial port &amp; camera preview</text>
+                        <text x="700" y="346" font-size="11" fill="#4A5241">• RecoveryManager handles crash resumption</text>
+
+                        <!-- DATA LAYER -->
+                        <rect x="35" y="420" width="990" height="170" rx="12" fill="url(#grad-card)" stroke="#CCD4C4" stroke-width="1" filter="url(#shadow)" />
+                        <rect x="35" y="420" width="990" height="36" rx="12" fill="url(#grad-bar)" />
+                        <text x="50" y="443" font-size="14" font-weight="700" fill="#FFFFFF">3. PERSISTENCE &amp; COORDINATION LAYER (SQLite Database / WAL Mode)</text>
+
+                        <!-- Data Nodes -->
+                        <rect x="55" y="470" width="220" height="100" rx="8" fill="#FFFFFF" stroke="#4C6B1D" stroke-width="2" />
+                        <text x="70" y="495" font-size="13" font-weight="700" fill="#4C6B1D">work_queue Table</text>
+                        <text x="70" y="515" font-size="11" fill="#4A5241">• <code>device_row_id</code> (Foreign Key)</text>
+                        <text x="70" y="531" font-size="11" fill="#4A5241">• <code>current_stage</code>, <code>status</code></text>
+                        <text x="70" y="547" font-size="11" fill="#4A5241">• <code>source_session_id</code> &amp; target</text>
+
+                        <rect x="295" y="470" width="220" height="100" rx="8" fill="#FFFFFF" stroke="#CCD4C4" />
+                        <text x="310" y="495" font-size="13" font-weight="700" fill="#181C13">devices &amp; checks</text>
+                        <text x="310" y="515" font-size="11" fill="#4A5241">• MAC address &amp; QR Device ID</text>
+                        <text x="310" y="531" font-size="11" fill="#4A5241">• Full historical check readings</text>
+                        <text x="310" y="547" font-size="11" fill="#4A5241">• Status: IN_PROGRESS / COMPLETE</text>
+
+                        <rect x="535" y="470" width="220" height="100" rx="8" fill="#FFFFFF" stroke="#CCD4C4" />
+                        <text x="550" y="495" font-size="13" font-weight="700" fill="#181C13">operators Table</text>
+                        <text x="550" y="515" font-size="11" fill="#4A5241">• <code>assigned_stages</code> (JSON list)</text>
+                        <text x="550" y="531" font-size="11" fill="#4A5241">• Role, Password Hash, Salt</text>
+                        <text x="550" y="547" font-size="11" fill="#4A5241">• Multi-User Task Authorization</text>
+
+                        <rect x="775" y="470" width="230" height="100" rx="8" fill="#FFFFFF" stroke="#CCD4C4" />
+                        <text x="790" y="495" font-size="13" font-weight="700" fill="#181C13">sessions &amp; audit</text>
+                        <text x="790" y="515" font-size="11" fill="#4A5241">• Shift timing &amp; operator ID</text>
+                        <text x="790" y="531" font-size="11" fill="#4A5241">• Pass/Fail Counters</text>
+                        <text x="790" y="547" font-size="11" fill="#4A5241">• Audit Trail &amp; Outbox Reports</text>
+
+                        <!-- Arrows -->
+                        <path d="M 405 165 L 405 215" stroke="#4C6B1D" stroke-width="2" marker-end="url(#arrow)" />
+                        <path d="M 195 370 L 165 470" stroke="#4C6B1D" stroke-width="2" />
+                        <path d="M 510 370 L 405 470" stroke="#4C6B1D" stroke-width="2" />
+                    </svg>
+                </div>
+            </div>
+        </div>
+
+        <!-- TAB 3: WORKFLOW STEP-BY-STEP -->
+        <div id="workflow" class="tab-content">
+            <div class="card">
+                <div class="card-header">
+                    <h2 class="card-title">Detailed Handoff Sequence Diagram</h2>
+                    <span class="badge-pill badge-success">Multi-Station Sequence</span>
+                </div>
+                <p style="font-size: 14px; color: var(--brand-text-secondary); margin-bottom: 20px;">
+                    Below is the sequential message flow showing how a board progresses from Operator 1 (Flashing), through the Work Queue, to Operator 2 (Testing), and finally to Operator 3 (Labeling &amp; Packaging):
+                </p>
+
+                <div class="diagram-container">
+                    <svg class="diagram-svg" viewBox="0 0 980 500" width="980" height="500" xmlns="http://www.w3.org/2000/svg">
+                        <!-- Actors -->
+                        <rect x="40" y="20" width="160" height="40" rx="6" fill="#243214" />
+                        <text x="120" y="45" font-size="13" font-weight="700" fill="#FFFFFF" text-anchor="middle">Operator 1 (Stage A)</text>
+                        <line x1="120" y1="60" x2="120" y2="460" stroke="#CCD4C4" stroke-width="2" stroke-dasharray="4" />
+
+                        <rect x="290" y="20" width="180" height="40" rx="6" fill="#4C6B1D" />
+                        <text x="380" y="45" font-size="13" font-weight="700" fill="#FFFFFF" text-anchor="middle">Station 1 Controller</text>
+                        <line x1="380" y1="60" x2="380" y2="460" stroke="#CCD4C4" stroke-width="2" stroke-dasharray="4" />
+
+                        <rect x="540" y="20" width="160" height="40" rx="6" fill="#181C13" />
+                        <text x="620" y="45" font-size="13" font-weight="700" fill="#FFFFFF" text-anchor="middle">work_queue Table</text>
+                        <line x1="620" y1="60" x2="620" y2="460" stroke="#CCD4C4" stroke-width="2" stroke-dasharray="4" />
+
+                        <rect x="760" y="20" width="180" height="40" rx="6" fill="#243214" />
+                        <text x="850" y="45" font-size="13" font-weight="700" fill="#FFFFFF" text-anchor="middle">Operator 2 (Stage B, C)</text>
+                        <line x1="850" y1="60" x2="850" y2="460" stroke="#CCD4C4" stroke-width="2" stroke-dasharray="4" />
+
+                        <!-- Flow Step 1 -->
+                        <line x1="120" y1="90" x2="380" y2="90" stroke="#4C6B1D" stroke-width="1.8" marker-end="url(#arrow)" />
+                        <text x="250" y="83" font-size="11.5" font-weight="600" fill="#181C13" text-anchor="middle">1. Flash Complete &rarr; advance()</text>
+
+                        <!-- Flow Step 2 -->
+                        <rect x="375" y="105" width="10" height="60" fill="#DEE7D4" stroke="#4C6B1D" />
+                        <text x="395" y="125" font-size="11" fill="#4A5241">Stage B not in Op 1 stages</text>
+                        <line x1="385" y1="145" x2="620" y2="145" stroke="#4C6B1D" stroke-width="1.8" />
+                        <text x="502" y="138" font-size="11.5" font-weight="600" fill="#4C6B1D" text-anchor="middle">2. enqueue(row_id, stage='testing')</text>
+
+                        <!-- Flow Step 3 -->
+                        <line x1="380" y1="175" x2="120" y2="175" stroke="#66725B" stroke-width="1.5" stroke-dasharray="3" />
+                        <text x="250" y="168" font-size="11" fill="#66725B" text-anchor="middle">Toast: "Handoff: board queued for next stage" &amp; release hardware</text>
+
+                        <!-- Flow Step 4 -->
+                        <line x1="620" y1="210" x2="850" y2="210" stroke="#286A7B" stroke-width="1.5" stroke-dasharray="3" />
+                        <text x="735" y="203" font-size="11.5" font-weight="600" fill="#286A7B" text-anchor="middle">3. Polling / tick updates queue badge (+1)</text>
+
+                        <!-- Flow Step 5 -->
+                        <line x1="850" y1="250" x2="620" y2="250" stroke="#4C6B1D" stroke-width="1.8" />
+                        <text x="735" y="243" font-size="11.5" font-weight="600" fill="#181C13" text-anchor="middle">4. Op 2 clicks "Pick Up" in AppBar Popup</text>
+
+                        <!-- Flow Step 6 -->
+                        <rect x="615" y="250" width="10" height="50" fill="#DEE7D4" stroke="#4C6B1D" />
+                        <text x="635" y="275" font-size="11" fill="#4A5241">Status: 'in_progress', picked_by = Op 2</text>
+
+                        <!-- Flow Step 7 -->
+                        <line x1="620" y1="310" x2="850" y2="310" stroke="#4C6B1D" stroke-width="1.8" />
+                        <text x="735" y="303" font-size="11.5" font-weight="600" fill="#4C6B1D" text-anchor="middle">5. workflow.resume_device(row_id, 'testing')</text>
+
+                        <!-- Flow Step 8 -->
+                        <rect x="845" y="310" width="10" height="70" fill="#DEE7D4" stroke="#4C6B1D" />
+                        <text x="750" y="340" font-size="11" fill="#4A5241">State rehydrated: previous check outcomes loaded</text>
+                        <text x="750" y="360" font-size="11" fill="#4A5241">Testing screen enters active live measurement</text>
+
+                        <!-- Flow Step 9 -->
+                        <line x1="850" y1="410" x2="620" y2="410" stroke="#1E8E4E" stroke-width="1.8" />
+                        <text x="735" y="403" font-size="11.5" font-weight="600" fill="#1E8E4E" text-anchor="middle">6. Complete Testing &rarr; Status = 'done'</text>
+                    </svg>
+                </div>
+            </div>
+
+            <!-- Step by Step Breakdown -->
+            <div class="card">
+                <div class="card-header">
+                    <h2 class="card-title">Step-by-Step Execution Lifecycle</h2>
+                </div>
+
+                <div class="step-timeline">
+                    <div class="step-item">
+                        <div class="step-marker">1</div>
+                        <div class="step-content">
+                            <h4 class="step-header">Stage Execution &amp; Check Validation</h4>
+                            <p class="step-body">
+                                The operator conducts their assigned stage (e.g. flashing firmware in Programming). Checks A1 through A4 complete with PASS criteria. The primary action button changes to "Submit and Next Stage" [Enter].
+                            </p>
+                        </div>
+                    </div>
+
+                    <div class="step-item">
+                        <div class="step-marker">2</div>
+                        <div class="step-content">
+                            <h4 class="step-header">Permission Gate &amp; Automatic Handoff</h4>
+                            <p class="step-body">
+                                When <code>StationController.advance()</code> is triggered, the engine calculates the next sequential stage (<code>Stage.TESTING</code>). It inspects <code>operator.effective_stages</code>:
+                            </p>
+                            <pre><code>if operator is not None and new not in operator.effective_stages:
+    self.ctx.repos.work_queue.enqueue(
+        device_row_id=state.device_row_id,
+        mac_address=state.mac_address,
+        device_id=state.device_id,
+        stage=new.value,
+        source_session_id=self.session.id,
+    )
+    self.toast.emit(t("queue.handoff"))
+    self._next_device()
+    return</code></pre>
+                        </div>
+                    </div>
+
+                    <div class="step-item">
+                        <div class="step-marker">3</div>
+                        <div class="step-content">
+                            <h4 class="step-header">Hardware Release &amp; Bench Reset</h4>
+                            <p class="step-body">
+                                Station 1 immediately executes <code>_release_board()</code>, closing serial COM handles and camera framegrabbers. The bench resets cleanly to the operator's first assigned stage, ready for the next incoming board with zero downtime.
+                            </p>
+                        </div>
+                    </div>
+
+                    <div class="step-item">
+                        <div class="step-marker">4</div>
+                        <div class="step-content">
+                            <h4 class="step-header">Downstream Inbox Discovery &amp; Queue Pickup</h4>
+                            <p class="step-body">
+                                Operator 2 (assigned to Testing) sees the inbox icon update in the top AppBar. Clicking it opens the <code>WorkQueuePopup</code> listing waiting boards. Clicking <strong>Pick Up</strong> invokes:
+                            </p>
+                            <pre><code>item = self.ctx.repos.work_queue.pick(queue_id, self.operator.id, self.session.id)
+self.ctx.workflow.resume_device(item.device_row_id, item.current_stage)</code></pre>
+                        </div>
+                    </div>
+
+                    <div class="step-item">
+                        <div class="step-marker">5</div>
+                        <div class="step-content">
+                            <h4 class="step-header">Full State Rehydration</h4>
+                            <p class="step-body">
+                                <code>WorkflowEngine.resume_device</code> queries the database for all historical checks, marks, voltage readings, and device IDs previously recorded. The Station UI instantly displays the device in Stage B with previous stages marked done in the Stepper.
+                            </p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- TAB 4: MULTI-PC TOPOLOGY -->
+        <div id="topology" class="tab-content">
+            <div class="card">
+                <div class="card-header">
+                    <h2 class="card-title">Network &amp; Multi-PC Deployment Topology</h2>
+                    <span class="badge-pill badge-info">Industrial LAN Setup</span>
+                </div>
+                <p style="font-size: 15px; color: var(--brand-text-secondary); margin-bottom: 20px;">
+                    Parkomate Station supports two deployment modes: <strong>Multi-PC Networked Assembly Line</strong> (ideal for higher volume production) and <strong>Single-PC Multi-Shift Station</strong>.
+                </p>
+
+                <div class="grid-2">
+                    <div style="background: var(--brand-surface-2); border: 1px solid var(--brand-outline); border-radius: var(--radius-md); padding: 24px;">
+                        <h3 style="font-size: 18px; font-weight: 700; color: var(--brand-primary); margin-bottom: 12px;">Mode 1: Networked Multi-PC Line</h3>
+                        <p style="font-size: 14px; color: var(--brand-text-secondary); margin-bottom: 14px;">
+                            Each physical PC on the factory line runs Parkomate Station connected to a shared SQLite database with Write-Ahead Logging (WAL) over SMB/NFS or local cluster storage:
+                        </p>
+                        <ul style="font-size: 13.5px; color: var(--brand-text); padding-left: 20px; line-height: 1.8;">
+                            <li><strong>PC 1 (Flashing Station):</strong> ESP32 programmer fixture. Operator 1 logs in (Assigned: A).</li>
+                            <li><strong>PC 2 (Testing Station):</strong> Oscilloscope &amp; DMM bench. Operator 2 logs in (Assigned: B).</li>
+                            <li><strong>PC 3 (Packing Station):</strong> Barcode scanner &amp; label printer. Operator 3 logs in (Assigned: C, D).</li>
+                            <li><strong>Coordination:</strong> SQLite atomic transactions ensure exact-once pickup with zero race conditions.</li>
+                        </ul>
+                    </div>
+
+                    <div style="background: var(--brand-surface-2); border: 1px solid var(--brand-outline); border-radius: var(--radius-md); padding: 24px;">
+                        <h3 style="font-size: 18px; font-weight: 700; color: var(--brand-primary); margin-bottom: 12px;">Mode 2: Single-PC Batch Processing</h3>
+                        <p style="font-size: 14px; color: var(--brand-text-secondary); margin-bottom: 14px;">
+                            Used when a single physical bench is utilized by different technicians during different shifts or batch runs:
+                        </p>
+                        <ul style="font-size: 13.5px; color: var(--brand-text); padding-left: 20px; line-height: 1.8;">
+                            <li><strong>Shift 1:</strong> Operator flashes a batch of 50 boards. All 50 boards enqueue into <code>work_queue</code>.</li>
+                            <li><strong>Shift 2:</strong> QA technician logs in. All 50 boards appear in the AppBar Queue.</li>
+                            <li><strong>Pickup:</strong> QA technician tests each board sequentially without needing to reflash or plug ESP32 programmer.</li>
+                            <li><strong>Total History Preserved:</strong> Flasher's operator code and tester's operator code both recorded on final certificate.</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- TAB 5: SCHEMA & STATE -->
+        <div id="schema" class="tab-content">
+            <div class="card">
+                <div class="card-header">
+                    <h2 class="card-title">Database Schema: work_queue Table</h2>
+                    <span class="badge-pill badge-neutral">Migration 0004</span>
+                </div>
+                <p style="font-size: 14px; color: var(--brand-text-secondary); margin-bottom: 14px;">
+                    Defined in <code>src/parkomate/data/migrations/0004_task_assignments.sql</code>. Designed with strict referential integrity, indexes for high-speed queue polling, and stage check constraints:
+                </p>
+
+                <pre><code>CREATE TABLE work_queue (
+    id                INTEGER PRIMARY KEY,
+    device_row_id     INTEGER NOT NULL REFERENCES devices(id),
+    mac_address       TEXT    NOT NULL,
+    device_id         TEXT,
+    current_stage     TEXT    NOT NULL CHECK (current_stage IN ('programming', 'testing', 'labeling', 'packaging')),
+    ready_at          TEXT    NOT NULL,
+    picked_by         INTEGER REFERENCES operators(id),
+    picked_at         TEXT,
+    completed_at      TEXT,
+    source_session_id INTEGER REFERENCES sessions(id),
+    target_session_id INTEGER REFERENCES sessions(id),
+    status            TEXT    NOT NULL DEFAULT 'waiting'
+                      CHECK (status IN ('waiting', 'in_progress', 'done', 'cancelled'))
+);
+
+CREATE INDEX ix_work_queue_stage  ON work_queue (current_stage, status);
+CREATE INDEX ix_work_queue_device ON work_queue (device_row_id);
+CREATE INDEX ix_work_queue_picked ON work_queue (picked_by) WHERE status = 'in_progress';</code></pre>
+
+                <h3 style="font-size: 16px; font-weight: 700; margin: 20px 0 10px 0;">Work Queue State Machine</h3>
+                <table class="spec-table">
+                    <thead>
+                        <tr>
+                            <th>Status Code</th>
+                            <th>Meaning</th>
+                            <th>Triggering Event</th>
+                            <th>Next Available Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><span class="badge-pill badge-warning">waiting</span></td>
+                            <td>Board enqueued and ready for pickup</td>
+                            <td><code>StationController.advance()</code> when next stage is unassigned</td>
+                            <td>Visible in AppBar Queue popup to authorized operators; "Pick Up" button enabled.</td>
+                        </tr>
+                        <tr>
+                            <td><span class="badge-pill badge-info">in_progress</span></td>
+                            <td>Claimed and actively under test on bench</td>
+                            <td><code>WorkQueueRepo.pick(queue_id, op_id, session_id)</code></td>
+                            <td>Can transition to <code>done</code> on stage completion or <code>cancelled</code> if rejected.</td>
+                        </tr>
+                        <tr>
+                            <td><span class="badge-pill badge-success">done</span></td>
+                            <td>Stage successfully finished by picking operator</td>
+                            <td><code>WorkQueueRepo.complete(queue_id)</code></td>
+                            <td>Terminal state for this queue item; board advances to next stage or finishes packaging.</td>
+                        </tr>
+                        <tr>
+                            <td><span class="badge-pill badge-danger">cancelled</span></td>
+                            <td>Device was rejected or abandoned during testing</td>
+                            <td><code>WorkQueueRepo.cancel(queue_id)</code></td>
+                            <td>Device placed in red Reject Box (A, B, C, or D). Terminal state.</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- TAB 6: EDGE CASES & RECOVERY -->
+        <div id="edgecases" class="tab-content">
+            <div class="card">
+                <div class="card-header">
+                    <h2 class="card-title">Fail-Safe Mechanics &amp; Edge Case Protection</h2>
+                    <span class="badge-pill badge-success">Zero Production Loss</span>
+                </div>
+
+                <div class="grid-2">
+                    <div style="background: var(--brand-surface-2); border: 1px solid var(--brand-outline); border-radius: var(--radius-md); padding: 22px;">
+                        <h3 style="font-size: 16px; font-weight: 700; margin-bottom: 10px; color: var(--brand-text);">1. Rejection Takeover Isolation</h3>
+                        <p style="font-size: 13.5px; color: var(--brand-text-secondary); line-height: 1.6;">
+                            If a board fails electrical testing at Stage B, the <strong>Reject Takeover Overlay</strong> engages immediately with the exact physical reject box letter (<code>Box B</code>). The item in <code>work_queue</code> is cancelled, ensuring broken hardware can never be picked up by packaging operators.
+                        </p>
+                    </div>
+
+                    <div style="background: var(--brand-surface-2); border: 1px solid var(--brand-outline); border-radius: var(--radius-md); padding: 22px;">
+                        <h3 style="font-size: 16px; font-weight: 700; margin-bottom: 10px; color: var(--brand-text);">2. Station Crash &amp; Session Rehydration</h3>
+                        <p style="font-size: 13.5px; color: var(--brand-text-secondary); line-height: 1.6;">
+                            If power to PC 2 fails while testing, <code>RecoveryManager</code> on reboot detects the unfinished session. The board remains safely recorded in <code>devices</code> and can either be resumed or marked for re-testing via the Repair Tab.
+                        </p>
+                    </div>
+
+                    <div style="background: var(--brand-surface-2); border: 1px solid var(--brand-outline); border-radius: var(--radius-md); padding: 22px;">
+                        <h3 style="font-size: 16px; font-weight: 700; margin-bottom: 10px; color: var(--brand-text);">3. Concurrent Pickup Protection</h3>
+                        <p style="font-size: 13.5px; color: var(--brand-text-secondary); line-height: 1.6;">
+                            If two operators on separate stations attempt to click "Pick Up" on the same waiting board simultaneously, SQLite transaction isolation ensures only the first query updates <code>status = 'in_progress'</code>. The second operator receives an immediate notification that the board has already been claimed.
+                        </p>
+                    </div>
+
+                    <div style="background: var(--brand-surface-2); border: 1px solid var(--brand-outline); border-radius: var(--radius-md); padding: 22px;">
+                        <h3 style="font-size: 16px; font-weight: 700; margin-bottom: 10px; color: var(--brand-text);">4. Active Bench Locking</h3>
+                        <p style="font-size: 13.5px; color: var(--brand-text-secondary); line-height: 1.6;">
+                            An operator is prevented from picking up a board from the queue while they already have another device active on the bench (<code>RecordStateError("a device is already on the bench")</code>), guaranteeing one physical board per operator at all times.
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- Script for Tab Switching -->
+    <script>
+        function switchTab(tabId) {
+            // Update Tab Buttons
+            const buttons = document.querySelectorAll('.tab-btn');
+            buttons.forEach(btn => btn.classList.remove('active'));
+            event.currentTarget.classList.add('active');
+
+            // Update Tab Contents
+            const contents = document.querySelectorAll('.tab-content');
+            contents.forEach(content => content.classList.remove('active'));
+            document.getElementById(tabId).classList.add('active');
+        }
+    </script>
+</body>
+</html>
