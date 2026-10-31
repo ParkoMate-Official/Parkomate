@@ -2,17 +2,18 @@
 
 Overlays are anchored to content area and BottomBar footprint.
 They do NOT resize or shift stage panes or cause scrollbars.
-Left accent is a four-sided 2px tone border.
+Border is a four-sided 2px tone border.
 """
 
 from __future__ import annotations
 
-from PySide6.QtCore import QEvent, QObject, Qt, QTimer, Signal
+from PySide6.QtCore import QEvent, QObject, QSize, Qt, QTimer, Signal
 from PySide6.QtGui import QKeyEvent
 from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
     QLabel,
+    QScrollArea,
     QVBoxLayout,
     QWidget,
 )
@@ -29,23 +30,26 @@ from parkomate.ui.theme.tokens import COLORS, SIZES
 
 
 class ErrorBanner(QFrame):
-    """Inline error banner with 4-sided 2px tone border, anchored after TopBar/InfoStrip.
+    """Inline error banner with 4-sided 2px tone border.
 
-    Does NOT resize stage panes - fixed height, expandable content.
+    Computes height from its content (sizeHint) with max height cap and scrolling.
     """
 
     retry_requested = Signal()
 
-    HEIGHT = 56
+    MIN_HEIGHT = SIZES.banner_min_height
+    MAX_HEIGHT = SIZES.banner_max_height
+    HEIGHT = SIZES.banner_min_height
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.setObjectName("ErrorBanner")
-        self.setFixedHeight(self.HEIGHT)
         self.setProperty("tone", "fail")
         self._error: ParkomateError | None = None
         self._retry_key = "action.try_again"
         self._has_retry = False
+        self.setMinimumHeight(self.MIN_HEIGHT)
+        self.setMaximumHeight(self.MAX_HEIGHT)
 
         outer = QHBoxLayout(self)
         outer.setContentsMargins(SIZES.space_l, SIZES.space_s, SIZES.space_l, SIZES.space_s)
@@ -54,41 +58,87 @@ class ErrorBanner(QFrame):
         self._icon = Icon("warn", 32, COLORS.fail_fg)
         outer.addWidget(self._icon, 0, Qt.AlignmentFlag.AlignTop)
 
-        text = QVBoxLayout()
+        self.scroll_area = QScrollArea()
+        self.scroll_area.setObjectName("BannerScroll")
+        self.scroll_area.setWidgetResizable(True)
+        self.scroll_area.setFrameShape(QFrame.Shape.NoFrame)
+        self.scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+
+        self.text_inner = QWidget()
+        self.text_inner.setObjectName("BannerTextInner")
+        text = QVBoxLayout(self.text_inner)
+        text.setContentsMargins(0, 0, 0, 0)
         text.setSpacing(SIZES.space_xs)
+
         self.title = QLabel()
-        self.title.setFont(font(SIZES.font_h2 + 2, bold=True))
+        self.title.setFont(font(SIZES.font_h2, bold=True))
         self.title.setWordWrap(True)
+
         self.cause_label = QLabel()
         self.cause_label.setWordWrap(True)
+
         self.steps = QLabel()
         self.steps.setWordWrap(True)
         self.steps.setTextFormat(Qt.TextFormat.PlainText)
-        self.steps.setFont(font(SIZES.font_base, bold=True))
+        self.steps.setFont(font(SIZES.font_base))
+
         self.details = QLabel()
         self.details.setProperty("role", "small")
         self.details.setWordWrap(True)
         self.details.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         self.details.setVisible(False)
+
         text.addWidget(self.title)
         text.addWidget(self.cause_label)
         text.addWidget(self.steps)
         text.addWidget(self.details)
-        outer.addLayout(text, 1)
+        self.scroll_area.setWidget(self.text_inner)
+        outer.addWidget(self.scroll_area, 1)
 
         buttons = QVBoxLayout()
+        buttons.setContentsMargins(0, 0, 0, 0)
         buttons.setSpacing(SIZES.space_s)
+
         self.retry_button = BigButton("action.try_again", variant="secondary")
+        self.retry_button.setMinimumWidth(SIZES.button_min_width_secondary)
         self.retry_button.clicked.connect(self.retry_requested.emit)
+
         self.details_link = BigButton("action.details_for_support", variant="link")
+        self.details_link.setMinimumWidth(SIZES.button_min_width_secondary)
         self.details_link.clicked.connect(self._toggle_details)
-        buttons.addWidget(self.retry_button)
-        buttons.addWidget(self.details_link, 0, Qt.AlignmentFlag.AlignRight)
+
+        buttons.addWidget(self.retry_button, 0, Qt.AlignmentFlag.AlignTop)
+        buttons.addWidget(self.details_link, 0, Qt.AlignmentFlag.AlignTop)
         buttons.addStretch(1)
-        outer.addLayout(buttons)
+        outer.addLayout(buttons, 0)
 
         self.setVisible(False)
+        if parent is not None:
+            parent.installEventFilter(self)
         language_notifier().changed.connect(self.retranslate)
+
+    def eventFilter(self, watched: QObject, event: QEvent) -> bool:
+        if watched is self.parent() and event.type() == QEvent.Type.Resize:
+            self.reposition()
+        return False
+
+    def reposition(self) -> None:
+        self.updateGeometry()
+
+    def sizeHint(self) -> QSize:
+        if self._error is None or not self.isVisible():
+            return QSize(super().sizeHint().width(), self.MIN_HEIGHT)
+        content_h = self.text_inner.sizeHint().height()
+        buttons_h = (
+            self.retry_button.sizeHint().height()
+            + SIZES.space_s
+            + self.details_link.sizeHint().height()
+        )
+        inner_h = max(content_h, buttons_h, 32)
+        total_h = inner_h + 2 * SIZES.space_s + 4
+        capped_h = max(self.MIN_HEIGHT, min(total_h, self.MAX_HEIGHT))
+        return QSize(super().sizeHint().width(), capped_h)
 
     def show_error(self, error: ParkomateError, *, has_retry: bool, retry_key: str) -> None:
         self._error = error
@@ -99,17 +149,21 @@ class ErrorBanner(QFrame):
         self._icon.set_icon("warn", COLORS.fail_fg if severe else COLORS.warn_fg)
         self.details.setVisible(False)
         self.retranslate()
+        self.reposition()
         self.setVisible(True)
+        self.updateGeometry()
 
     def clear(self) -> None:
         self._error = None
         self.setVisible(False)
+        self.updateGeometry()
 
     def error(self) -> ParkomateError | None:
         return self._error
 
     def _toggle_details(self) -> None:
         self.details.setVisible(not self.details.isVisible())
+        self.updateGeometry()
 
     def retranslate(self, *_args: object) -> None:
         error = self._error
@@ -123,6 +177,7 @@ class ErrorBanner(QFrame):
         self.retry_button.setVisible(self._has_retry)
         self.details.setText(t("error.details", code=error.code.value, message=error.message))
         self.setAccessibleName(f"{error_title(error)}. {error_cause(error)}")
+        self.updateGeometry()
 
 
 class _OverlayMixin(QFrame):

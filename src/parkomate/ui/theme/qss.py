@@ -326,24 +326,25 @@ QFrame#Scrim {{ background: rgba(17, 24, 40, 0.35); }}
 /* ---------- status surfaces ---------- */
 QFrame[tone="pass"] {{ background: {c.pass_bg}; border: 2px solid {c.pass_fg}; border-radius: {s.radius}px; }}
 QFrame[tone="fail"] {{ background: {c.fail_bg}; border: 2px solid {c.fail_fg}; border-radius: {s.radius}px; }}
-QFrame[tone="warn"] {{ background: {c.warn_bg}; border: 4px solid {c.warn_fg}; border-left-width: 4px; border-right-width: 1px; border-top-width: 1px; border-bottom-width: 1px; border-radius: {s.radius}px; }}
+QFrame[tone="warn"] {{ background: {c.warn_bg}; border: 2px solid {c.warn_fg}; border-radius: {s.radius}px; }}
 QFrame[tone="info"] {{ background: {c.info_bg}; border: 2px solid {c.info_fg}; border-radius: {s.radius}px; }}
 QFrame[tone="pending"] {{ background: {c.surface_alt}; border: 2px solid {c.border}; border-radius: {s.radius}px; }}
 
-/* Warning banner with thick left bar */
-QFrame[tone="warn_left"] {{
-    background: {c.warn_bg};
-    border: none;
-    border-left: 4px solid {c.warn_fg};
+/* Error banner - 2 px four-sided tone border with radius from tokens */
+QFrame#ErrorBanner {{
     border-radius: {s.radius}px;
 }}
-
-/* Error banner with thick left bar */
-QFrame[tone="fail_left"] {{
+QFrame#ErrorBanner[tone="warn"] {{
+    background: {c.warn_bg};
+    border: 2px solid {c.warn_fg};
+}}
+QFrame#ErrorBanner[tone="fail"] {{
     background: {c.fail_bg};
+    border: 2px solid {c.fail_fg};
+}}
+QScrollArea#BannerScroll, QScrollArea#BannerScroll > QWidget, QWidget#BannerTextInner {{
+    background: transparent;
     border: none;
-    border-left: 4px solid {c.fail_fg};
-    border-radius: {s.radius}px;
 }}
 
 QLabel[status="pass"] {{ color: {c.pass_fg}; font-weight: 700; }}

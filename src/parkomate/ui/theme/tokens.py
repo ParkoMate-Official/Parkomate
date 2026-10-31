@@ -117,6 +117,12 @@ class Sizes:
     # Tooltip
     tooltip_padding: int = 8
 
+    # Shell elements
+    info_strip_min_height: int = 40
+    banner_max_height: int = 240
+    banner_min_height: int = 56
+    button_min_width_secondary: int = 140
+
 
 COLORS = Colors()
 SIZES = Sizes()

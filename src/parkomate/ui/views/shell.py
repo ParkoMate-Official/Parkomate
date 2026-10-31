@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
-from PySide6.QtCore import QEvent, QObject, QPointF, Qt
+from PySide6.QtCore import QEvent, QObject, QPointF, QSize, Qt
 from PySide6.QtGui import (
     QKeyEvent,
     QKeySequence,
@@ -18,6 +18,7 @@ from PySide6.QtGui import (
 from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
+    QLabel,
     QLineEdit,
     QListWidget,
     QListWidgetItem,
@@ -181,34 +182,119 @@ class TopBar(QFrame):
         super().paintEvent(event)
 
 
-class InfoStrip(QFrame):
-    """40 px compact info strip: device · operator · session time · counters."""
+class ElidedLabel(QLabel):
+    """Single-line label that elides with ellipsis and preserves full text for tooltips."""
 
-    HEIGHT = 40
+    def __init__(
+        self, text: str = "", role: str | None = None, parent: QWidget | None = None
+    ) -> None:
+        super().__init__(parent)
+        self._full_text = text
+        self.setWordWrap(False)
+        if role:
+            self.setProperty("role", role)
+        if text:
+            self.set_full_text(text)
+
+    def set_full_text(self, text: str, tooltip: str = "") -> None:
+        self._full_text = text
+        self.setToolTip(tooltip or text)
+        self._update_elide()
+
+    def full_text(self) -> str:
+        return self._full_text
+
+    def minimumSizeHint(self) -> QSize:
+        return QSize(20, super().minimumSizeHint().height())
+
+    def resizeEvent(self, event: QResizeEvent) -> None:
+        super().resizeEvent(event)
+        self._update_elide()
+
+    def _update_elide(self) -> None:
+        if self.width() > 20 and self._full_text:
+            metrics = self.fontMetrics()
+            elided = metrics.elidedText(self._full_text, Qt.TextElideMode.ElideRight, self.width())
+            super().setText(elided)
+        else:
+            super().setText(self._full_text)
+
+
+class InfoStrip(QFrame):
+    """Compact info strip with min-height from tokens: device · operator · session · counters."""
+
+    HEIGHT = SIZES.info_strip_min_height
+    MIN_HEIGHT = SIZES.info_strip_min_height
 
     def __init__(self, controller: StationController, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.c = controller
         self.setObjectName("InfoStrip")
-        self.setFixedHeight(self.HEIGHT)
-        layout = QHBoxLayout(self)
-        layout.setContentsMargins(SIZES.space_l, SIZES.space_xs, SIZES.space_l, SIZES.space_xs)
-        layout.setSpacing(SIZES.space_s)
+        self.setMinimumHeight(self.MIN_HEIGHT)
 
-        layout.addWidget(Icon("chip", 24, COLORS.text_muted))
+        main_layout = QHBoxLayout(self)
+        main_layout.setContentsMargins(SIZES.space_l, SIZES.space_xs, SIZES.space_l, SIZES.space_xs)
+        main_layout.setSpacing(SIZES.space_m)
+
+        # Left group: device, operator, session in a horizontal layout
+        self.left_group = QWidget()
+        left_layout = QHBoxLayout(self.left_group)
+        left_layout.setContentsMargins(0, 0, 0, 0)
+        left_layout.setSpacing(SIZES.space_s)
+
+        self._chip_icon = Icon("chip", 24, COLORS.text_muted)
+        left_layout.addWidget(self._chip_icon)
         self.device = TrLabel("", role="muted")
-        layout.addWidget(self.device)
+        self.device.setWordWrap(False)
+        left_layout.addWidget(self.device)
 
-        layout.addSpacing(SIZES.space_l)
-        layout.addWidget(Icon("user", 24, COLORS.text_muted))
-        self.operator = TrLabel("", role="muted")
-        layout.addWidget(self.operator)
+        left_layout.addSpacing(SIZES.space_m)
+        self._user_icon = Icon("user", 24, COLORS.text_muted)
+        left_layout.addWidget(self._user_icon)
+        self.operator = ElidedLabel("", role="muted")
+        left_layout.addWidget(self.operator)
 
-        layout.addStretch(1)
-        self.counters = TrLabel("", role="muted")
-        layout.addWidget(self.counters)
+        self.session = QLabel()
+        self.session.setProperty("role", "muted")
+        self.session.setWordWrap(False)
+        left_layout.addWidget(self.session)
 
+        main_layout.addWidget(self.left_group)
+        main_layout.addStretch(1)
+
+        # Right group: counters
+        self.right_group = QWidget()
+        right_layout = QHBoxLayout(self.right_group)
+        right_layout.setContentsMargins(0, 0, 0, 0)
+        right_layout.setSpacing(0)
+
+        self.counters = QLabel()
+        self.counters.setProperty("role", "muted")
+        self.counters.setWordWrap(False)
+        right_layout.addWidget(self.counters)
+
+        main_layout.addWidget(self.right_group)
+
+        self._counters_full = ""
+        self._counters_short = ""
         language_notifier().changed.connect(self.refresh)
+
+    def resizeEvent(self, event: QResizeEvent) -> None:
+        super().resizeEvent(event)
+        self._update_counters_for_width(self.width())
+
+    def _update_counters_for_width(self, width: int) -> None:
+        if not self._counters_full:
+            return
+        self.counters.setToolTip(self._counters_full)
+        metrics = self.counters.fontMetrics()
+        full_width = metrics.horizontalAdvance(self._counters_full)
+        left_width = self.left_group.sizeHint().width()
+        available = width - left_width - 2 * SIZES.space_l - SIZES.space_m
+        if full_width > available or width < 1200:
+            self.counters.setText(self._counters_short)
+        else:
+            self.counters.setText(self._counters_full)
 
     def refresh(self, *_args: object) -> None:
         c = self.c
@@ -223,23 +309,32 @@ class InfoStrip(QFrame):
             self.device.set_key("info.device_mac", mac=state.mac_address)
 
         operator = c.operator
-        self.operator.set_key(
-            "info.operator_time",
-            name=operator.full_name,
-            code=operator.operator_code,
-            time=format_duration(c.session_elapsed_s()),
-        ) if operator else ""
+        if operator:
+            full_op = f"{operator.full_name} ({operator.operator_code})"
+            self.operator.set_full_text(full_op, tooltip=full_op)
+            time_str = format_duration(c.session_elapsed_s())
+            self.session.setText(f"·  {t('info.session_time', time=time_str)}")
+        else:
+            self.operator.set_full_text("")
+            self.session.setText("")
 
         counters = c.counters
         if counters is not None:
-            self.counters.set_key(
+            self._counters_full = t(
                 "info.counters",
                 ok=counters.upload_success,
                 fail=counters.net_upload_failure,
                 done=counters.completed,
                 rejected=counters.rejected,
             )
-            self.counters.set_tracked(True)
+            from parkomate.i18n import get_language
+
+            up_label = "अपलोड" if get_language() == "mr" else "Uploads"
+            self._counters_short = (
+                f"{up_label} ✓ {counters.upload_success}  ✕ {counters.net_upload_failure}   ·   "
+                f"✓ {counters.completed}   ·   ✕ {counters.rejected}"
+            )
+            self._update_counters_for_width(self.width())
 
 
 class BottomBar(QFrame):
@@ -528,7 +623,7 @@ class ProductionShell(QWidget):
         body.setContentsMargins(SIZES.space_l, SIZES.space_s + 4, SIZES.space_l, SIZES.space_s + 4)
         body.setSpacing(SIZES.space_s)
 
-        self.banner = ErrorBanner()
+        self.banner = ErrorBanner(self)
         self.banner.retry_requested.connect(controller.retry_error)
         body.addWidget(self.banner)
 
@@ -659,5 +754,6 @@ class ProductionShell(QWidget):
         super().resizeEvent(event)
         if self.scrim.isVisible():
             self.scrim.setGeometry(0, 0, self.width(), self.height())
+        self.banner.reposition()
         self.drawer.reposition()
         self.takeover.reposition()
