@@ -14,6 +14,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QLineEdit,
     QProgressBar,
+    QScrollArea,
     QVBoxLayout,
     QWidget,
 )
@@ -130,7 +131,10 @@ class StageView(QWidget):
 
 
 class RejectChooser(QFrame):
-    """'Which item failed?' - inline, never a dialog."""
+    """'Which item failed?' - inline, never a dialog.
+
+    Uses four-sided danger tone border for reject buttons.
+    """
 
     def __init__(self, vm: ChecklistMixin, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -139,9 +143,13 @@ class RejectChooser(QFrame):
         self._layout = QVBoxLayout(self)
         self._layout.setContentsMargins(SIZES.space_m, SIZES.space_m, SIZES.space_m, SIZES.space_m)
         self._layout.addWidget(TrLabel("reject.choose_item", role="h2"))
+
+        # Button grid with 4-sided danger border (achieved via frame styling)
         self._grid = QGridLayout()
+        self._grid.setSpacing(SIZES.space_s)
         self._layout.addLayout(self._grid)
-        self.cancel = BigButton("action.cancel", hint_key="key.esc")
+
+        self.cancel = BigButton("action.cancel", variant="secondary", hint_key="key.esc")
         self.cancel.clicked.connect(vm.cancel_reject)
         self._layout.addWidget(self.cancel, 0, Qt.AlignmentFlag.AlignRight)
         self._buttons: dict[CheckCode, BigButton] = {}
@@ -154,7 +162,7 @@ class RejectChooser(QFrame):
                 button.deleteLater()
             self._buttons = {}
             for index, code in enumerate(codes):
-                button = BigButton(code.label_key, variant="danger")
+                button = BigButton(code.label_key, variant="danger_outline")
                 button.clicked.connect(lambda _c=False, code=code: self.vm.reject_for(code))
                 self._grid.addWidget(button, index // 2, index % 2)
                 self._buttons[code] = button
@@ -593,7 +601,10 @@ class TestingView(StageView):
 
 
 class CameraPreview(QWidget):
-    """Live camera frames, or an animated placeholder with a framing guide (mock)."""
+    """Live camera frames, or an animated placeholder with framing guide (mock).
+
+    Uses dark text-token fill with white corner brackets and scan line.
+    """
 
     def __init__(self, controller: StationController, vm: LabelingViewModel) -> None:
         super().__init__()
@@ -627,29 +638,44 @@ class CameraPreview(QWidget):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         rect = QRectF(self.rect())
+
+        # Dark text-token fill background
         painter.fillRect(rect, QColor(COLORS.text))
+
         if self._image is not None:
             painter.drawImage(rect, self._image)
+
+        # Framing guide with white corner brackets
         guide = rect.adjusted(
             rect.width() * 0.28, rect.height() * 0.12, -rect.width() * 0.28, -rect.height() * 0.12
         )
-        pen = QPen(QColor(COLORS.surface), 4)
+
+        # White corner brackets (2px stroke)
+        pen = QPen(QColor(COLORS.text), 2)  # text token color is white/light
         painter.setPen(pen)
-        arm = min(guide.width(), guide.height()) * 0.2
-        for x, y, dx, dy in (
-            (guide.left(), guide.top(), 1, 1),
-            (guide.right(), guide.top(), -1, 1),
-            (guide.left(), guide.bottom(), 1, -1),
-            (guide.right(), guide.bottom(), -1, -1),
-        ):
-            painter.drawLine(int(x), int(y), int(x + dx * arm), int(y))
-            painter.drawLine(int(x), int(y), int(x), int(y + dy * arm))
+        arm = min(guide.width(), guide.height()) * 0.15
+
+        # Draw corner brackets
+        # Top-left
+        painter.drawLine(int(guide.left()), int(guide.top()), int(guide.left() + arm), int(guide.top()))
+        painter.drawLine(int(guide.left()), int(guide.top()), int(guide.left()), int(guide.top() + arm))
+        # Top-right
+        painter.drawLine(int(guide.right()), int(guide.top()), int(guide.right() - arm), int(guide.top()))
+        painter.drawLine(int(guide.right()), int(guide.top()), int(guide.right()), int(guide.top() + arm))
+        # Bottom-left
+        painter.drawLine(int(guide.left()), int(guide.bottom()), int(guide.left() + arm), int(guide.bottom()))
+        painter.drawLine(int(guide.left()), int(guide.bottom()), int(guide.left()), int(guide.bottom() - arm))
+        # Bottom-right
+        painter.drawLine(int(guide.right()), int(guide.bottom()), int(guide.right() - arm), int(guide.bottom()))
+        painter.drawLine(int(guide.right()), int(guide.bottom()), int(guide.right()), int(guide.bottom() - arm))
+
+        # Scan line (yellow/green for active scanning)
         scanning = self.vm.camera_state is StepState.WORKING
         if scanning:
             y = guide.top() + guide.height() * (self._phase / 60)
-            painter.setPen(QPen(QColor(COLORS.focus), 3))
+            painter.setPen(QPen(QColor(COLORS.accent), 3))
             painter.drawLine(int(guide.left() + 8), int(y), int(guide.right() - 8), int(y))
-        painter.setPen(QColor(COLORS.surface))
+
         painter.setFont(font(SIZES.font_small, bold=True))
         if self._image is None:
             text = t("camera.scanning") if scanning else t("camera.simulated")
@@ -694,9 +720,15 @@ class LabelingView(ChecklistView):
         super().__init__(controller, controller.labeling)
         self._build_checklist("label.checklist_title")
         right = self.right_layout
+
+        # QR Title
         right.addWidget(TrLabel("label.qr_title", role="h2"))
+
+        # Camera preview
         self.preview = CameraPreview(controller, self.vm)
         right.addWidget(self.preview, 1)
+
+        # Decoded ID - huge, selectable
         decoded = QHBoxLayout()
         decoded.addWidget(TrLabel("label.decoded", role="muted"))
         self.decoded = QLabel("-")
@@ -707,29 +739,7 @@ class LabelingView(ChecklistView):
         decoded.addWidget(self.manual_flag)
         right.addLayout(decoded)
 
-        self.manual = QFrame()
-        self.manual.setProperty("tone", "info")
-        manual_layout = QGridLayout(self.manual)
-        manual_layout.setContentsMargins(SIZES.space_m, SIZES.space_m, SIZES.space_m, SIZES.space_m)
-        manual_layout.addWidget(TrLabel("manual.title", role="h2"), 0, 0, 1, 2)
-        self.manual_first = QLineEdit()
-        self.manual_second = QLineEdit()
-        for field in (self.manual_first, self.manual_second):
-            field.setProperty("enter_submits", True)
-            field.returnPressed.connect(self._submit_manual)
-        manual_layout.addWidget(self.manual_first, 1, 0)
-        manual_layout.addWidget(self.manual_second, 1, 1)
-        self.manual_error = QLabel()
-        self.manual_error.setProperty("status", "fail")
-        manual_layout.addWidget(self.manual_error, 2, 0, 1, 2)
-        self.manual_ok = BigButton("action.confirm_id", variant="primary")
-        self.manual_cancel = BigButton("action.cancel")
-        self.manual_ok.clicked.connect(self._submit_manual)
-        self.manual_cancel.clicked.connect(self.vm.cancel_manual)
-        manual_layout.addWidget(self.manual_cancel, 3, 0)
-        manual_layout.addWidget(self.manual_ok, 3, 1)
-        right.addWidget(self.manual)
-
+        # Identity tint panel (board ID vs sticker ID, Match pill)
         self.identity = QFrame()
         self.identity.setProperty("tone", "pending")
         identity_layout = QGridLayout(self.identity)
@@ -748,6 +758,40 @@ class LabelingView(ChecklistView):
         self.identity_pill = StatusPill()
         identity_layout.addWidget(self.identity_pill, 1, 2, 2, 1)
         right.addWidget(self.identity)
+
+        # Manual entry panel
+        self.manual = QFrame()
+        self.manual.setProperty("tone", "info")
+        manual_layout = QVBoxLayout(self.manual)
+        manual_layout.setContentsMargins(SIZES.space_m, SIZES.space_m, SIZES.space_m, SIZES.space_m)
+        manual_layout.setSpacing(SIZES.space_s)
+
+        manual_layout.addWidget(TrLabel("manual.title", role="h2"))
+        manual_layout.addWidget(TrLabel("manual.first", role="muted"))
+        self.manual_first = QLineEdit()
+        self.manual_first.setProperty("enter_submits", True)
+        self.manual_first.returnPressed.connect(self._submit_manual)
+        manual_layout.addWidget(self.manual_first)
+        manual_layout.addWidget(TrLabel("manual.second", role="muted"))
+        self.manual_second = QLineEdit()
+        self.manual_second.setProperty("enter_submits", True)
+        self.manual_second.returnPressed.connect(self._submit_manual)
+        manual_layout.addWidget(self.manual_second)
+        self.manual_error = QLabel()
+        self.manual_error.setProperty("status", "fail")
+        manual_layout.addWidget(self.manual_error)
+
+        # STICKY action row at bottom
+        action_row = QHBoxLayout()
+        action_row.setContentsMargins(0, SIZES.space_s, 0, 0)
+        self.manual_cancel = BigButton("action.cancel", variant="secondary", hint_key="key.esc")
+        self.manual_ok = BigButton("action.confirm_id", variant="primary", hint_key="key.enter")
+        action_row.addWidget(self.manual_cancel)
+        action_row.addWidget(self.manual_ok)
+        action_row.addStretch(1)
+        manual_layout.addLayout(action_row)
+        right.addWidget(self.manual)
+
         self.chooser = RejectChooser(self.vm)
         right.addWidget(self.chooser)
         controller.stage_changed.connect(self._stage_changed)
@@ -772,10 +816,6 @@ class LabelingView(ChecklistView):
             self.manual_first.clear()
             self.manual_second.clear()
             self.manual_first.setFocus()
-        self.manual_first.setPlaceholderText(t("manual.first"))
-        self.manual_second.setPlaceholderText(t("manual.second"))
-        self.manual_first.setAccessibleName(t("manual.first"))
-        self.manual_second.setAccessibleName(t("manual.second"))
         self.manual_error.setText(t(vm.manual_error_key) if vm.manual_error_key else "")
         self.board_value.setText(vm.board_id if vm.board_id else "-")
         self.qr_value.setText(vm.qr_id or "-")
@@ -811,18 +851,30 @@ class PackagingView(ChecklistView):
         super().__init__(controller, controller.packaging)
         self._build_checklist("pack.checklist_title")
         right = self.right_layout
-        right.addWidget(TrLabel("pack.device_title", role="h2"))
+
+        # Device info in tint panel
+        self.device_panel, device_layout = tint_panel()
+        device_layout.addWidget(TrLabel("pack.device_title", role="h2"))
+
+        # Huge device ID
         self.device = QLabel("-")
         self.device.setFont(font(SIZES.font_hero_large, bold=True))
-        right.addWidget(self.device)
+        self.device.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+        device_layout.addWidget(self.device)
+
+        # MAC info
         self.mac = QLabel()
         self.mac.setProperty("role", "muted")
-        right.addWidget(self.mac)
-        self.passed = QLabel()
-        self.passed.setFont(font(SIZES.font_h2, bold=True))
-        self.passed.setProperty("status", "pass")
-        right.addWidget(self.passed)
+        device_layout.addWidget(self.mac)
+
+        right.addWidget(self.device_panel)
         right.addStretch(1)
+
+        # A/B/C done list with check icons
+        self.done_status = QLabel()
+        self.done_status.setFont(font(SIZES.font_h2, bold=True))
+        right.addWidget(self.done_status)
+
         self.chooser = RejectChooser(self.vm)
         right.addWidget(self.chooser)
         controller.device_changed.connect(self.update_view)
@@ -833,6 +885,10 @@ class PackagingView(ChecklistView):
         state = self.c.device
         self.device.setText((state.device_id or state.mac_address) if state else "-")
         self.mac.setText(t("prog.mac", mac=state.mac_address) if state else "")
-        stages = [Stage.PROGRAMMING, Stage.TESTING, Stage.LABELING]
-        self.passed.setText("\n".join(f"✓  {t(stage.label_key)}" for stage in stages))
+
+        # A/B/C done list with check icons
+        stages_done = [Stage.PROGRAMMING, Stage.TESTING, Stage.LABELING]
+        check_lines = [f"✓  {t(stage.label_key)}" for stage in stages_done]
+        self.done_status.setText("\n".join(check_lines))
+
         self.chooser.update_view()
