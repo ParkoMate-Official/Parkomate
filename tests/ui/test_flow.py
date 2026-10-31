@@ -496,3 +496,63 @@ def test_ui_never_freezes_during_hardware_calls(make_driver: DriverFactory) -> N
     gaps = [b - a for a, b in itertools.pairwise(ticks)]
     assert max(gaps) < 0.4
     assert d.c.programming.progress == 100
+
+
+# ------------------------------------------------------------------ value row pass/fail rendering
+
+
+def test_value_row_pass_fail_rendering(driver: StationDriver) -> None:
+    """ValueRow must render pass/fail pills correctly in testing view."""
+    from parkomate.ui.views.stages import TestingView
+
+    d = driver
+    d.login()
+    d.through_programming()
+    d.read_all_sensors()
+    d.mark_ok()
+
+    view = d.window.shell.views[Stage.TESTING]
+    assert isinstance(view, TestingView)
+    assert view.elec_values
+
+    # Get the first value row (B3_V_A)
+    first_row = view.elec_values[CheckCode.B3_V_A]
+
+    # After passing, the pill should be in "pass" state
+    pill_state = first_row.pill.state()
+    assert pill_state == "pass", f"Expected pass, got {pill_state}"
+
+    # Pill should have accessible name
+    assert "pass" in first_row.pill.accessibleName().lower() or "check" in first_row.pill.text().lower()
+
+
+def test_value_row_fail_state_on_measurement_fail(driver: StationDriver) -> None:
+    """ValueRow pill should show fail state when measurement fails."""
+    d = driver
+    d.login()
+    d.through_programming()
+
+    # Force a measurement fail by going directly to testing
+    from parkomate.core.models import CheckOutcome
+
+    # Simulate a failed measurement for B3_V_C
+    d.c._reading_results = [
+        CheckOutcome(check_code=CheckCode.B3_V_A, value_num=24.0, passed=True),
+        CheckOutcome(check_code=CheckCode.B3_V_B, value_num=5.0, passed=True),
+        CheckOutcome(check_code=CheckCode.B3_V_C, value_num=3.21, passed=False),  # FAIL
+        CheckOutcome(check_code=CheckCode.B3_T_REG, value_num=28.0, passed=True),
+    ]
+    d.c._measure_state = "pass"
+
+    d.read_all_sensors()
+    d.mark_ok()
+
+    view = d.window.shell.views[Stage.TESTING]
+    fail_row = view.elec_values[CheckCode.B3_V_C]
+
+    # The pill should be in "fail" state
+    pill_state = fail_row.pill.state()
+    assert pill_state == "fail", f"Expected fail, got {pill_state}"
+
+    # Fail pills should have fail tone
+    assert fail_row.pill.property("tone") == "fail"
