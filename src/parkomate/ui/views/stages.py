@@ -33,9 +33,9 @@ from parkomate.ui.components.widgets import (
     CounterBadge,
     StatusPill,
     TrLabel,
-    nested_panel,
     scroll_card,
     set_prop,
+    tint_panel,
 )
 from parkomate.ui.qt_i18n import language_notifier
 from parkomate.ui.theme.fonts import font
@@ -224,7 +224,7 @@ class ProgrammingView(StageView):
         right.addWidget(self.adjust)
         right.addStretch(1)
         # Upload counters in a nested tint panel
-        counters, counters_layout = nested_panel()
+        counters, counters_layout = tint_panel()
         counters_layout.addWidget(TrLabel("prog.counters_title"))
         self.c_ok = CounterBadge("counter.uploads_ok", "check")
         self.c_fail = CounterBadge("counter.uploads_fail", "cross")
@@ -433,7 +433,7 @@ class TestingView(StageView):
         right.addWidget(self.step_elec)
 
         # Nested tint panel for electrical readings with huge numbers
-        self.elec_panel, self.elec_panel_layout = nested_panel()
+        self.elec_panel, self.elec_panel_layout = tint_panel()
 
         # Headers
         header_grid = QGridLayout()
@@ -559,7 +559,7 @@ class TestingView(StageView):
             pass
 
         # Warning banner
-        if hasattr(vm, 'warning') and vm.warning:
+        if hasattr(vm, "warning") and vm.warning:
             self.warning_banner.setVisible(True)
             self.warning_text.setText(vm.warning)
         else:

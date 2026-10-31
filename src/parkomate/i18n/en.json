@@ -718,5 +718,20 @@
   "settings.f.camera.height": "Image height",
   "settings.f.camera.fps": "Frames per second",
   "settings.f.workflow.retriable_checks": "Checks that may be retried (comma separated)",
-  "settings.f.workflow.max_attempts": "Attempts for retriable checks"
+  "settings.f.workflow.max_attempts": "Attempts for retriable checks",
+  "gallery.buttons": "Buttons",
+  "gallery.pills": "Status Pills",
+  "gallery.tracked_labels": "Tracked Labels",
+  "gallery.counters": "Counter Badges",
+  "gallery.step_rows": "Step Rows",
+  "gallery.accent_cards": "Accent Cards",
+  "gallery.progress_bars": "Progress Bars",
+  "gallery.inline_confirm": "Inline Confirm",
+  "gallery.language_switch": "Language Switch",
+  "gallery.value_rows": "Value Rows",
+  "gallery.stepper": "Stage Stepper",
+  "gallery.panels": "Panels",
+  "gallery.tint_panel_content": "Tint panel content",
+  "gallery.nested_panel_content": "Nested panel content",
+  "gallery.accent_card_content": "Accent card content"
 }

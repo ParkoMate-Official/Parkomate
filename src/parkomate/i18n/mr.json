@@ -718,5 +718,20 @@
   "settings.f.camera.height": "प्रतिमेची उंची",
   "settings.f.camera.fps": "प्रति सेकंद फ्रेम्स",
   "settings.f.workflow.retriable_checks": "पुन्हा करता येणाऱ्या तपासण्या (स्वल्पविरामाने वेगळ्या)",
-  "settings.f.workflow.max_attempts": "पुन्हा करता येणाऱ्या तपासण्यांचे प्रयत्न"
+  "settings.f.workflow.max_attempts": "पुन्हा करता येणाऱ्या तपासण्यांचे प्रयत्न",
+  "gallery.buttons": "बटन्स",
+  "gallery.pills": "स्थिती गोळी",
+  "gallery.tracked_labels": "ट्रॅक केलेले लेबल्स",
+  "gallery.counters": "काउंटर बॅज",
+  "gallery.step_rows": "पायरी कतार",
+  "gallery.accent_cards": "अॅक्सेंट कार्ड्स",
+  "gallery.progress_bars": "प्रगती पट्ट्या",
+  "gallery.inline_confirm": "इनलाइन खात्री",
+  "gallery.language_switch": "भाषा स्विच",
+  "gallery.value_rows": "मूल्य कतार",
+  "gallery.stepper": "टप्पा स्टेपर",
+  "gallery.panels": "पॅनेल्स",
+  "gallery.tint_panel_content": "टिंट पॅनेल मजकूर",
+  "gallery.nested_panel_content": "नेस्टेड पॅनेल मजकूर",
+  "gallery.accent_card_content": "अॅक्सेंट कार्ड मजकूर"
 }

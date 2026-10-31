@@ -1,5 +1,6 @@
-"""Reusable widgets: BigButton, StatusPill, CheckRow, StageStepper, CounterBadge,
-LanguageSwitch, InlineConfirm, TrLabel.
+"""Reusable widgets: BigButton, StatusPill, LabelCaps, CheckRow, StageStepper,
+CounterBadge, AccentCard, StepRow, ValueRow, LanguageSwitch, InlineConfirm,
+ProgressBar, TrLabel, card, tint_panel.
 
 Every widget stores i18n *keys* and re-renders itself when the language changes.
 """
@@ -18,6 +19,7 @@ from PySide6.QtWidgets import (
     QGridLayout,
     QHBoxLayout,
     QLabel,
+    QProgressBar,
     QPushButton,
     QScrollArea,
     QSizePolicy,
@@ -31,6 +33,27 @@ from parkomate.ui.components.icons import Icon, paint_icon
 from parkomate.ui.qt_i18n import language_notifier
 from parkomate.ui.theme.fonts import font
 from parkomate.ui.theme.tokens import COLORS, SIZES
+
+__all__ = [
+    "AccentCard",
+    "BigButton",
+    "CheckRow",
+    "CounterBadge",
+    "InlineConfirm",
+    "LabelCaps",
+    "LanguageSwitch",
+    "ProgressBar",
+    "StageStepper",
+    "StatusPill",
+    "StepRow",
+    "TrLabel",
+    "ValueRow",
+    "card",
+    "restyle",
+    "scroll_card",
+    "set_prop",
+    "tint_panel",
+]
 
 
 def restyle(widget: QWidget) -> None:
@@ -97,9 +120,7 @@ class BigButton(QPushButton):
         self._hint_key = hint_key
         self.setProperty("variant", variant)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
-        btn_height = (
-            SIZES.button_height if variant == "primary" else SIZES.button_height_secondary
-        )
+        btn_height = SIZES.button_height if variant == "primary" else SIZES.button_height_secondary
         self.setMinimumHeight(btn_height)
         self.setAutoDefault(False)
         language_notifier().changed.connect(self.retranslate)
@@ -116,10 +137,7 @@ class BigButton(QPushButton):
 
     def set_variant(self, variant: str) -> None:
         set_prop(self, "variant", variant)
-        # Update minimum height based on variant
-        btn_height = (
-            SIZES.button_height if variant == "primary" else SIZES.button_height_secondary
-        )
+        btn_height = SIZES.button_height if variant == "primary" else SIZES.button_height_secondary
         self.setMinimumHeight(btn_height)
 
     def label(self) -> str:
@@ -153,7 +171,7 @@ class StatusPill(QFrame):
         self._key: str | None = None
         self._params: dict[str, Any] = {}
         layout = QHBoxLayout(self)
-        layout.setContentsMargins(12, 6, 12, 6)
+        layout.setContentsMargins(16, 6, 16, 6)
         layout.setSpacing(8)
         icon_size = 36 if size == "large" else 24
         self._icon = Icon("clock", icon_size)
@@ -186,6 +204,40 @@ class StatusPill(QFrame):
         word = t(self._key, **self._params) if self._key else t(_STATE_STYLE[self._state][2])
         self._label.setText(word)
         self.setAccessibleName(word)
+
+
+class LabelCaps(QLabel):
+    """Uppercase tracked label for English; plain for Marathi (preserves shirorekha)."""
+
+    def __init__(
+        self, key: str = "", role: str | None = None, parent: QWidget | None = None, **params: Any
+    ) -> None:
+        super().__init__(parent)
+        self._key = key
+        self._params = params
+        self.setWordWrap(True)
+        if role:
+            self.setProperty("role", role)
+        language_notifier().changed.connect(self.retranslate)
+        self.retranslate()
+
+    def set_key(self, key: str, **params: Any) -> None:
+        self._key = key
+        self._params = params
+        self.retranslate()
+
+    def key(self) -> str:
+        return self._key
+
+    def retranslate(self, *_args: object) -> None:
+        from parkomate.i18n import get_language
+
+        text = t(self._key, **self._params) if self._key else ""
+        self.setText(text)
+        self.setAccessibleName(text)
+        lang = get_language()
+        # Tracking only for English; disabled for Marathi to preserve shirorekha
+        set_prop(self, "tracked", "true" if (lang == "en" and text) else "false")
 
 
 class CheckRow(QAbstractButton):
@@ -351,24 +403,35 @@ class StageStepper(QWidget):
 
 
 class CounterBadge(QFrame):
-    """Caption + big number, e.g. 'Completed  12'."""
+    """Caption + big number, e.g. 'Uploads ✓  12'."""
 
     def __init__(
         self, caption_key: str, icon: str | None = None, parent: QWidget | None = None
     ) -> None:
         super().__init__(parent)
         self._caption_key = caption_key
-        layout = QHBoxLayout(self)
-        layout.setContentsMargins(8, 2, 8, 2)
-        layout.setSpacing(6)
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(SIZES.space_m, SIZES.space_s, SIZES.space_m, SIZES.space_s)
+        layout.setSpacing(SIZES.space_xs)
+
+        caption_row = QHBoxLayout()
+        caption_row.setSpacing(SIZES.space_xs)
         if icon:
-            layout.addWidget(Icon(icon, 22, COLORS.text_muted))
-        self._caption = QLabel()
-        self._caption.setProperty("role", "small")
+            caption_row.addWidget(Icon(icon, 22, COLORS.text_muted))
+        self._caption = TrLabel(caption_key)
+        self._caption.set_tracked(True)
+        caption_row.addWidget(self._caption)
+        caption_row.addStretch(1)
+        layout.addLayout(caption_row)
+
         self._value = QLabel("0")
-        self._value.setFont(font(SIZES.font_h2, bold=True))
-        layout.addWidget(self._caption)
+        self._value.setFont(
+            font(SIZES.font_hero_large, bold=True)
+        )  # weight 800 via font_hero_large
+        self._value.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._value.setProperty("role", "value_large")
         layout.addWidget(self._value)
+
         language_notifier().changed.connect(self.retranslate)
         self.retranslate()
 
@@ -381,7 +444,7 @@ class CounterBadge(QFrame):
 
     def retranslate(self, *_args: object) -> None:
         caption = t(self._caption_key)
-        self._caption.setText(caption)
+        self._caption.set_key(self._caption_key)
         self.setAccessibleName(f"{caption} {self._value.text()}")
 
 
@@ -444,9 +507,7 @@ class InlineConfirm(QFrame):
         self.message.setWordWrap(True)
         self.message.setFont(font(SIZES.font_h2, bold=True))
         layout.addWidget(self.message, 1)
-        self.no_button = BigButton(
-            "action.cancel", variant="secondary", hint_key="key.esc"
-        )
+        self.no_button = BigButton("action.cancel", variant="secondary", hint_key="key.esc")
         self.yes_button = BigButton(
             "action.confirm", variant="danger_outline", hint_key="key.enter"
         )
@@ -489,6 +550,120 @@ class ValueRow:
         self.measured.setAccessibleName(f"{self.name.text()}: {self.measured.text()}")
 
 
+class StepRow(QFrame):
+    """A step card with 2px four-sided tone border, small caps step label, title, subtitle."""
+
+    def __init__(
+        self,
+        step_number: int,
+        title_key: str,
+        subtitle: str = "",
+        tone: str = "pending",
+        parent: QWidget | None = None,
+    ) -> None:
+        super().__init__(parent)
+        self.setProperty("card", True)
+        self.setProperty("tone", tone)
+        self.setMinimumHeight(SIZES.check_row_height * 2)
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(SIZES.space_m, SIZES.space_m, SIZES.space_m, SIZES.space_m)
+        layout.setSpacing(SIZES.space_xs)
+
+        step_label = TrLabel(f"stepper.step_{step_number}", role="small")
+        step_label.set_tracked(True)
+        layout.addWidget(step_label)
+
+        title_label = TrLabel(title_key, role="h2")
+        title_label.setFont(font(20, bold=True))  # 20px bold
+        layout.addWidget(title_label)
+
+        if subtitle:
+            self.subtitle_label = QLabel(subtitle)
+            self.subtitle_label.setFont(font(SIZES.font_base))
+            self.subtitle_label.setProperty("role", "muted")
+            self.subtitle_label.setWordWrap(True)
+            layout.addWidget(self.subtitle_label)
+
+        self.status_pill = StatusPill()
+        layout.addWidget(self.status_pill, 0, Qt.AlignmentFlag.AlignRight)
+        language_notifier().changed.connect(self.retranslate)
+
+    def set_tone(self, tone: str) -> None:
+        set_prop(self, "tone", tone)
+
+    def set_subtitle(self, text: str) -> None:
+        if hasattr(self, "subtitle_label"):
+            self.subtitle_label.setText(text)
+
+    def set_status(self, state: str, key: str | None = None, **params: Any) -> None:
+        self.status_pill.set_state(state, key, **params)
+
+    def retranslate(self, *_args: object) -> None:
+        # StatusPill handles its own translation via signal
+        pass
+
+
+class AccentCard(QFrame):
+    """Tone-border card with optional icon tile, 2px four-sided border."""
+
+    def __init__(
+        self,
+        title_key: str,
+        tone: str = "pending",
+        icon: str | None = None,
+        parent: QWidget | None = None,
+    ) -> None:
+        super().__init__(parent)
+        self.setProperty("card", True)
+        self.setProperty("tone", tone)
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(SIZES.space_l, SIZES.space_l, SIZES.space_l, SIZES.space_l)
+        layout.setSpacing(SIZES.space_m)
+
+        header = QHBoxLayout()
+        header.setSpacing(SIZES.space_m)
+        if icon:
+            self.icon = Icon(icon, 40, COLORS.text)
+            header.addWidget(self.icon, 0, Qt.AlignmentFlag.AlignTop)
+        self.title = TrLabel(title_key, role="h1")
+        self.title.setFont(font(SIZES.font_h1, bold=True))
+        header.addWidget(self.title, 1)
+        layout.addLayout(header)
+
+        self.content_layout = QVBoxLayout()
+        self.content_layout.setSpacing(SIZES.space_s)
+        layout.addLayout(self.content_layout)
+
+        language_notifier().changed.connect(self.retranslate)
+
+    def add_widget(self, widget: QWidget) -> None:
+        self.content_layout.addWidget(widget)
+
+    def add_layout(self, layout: QVBoxLayout | QHBoxLayout) -> None:
+        self.content_layout.addLayout(layout)
+
+    def set_tone(self, tone: str) -> None:
+        set_prop(self, "tone", tone)
+
+    def retranslate(self, *_args: object) -> None:
+        pass
+
+
+class ProgressBar(QProgressBar):
+    """Progress bar with % text always readable (black on yellow chunk)."""
+
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setMinimumHeight(16)
+        self.setTextVisible(True)
+        self.setFormat("%p %")
+        self.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        language_notifier().changed.connect(self.retranslate)
+
+    def retranslate(self, *_args: object) -> None:
+        pass
+
+
 def card(
     parent: QWidget | None = None, *, margins: int = SIZES.space_l
 ) -> tuple[QFrame, QVBoxLayout]:
@@ -523,7 +698,7 @@ def scroll_card(parent: QWidget | None = None) -> tuple[QFrame, QVBoxLayout]:
     return frame, layout
 
 
-def nested_panel(parent: QWidget | None = None) -> tuple[QFrame, QVBoxLayout]:
+def tint_panel(parent: QWidget | None = None) -> tuple[QFrame, QVBoxLayout]:
     """A nested olive-tinted panel for grouped metrics."""
     frame = QFrame(parent)
     frame.setProperty("nested_panel", "true")
