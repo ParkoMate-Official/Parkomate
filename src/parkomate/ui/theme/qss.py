@@ -59,7 +59,7 @@ QFrame[card="true"][tone="pending"] {{
 /* Nested tint panel for metrics */
 QFrame[nested_panel="true"] {{
     background: {c.surface_tint};
-    border: 1px solid #E2E8DC;
+    border: 1px solid {c.border};
     border-radius: {s.tint_radius}px;
 }}
 
@@ -198,6 +198,7 @@ QPushButton[variant="toggle"]:checked {{
     border: 2px solid {c.accent};
 }}
 QPushButton[variant="toggle"]:hover {{ background: {c.surface_alt}; }}
+QPushButton[variant="toggle"]:focus {{ border: {s.focus_width}px solid {c.focus}; }}
 
 /* Takeover - Full screen reject button */
 QPushButton[variant="takeover"] {{
@@ -225,7 +226,7 @@ QLineEdit, QComboBox, QSpinBox, QDoubleSpinBox, QDateEdit {{
 }}
 QLineEdit:focus, QComboBox:focus, QSpinBox:focus, QDoubleSpinBox:focus, QDateEdit:focus {{
     border: 2px solid {c.surface};
-    outline: {s.focus_width}px solid {c.border_strong};
+    outline: {s.focus_width}px solid {c.focus};
     outline-offset: {s.focus_width}px;
 }}
 QLineEdit[invalid="true"], QComboBox[invalid="true"], QSpinBox[invalid="true"],
@@ -288,7 +289,7 @@ QTabBar::tab {{
     font-size: {s.font_base}px;
 }}
 QTabBar::tab:selected {{ color: {c.accent}; border-bottom: 3px solid {c.accent}; }}
-QTabBar::tab:focus {{ color: {c.focus}; }}
+QTabBar::tab:focus {{ color: {c.focus}; outline: 2px solid {c.focus}; outline-offset: -4px; }}
 QScrollArea {{ border: none; background: transparent; }}
 QScrollArea#CardScroll, QScrollArea#CardScroll > QWidget, QWidget#CardInner {{
     background: transparent;
@@ -319,6 +320,8 @@ QFrame#ModeBanner QLabel {{ color: {c.yellow_dark}; font-weight: 600; }}
 QFrame#InfoStrip {{ background: {c.surface_alt}; border-bottom: 1px solid {c.border}; }}
 QFrame#BottomBar {{ background: {c.surface}; border-top: 1px solid {c.border}; }}
 QFrame#Drawer {{ background: {c.surface}; border-left: 2px solid {c.border_strong}; }}
+QFrame#Drawer:focus {{ border-left: {s.focus_width}px solid {c.focus}; }}
+QFrame#Scrim {{ background: rgba(17, 24, 40, 0.35); }}
 
 /* ---------- status surfaces ---------- */
 QFrame[tone="pass"] {{ background: {c.pass_bg}; border: 2px solid {c.pass_fg}; border-radius: {s.radius}px; }}
@@ -354,7 +357,7 @@ QFrame#RejectTakeover {{ background: {c.fail_solid}; }}
 QFrame#RejectTakeover QLabel {{ color: {c.on_status_solid}; }}
 QLabel[box_letter="true"] {{
     border: 6px solid {c.on_status_solid};
-    border-radius: 24px;
+    border-radius: {s.card_radius}px;
     padding: 0 40px;
     color: {c.on_status_solid};
     font-size: {s.font_box_letter}px;

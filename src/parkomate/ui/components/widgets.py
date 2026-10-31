@@ -79,6 +79,7 @@ class TrLabel(QLabel):
         super().__init__(parent)
         self._key = key
         self._params = params
+        self._tracked = False
         self.setWordWrap(True)
         if role:
             self.setProperty("role", role)
@@ -95,11 +96,19 @@ class TrLabel(QLabel):
 
     def retranslate(self, *_args: object) -> None:
         self.setText(t(self._key, **self._params) if self._key else "")
+        self._apply_tracked()
 
     def set_tracked(self, tracked: bool) -> None:
         """Enable/disable uppercase tracking for English labels."""
-        if tracked != (self.property("tracked") == "true"):
-            set_prop(self, "tracked", "true" if tracked else "false")
+        self._tracked = tracked
+        self._apply_tracked()
+
+    def _apply_tracked(self) -> None:
+        from parkomate.i18n import get_language
+
+        should_track = self._tracked and get_language() == "en" and bool(self.text())
+        if should_track != (self.property("tracked") == "true"):
+            set_prop(self, "tracked", "true" if should_track else "false")
 
 
 class BigButton(QPushButton):

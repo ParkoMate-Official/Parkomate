@@ -33,6 +33,7 @@ from parkomate.ui.viewmodels.station import LoginPhase, SendState, StationContro
 
 
 def _centered(widget: QWidget, width: int) -> QWidget:
+    """Center a widget within the window horizontally and vertically."""
     page = QWidget()
     page.setObjectName("Page")
     outer = QVBoxLayout(page)
@@ -48,14 +49,15 @@ def _centered(widget: QWidget, width: int) -> QWidget:
 
 
 class MessageBox(QFrame):
-    """Inline error/info box: title + cause + steps."""
+    """Inline error/info box with 2px tone border."""
 
     def __init__(self, status: str = "fail") -> None:
         super().__init__()
         self.setProperty("tone", status)
         layout = QHBoxLayout(self)
         layout.setContentsMargins(SIZES.space_m, SIZES.space_m, SIZES.space_m, SIZES.space_m)
-        self.icon = Icon("warn", 36, COLORS.fail_fg if status == "fail" else COLORS.info_fg)
+        icon_color = COLORS.fail_fg if status == "fail" else COLORS.info_fg
+        self.icon = Icon("warn", 36, icon_color)
         layout.addWidget(self.icon, 0, Qt.AlignmentFlag.AlignTop)
         text = QVBoxLayout()
         self.title = QLabel()
@@ -85,6 +87,8 @@ class MessageBox(QFrame):
 
 
 class StartingView(QWidget):
+    """Centered brand with muted subtitle, shown during ambient measurement phase."""
+
     def __init__(self) -> None:
         super().__init__()
         self.setObjectName("Page")
@@ -100,12 +104,16 @@ class StartingView(QWidget):
 
 
 class LoginView(QWidget):
+    """Login screen with tracked labels, embedded ambient panel, language switch."""
+
     def __init__(self, controller: StationController) -> None:
         super().__init__()
         self.c = controller
         self.setObjectName("Page")
+
+        # Card width is 640px (per design spec)
         panel, layout = card()
-        panel.setFixedWidth(580)  # Login card width
+        panel.setFixedWidth(640)
 
         # Category label: PRODUCTION STATION (tracked uppercase for English)
         self.category_label = TrLabel("app.production_station")
@@ -143,7 +151,7 @@ class LoginView(QWidget):
         ambient_layout.addWidget(Icon("thermo", 32, COLORS.text_muted))
 
         self.ambient_label = TrLabel("login.ambient_label")
-        self.ambient_label.setProperty("tracked", "true")
+        self.ambient_label.set_tracked(True)
         ambient_layout.addWidget(self.ambient_label)
 
         self.ambient_text = QLabel()
@@ -158,8 +166,8 @@ class LoginView(QWidget):
         self.notice = MessageBox("info")
         layout.addWidget(self.notice)
 
-        self.form = QWidget()
-        form = QVBoxLayout(self.form)
+        # Form controls
+        form = QVBoxLayout()
         form.setContentsMargins(0, 0, 0, 0)
         form.setSpacing(SIZES.space_s)
 
@@ -195,7 +203,7 @@ class LoginView(QWidget):
         self.login_button = BigButton("action.login", variant="primary", hint_key="key.enter")
         self.login_button.clicked.connect(self._submit)
         form.addWidget(self.login_button)
-        layout.addWidget(self.form)
+        layout.addLayout(form)
 
         self.footer = QLabel()
         self.footer.setProperty("role", "small")
@@ -205,10 +213,12 @@ class LoginView(QWidget):
         QWidget.setTabOrder(self.code, self.password)
         QWidget.setTabOrder(self.password, self.show_password)
         QWidget.setTabOrder(self.show_password, self.login_button)
-        page = _centered(panel, 580)
+
+        page = _centered(panel, 640)
         outer = QVBoxLayout(self)
         outer.setContentsMargins(0, 0, 0, 0)
         outer.addWidget(page)
+
         controller.login_changed.connect(self.update_view)
         language_notifier().changed.connect(self.update_view)
         self.update_view()
@@ -234,6 +244,7 @@ class LoginView(QWidget):
         self.code.setAccessibleName(t("login.operator_id"))
         self.password.setPlaceholderText(t("login.password_hint"))
         self.password.setAccessibleName(t("login.password"))
+
         startup = c.startup
         if c.startup_error is not None:
             self.notice.show_error(c.startup_error)
@@ -246,15 +257,19 @@ class LoginView(QWidget):
             self.notice.show_text(t("notice.recovered_title"), "")
         else:
             self.notice.setVisible(False)
+
         phase = c.login_phase
         in_form = phase in (LoginPhase.FORM, LoginPhase.CHECKING)
-        self.form.setVisible(in_form)
+
+        # Ambient visibility
         self.ambient.setVisible(not in_form)
+
         checking = phase is LoginPhase.CHECKING
         self.code.setEnabled(not checking)
         self.password.setEnabled(not checking)
         self.login_button.setEnabled(not checking)
         self.login_button.set_text_key("login.checking" if checking else "action.login")
+
         error = c.login_error
         if error is None:
             self.error.setVisible(False)
@@ -262,12 +277,14 @@ class LoginView(QWidget):
             self.error.show_error(error)
             if error.code is not ErrorCode.AUTH_LOCKED:
                 self.password.clear()
+
         if phase is LoginPhase.AMBIENT:
             self.ambient_text.setText(t("login.measuring_ambient"))
             self.ambient_pill.set_state("pending")
         elif phase is LoginPhase.AMBIENT_DONE and c.ambient_c is not None:
             self.ambient_text.setText(t("login.ambient_result", value=f"{c.ambient_c:.1f}"))
             self.ambient_pill.set_state("pass")
+
         mock = ""
         if c.ctx.using_mocks:
             mock = t("mock.badge", scenario=getattr(c.ctx.hardware, "scenario", ""))
@@ -275,19 +292,27 @@ class LoginView(QWidget):
 
 
 class SessionEndView(QWidget):
+    """Session summary screen with metrics grid and logout option."""
+
     def __init__(self, controller: StationController) -> None:
         super().__init__()
         self.c = controller
         self.setObjectName("Page")
+
         panel, layout = card()
+
         layout.addWidget(TrLabel("end.title", role="h1"))
+
         self.subtitle = QLabel()
         self.subtitle.setProperty("role", "muted")
         layout.addWidget(self.subtitle)
+
+        # 2-column grid with huge numbers
         self.grid = QGridLayout()
-        self.grid.setHorizontalSpacing(SIZES.space_xl)
+        self.grid.setHorizontalSpacing(SIZES.space_l)
         self.grid.setVerticalSpacing(SIZES.space_s)
         layout.addLayout(self.grid)
+
         self._values: dict[str, QLabel] = {}
         rows = [
             "end.devices",
@@ -305,11 +330,13 @@ class SessionEndView(QWidget):
             label = QLabel()
             label.setProperty("i18n_key", key)
             value = QLabel("-")
-            value.setFont(font(SIZES.font_h2, bold=True))
+            value.setFont(font(SIZES.font_hero, bold=True))
             self.grid.addWidget(label, index % 6, column)
             self.grid.addWidget(value, index % 6, column + 1)
             self._values[key] = value
             self._values[f"{key}__label"] = label
+
+        # Send state pill
         send_row = QHBoxLayout()
         self.send_pill = StatusPill()
         self.send_text = QLabel()
@@ -318,22 +345,28 @@ class SessionEndView(QWidget):
         send_row.addWidget(self.send_pill)
         send_row.addWidget(self.send_text, 1)
         layout.addLayout(send_row)
+
+        # Report path elided with tooltip
         self.report_path = QLabel()
         self.report_path.setProperty("role", "small")
         self.report_path.setWordWrap(True)
         self.report_path.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         layout.addWidget(self.report_path)
+
         self.logout = BigButton("action.logout", variant="primary", hint_key="key.enter")
         self.logout.clicked.connect(self._logout)
         layout.addWidget(self.logout, 0, Qt.AlignmentFlag.AlignRight)
+
         page = _centered(panel, 980)
         outer = QVBoxLayout(self)
         outer.setContentsMargins(0, 0, 0, 0)
         outer.addWidget(page)
+
         for qt_key in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
             shortcut = QShortcut(QKeySequence(qt_key), self)
             shortcut.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
             shortcut.activated.connect(self._logout)
+
         controller.session_end_changed.connect(self.update_view)
         language_notifier().changed.connect(self.update_view)
         self.update_view()
@@ -352,6 +385,7 @@ class SessionEndView(QWidget):
                     label.setText(t("end.rejected_stage", letter=letter, stage=t(stage.label_key)))
                 else:
                     label.setText(t(base))
+
         summary = self.c.summary
         if summary is not None:
             fpy = summary.first_pass_yield
@@ -379,6 +413,7 @@ class SessionEndView(QWidget):
                     station=summary.session.station_id,
                 )
             )
+
         state = self.c.send_state
         pill, text_key = (
             {
@@ -394,6 +429,7 @@ class SessionEndView(QWidget):
         )
         self.send_pill.set_state(pill)
         self.send_text.setText(t(text_key))
+
         result = self.c.logout_result
         paths = result.queued.report_paths if result and result.queued else []
         self.report_path.setText(
@@ -403,8 +439,10 @@ class SessionEndView(QWidget):
 
 
 class FatalView(QWidget):
-    """Shown instead of the station when it cannot start (invalid settings - naming the exact
-    keys - or another instance already running)."""
+    """Shown instead of the station when it cannot start.
+
+    Displayed for invalid settings or another instance already running.
+    """
 
     def __init__(self, error: ParkomateError, location: str) -> None:
         super().__init__()
@@ -412,7 +450,11 @@ class FatalView(QWidget):
 
         self.setObjectName("Page")
         self.setWindowTitle(t("app.brand"))
+
         panel, layout = card()
+
+        # Tone border handled by card helper
+
         header = QHBoxLayout()
         header.addWidget(Icon("warn", 48, COLORS.fail_fg))
         title = QLabel(error_title(error))
@@ -420,14 +462,17 @@ class FatalView(QWidget):
         title.setWordWrap(True)
         header.addWidget(title, 1)
         layout.addLayout(header)
+
         cause = QLabel(error_cause(error))
         cause.setWordWrap(True)
         layout.addWidget(cause)
+
         place = QLabel(t("fatal.location", path=location))
         place.setProperty("role", "muted")
         place.setWordWrap(True)
         place.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         layout.addWidget(place)
+
         if isinstance(error, SettingsError):
             if error.issues:
                 lines = [f"•  {i.key}: {settings_issue_text(i)}" for i in error.issues]
@@ -439,12 +484,16 @@ class FatalView(QWidget):
             listing.setFont(font(SIZES.font_h2, bold=True))
             listing.setProperty("status", "fail")
             layout.addWidget(listing)
+
         steps = QLabel("\n".join(f"{n}.  {s}" for n, s in enumerate(error_steps(error), start=1)))
         steps.setWordWrap(True)
         steps.setFont(font(SIZES.font_h2))
         layout.addWidget(steps)
+
         self.close_button = BigButton("action.close_app", variant="primary")
         self.close_button.clicked.connect(self.close)
         layout.addWidget(self.close_button, 0, Qt.AlignmentFlag.AlignRight)
+
+        # 900px card for FatalView
         outer = QVBoxLayout(self)
         outer.addWidget(_centered(panel, 900))

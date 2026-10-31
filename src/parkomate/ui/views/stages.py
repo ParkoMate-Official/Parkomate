@@ -14,7 +14,6 @@ from PySide6.QtWidgets import (
     QLabel,
     QLineEdit,
     QProgressBar,
-    QScrollArea,
     QVBoxLayout,
     QWidget,
 )
@@ -265,7 +264,9 @@ class ProgrammingView(StageView):
         counter_grid.addWidget(self.c_fail, 0, 1)
         counter_grid.addWidget(self.c_adjusted, 1, 0)
         counters_layout.addLayout(counter_grid)
-        self.reset_counters = BigButton("action.reset_counters", variant="danger_outline", hint_key="key.esc")
+        self.reset_counters = BigButton(
+            "action.reset_counters", variant="danger_outline", hint_key="key.esc"
+        )
         self.reset_counters.clicked.connect(controller.reset_counters)
         counters_layout.addWidget(self.reset_counters, 0, Qt.AlignmentFlag.AlignRight)
         right.addWidget(counters)
@@ -656,18 +657,21 @@ class CameraPreview(QWidget):
         arm = min(guide.width(), guide.height()) * 0.15
 
         # Draw corner brackets
+        gl, gr = int(guide.left()), int(guide.right())
+        gt, gb = int(guide.top()), int(guide.bottom())
+        a = int(arm)
         # Top-left
-        painter.drawLine(int(guide.left()), int(guide.top()), int(guide.left() + arm), int(guide.top()))
-        painter.drawLine(int(guide.left()), int(guide.top()), int(guide.left()), int(guide.top() + arm))
+        painter.drawLine(gl, gt, gl + a, gt)
+        painter.drawLine(gl, gt, gl, gt + a)
         # Top-right
-        painter.drawLine(int(guide.right()), int(guide.top()), int(guide.right() - arm), int(guide.top()))
-        painter.drawLine(int(guide.right()), int(guide.top()), int(guide.right()), int(guide.top() + arm))
+        painter.drawLine(gr, gt, gr - a, gt)
+        painter.drawLine(gr, gt, gr, gt + a)
         # Bottom-left
-        painter.drawLine(int(guide.left()), int(guide.bottom()), int(guide.left() + arm), int(guide.bottom()))
-        painter.drawLine(int(guide.left()), int(guide.bottom()), int(guide.left()), int(guide.bottom() - arm))
+        painter.drawLine(gl, gb, gl + a, gb)
+        painter.drawLine(gl, gb, gl, gb - a)
         # Bottom-right
-        painter.drawLine(int(guide.right()), int(guide.bottom()), int(guide.right() - arm), int(guide.bottom()))
-        painter.drawLine(int(guide.right()), int(guide.bottom()), int(guide.right()), int(guide.bottom() - arm))
+        painter.drawLine(gr, gb, gr - a, gb)
+        painter.drawLine(gr, gb, gr, gb - a)
 
         # Scan line (yellow/green for active scanning)
         scanning = self.vm.camera_state is StepState.WORKING
@@ -785,7 +789,9 @@ class LabelingView(ChecklistView):
         action_row = QHBoxLayout()
         action_row.setContentsMargins(0, SIZES.space_s, 0, 0)
         self.manual_cancel = BigButton("action.cancel", variant="secondary", hint_key="key.esc")
+        self.manual_cancel.clicked.connect(self.vm.cancel_manual)
         self.manual_ok = BigButton("action.confirm_id", variant="primary", hint_key="key.enter")
+        self.manual_ok.clicked.connect(self._submit_manual)
         action_row.addWidget(self.manual_cancel)
         action_row.addWidget(self.manual_ok)
         action_row.addStretch(1)

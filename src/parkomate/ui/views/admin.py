@@ -164,9 +164,7 @@ class SettingsTab(QWidget):
         bottom_panel = QFrame()
         bottom_panel.setProperty("nested_panel", "true")
         bottom_layout = QHBoxLayout(bottom_panel)
-        bottom_layout.setContentsMargins(
-            SIZES.space_m, SIZES.space_s, SIZES.space_m, SIZES.space_s
-        )
+        bottom_layout.setContentsMargins(SIZES.space_m, SIZES.space_s, SIZES.space_m, SIZES.space_s)
         self.result = ResultLine()
         bottom_layout.addWidget(self.result, 1)
         self.reload = BigButton("action.reload_settings")
@@ -197,9 +195,7 @@ class SettingsTab(QWidget):
         panel = QFrame()
         panel.setProperty("nested_panel", "true")
         panel_layout = QVBoxLayout(panel)
-        panel_layout.setContentsMargins(
-            SIZES.space_m, SIZES.space_m, SIZES.space_m, SIZES.space_m
-        )
+        panel_layout.setContentsMargins(SIZES.space_m, SIZES.space_m, SIZES.space_m, SIZES.space_m)
         panel_layout.setSpacing(SIZES.space_m)
 
         title = LabelCaps(f"settings.section.{section}")
@@ -393,11 +389,7 @@ class SettingsTab(QWidget):
     def _show_issues(self, exc: SettingsError) -> None:
         first: QWidget | None = None
         for issue in exc.issues:
-            keys = (
-                issue.ctx.get("keys")
-                if isinstance(issue.ctx.get("keys"), list)
-                else [issue.key]
-            )
+            keys = issue.ctx.get("keys") if isinstance(issue.ctx.get("keys"), list) else [issue.key]
             for key in keys:
                 label = self.errors.get(key)
                 if label is None:
@@ -513,9 +505,7 @@ class OperatorsTab(QWidget):
         reset_panel = QFrame()
         reset_panel.setProperty("nested_panel", "true")
         reset_layout = QHBoxLayout(reset_panel)
-        reset_layout.setContentsMargins(
-            SIZES.space_m, SIZES.space_s, SIZES.space_m, SIZES.space_s
-        )
+        reset_layout.setContentsMargins(SIZES.space_m, SIZES.space_s, SIZES.space_m, SIZES.space_s)
         reset_layout.setSpacing(SIZES.space_s)
         self.reset_pw = QLineEdit()
         self.reset_pw.setEchoMode(QLineEdit.EchoMode.Password)
@@ -734,9 +724,7 @@ class ReportsTab(QWidget):
         export_panel = QFrame()
         export_panel.setProperty("nested_panel", "true")
         export_layout = QVBoxLayout(export_panel)
-        export_layout.setContentsMargins(
-            SIZES.space_m, SIZES.space_m, SIZES.space_m, SIZES.space_m
-        )
+        export_layout.setContentsMargins(SIZES.space_m, SIZES.space_m, SIZES.space_m, SIZES.space_m)
         export_layout.setSpacing(SIZES.space_m)
 
         # Row 1: Session selection export
@@ -971,37 +959,43 @@ class CountersTab(QWidget):
         tiles_layout.setSpacing(SIZES.space_l)
 
         # Tile 1: Completed
-        t1, t1_layout = tint_panel()
+        self.t1, t1_layout = tint_panel()
+        self.t1.setAccessibleName(t("counter.completed"))
         t1_title = LabelCaps("counter.completed")
         t1_title.setFont(font(SIZES.font_small, bold=True))
         self.t1_val = QLabel()
+        self.t1_val.setAccessibleName(t("counter.completed"))
         self.t1_val.setProperty("role", "hero_large")
         self.t1_val.setFont(font(SIZES.font_hero_large, bold=True))
         t1_layout.addWidget(t1_title)
         t1_layout.addWidget(self.t1_val)
-        tiles_layout.addWidget(t1, 1)
+        tiles_layout.addWidget(self.t1, 1)
 
         # Tile 2: Rejected
-        t2, t2_layout = tint_panel()
+        self.t2, t2_layout = tint_panel()
+        self.t2.setAccessibleName(t("counter.rejected"))
         t2_title = LabelCaps("counter.rejected")
         t2_title.setFont(font(SIZES.font_small, bold=True))
         self.t2_val = QLabel()
+        self.t2_val.setAccessibleName(t("counter.rejected"))
         self.t2_val.setProperty("role", "hero_large")
         self.t2_val.setFont(font(SIZES.font_hero_large, bold=True))
         t2_layout.addWidget(t2_title)
         t2_layout.addWidget(self.t2_val)
-        tiles_layout.addWidget(t2, 1)
+        tiles_layout.addWidget(self.t2, 1)
 
         # Tile 3: Uploads OK
-        t3, t3_layout = tint_panel()
+        self.t3, t3_layout = tint_panel()
+        self.t3.setAccessibleName(t("counter.uploads_ok"))
         t3_title = LabelCaps("counter.uploads_ok")
         t3_title.setFont(font(SIZES.font_small, bold=True))
         self.t3_val = QLabel()
+        self.t3_val.setAccessibleName(t("counter.uploads_ok"))
         self.t3_val.setProperty("role", "hero_large")
         self.t3_val.setFont(font(SIZES.font_hero_large, bold=True))
         t3_layout.addWidget(t3_title)
         t3_layout.addWidget(self.t3_val)
-        tiles_layout.addWidget(t3, 1)
+        tiles_layout.addWidget(self.t3, 1)
 
         layout.addLayout(tiles_layout)
 
@@ -1029,6 +1023,16 @@ class CountersTab(QWidget):
 
         controller.counters_changed.connect(self.refresh)
         language_notifier().changed.connect(self.refresh)
+        language_notifier().changed.connect(self.retranslate)
+        self.retranslate()
+
+    def retranslate(self, *_args: object) -> None:
+        self.t1.setAccessibleName(t("counter.completed"))
+        self.t2.setAccessibleName(t("counter.rejected"))
+        self.t3.setAccessibleName(t("counter.uploads_ok"))
+        self.t1_val.setAccessibleName(t("counter.completed"))
+        self.t2_val.setAccessibleName(t("counter.rejected"))
+        self.t3_val.setAccessibleName(t("counter.uploads_ok"))
 
     def refresh(self, *_args: object) -> None:
         counters = self.c.counters
@@ -1108,15 +1112,14 @@ class ErrorLogTab(QWidget):
         self.empty_state.setProperty("nested_panel", "true")
         empty_layout = QVBoxLayout(self.empty_state)
         empty_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        empty_layout.setContentsMargins(
-            SIZES.space_l, SIZES.space_l, SIZES.space_l, SIZES.space_l
-        )
+        empty_layout.setContentsMargins(SIZES.space_l, SIZES.space_l, SIZES.space_l, SIZES.space_l)
         self.empty_icon = Icon("check", 48, COLORS.pass_fg)
         self.empty_label = TrLabel("admin.log.empty", role="muted")
         self.empty_label.setFont(font(SIZES.font_h2))
         self.empty_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         empty_layout.addWidget(self.empty_icon, 0, Qt.AlignmentFlag.AlignCenter)
         empty_layout.addWidget(self.empty_label, 0, Qt.AlignmentFlag.AlignCenter)
+        self.empty_state.setAccessibleName(t("admin.log.empty"))
         self.empty_state.setVisible(False)
         layout.addWidget(self.empty_state, 1)
 
@@ -1155,6 +1158,7 @@ class ErrorLogTab(QWidget):
         _set_headers(self.table, self.COLUMNS)
         self.table.setAccessibleName(t("admin.tab.errors"))
         self.details.setAccessibleName(t("admin.log.details"))
+        self.empty_state.setAccessibleName(t("admin.log.empty"))
         current = self.filter.currentData()
         self.filter.blockSignals(True)
         self.filter.clear()
@@ -1197,9 +1201,7 @@ class AdminView(QWidget):
         self.card_frame = QFrame()
         self.card_frame.setProperty("card", True)
         card_layout = QVBoxLayout(self.card_frame)
-        card_layout.setContentsMargins(
-            SIZES.space_m, SIZES.space_m, SIZES.space_m, SIZES.space_m
-        )
+        card_layout.setContentsMargins(SIZES.space_m, SIZES.space_m, SIZES.space_m, SIZES.space_m)
 
         self.tabs = QTabWidget()
         self.settings_tab = SettingsTab(controller)

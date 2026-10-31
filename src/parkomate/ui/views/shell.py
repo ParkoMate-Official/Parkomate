@@ -4,12 +4,20 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
-from PySide6.QtCore import Qt
-from PySide6.QtGui import QKeySequence, QResizeEvent, QShortcut
+from PySide6.QtCore import QEvent, QObject, QPointF, Qt
+from PySide6.QtGui import (
+    QKeyEvent,
+    QKeySequence,
+    QLinearGradient,
+    QMouseEvent,
+    QPainter,
+    QPaintEvent,
+    QResizeEvent,
+    QShortcut,
+)
 from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
-    QLabel,
     QLineEdit,
     QListWidget,
     QListWidgetItem,
@@ -37,7 +45,7 @@ from parkomate.ui.viewmodels.base import Action, StatusLine
 from parkomate.ui.viewmodels.station import Page, StationController
 from parkomate.ui.views.stages import LabelingView, PackagingView, ProgrammingView, TestingView
 
-_TONE_ICON = {
+TONE_ICON = {
     "pass": ("check", COLORS.pass_fg),
     "fail": ("cross", COLORS.fail_fg),
     "warn": ("warn", COLORS.warn_fg),
@@ -47,18 +55,21 @@ _TONE_ICON = {
 
 
 class ModeBanner(QFrame):
-    """Full-width yellow banner showing simulation mode."""
+    """28 px amber band showing simulation mode. Visible only in mock mode."""
+
+    HEIGHT = 28
 
     def __init__(self, controller: StationController, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.c = controller
         self.setObjectName("ModeBanner")
+        self.setFixedHeight(self.HEIGHT)
         self.setVisible(False)
         layout = QHBoxLayout(self)
         layout.setContentsMargins(SIZES.space_l, SIZES.space_s, SIZES.space_l, SIZES.space_s)
         layout.setSpacing(SIZES.space_m)
-        self.label = QLabel()
-        self.label.setFont(font(SIZES.font_small, bold=True))
+        self.label = TrLabel("", role="small")
+        self.label.set_tracked(True)
         layout.addWidget(self.label, 1, Qt.AlignmentFlag.AlignCenter)
         # Connect to existing signals that trigger when context might change
         controller.page_changed.connect(self.refresh)
@@ -69,12 +80,17 @@ class ModeBanner(QFrame):
         if self.c.ctx.using_mocks:
             scenario = getattr(self.c.ctx.hardware, "scenario", "")
             if scenario:
-                self.label.setText(t("mock.badge", scenario=scenario))
+                self.label.set_key("mock.badge", scenario=scenario)
             else:
-                self.label.setText(t("mock.badge", scenario=""))
+                self.label.set_key("mock.badge", scenario="")
             self.setVisible(True)
         else:
             self.setVisible(False)
+
+    def paintEvent(self, event: QPaintEvent) -> None:
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        painter.fillRect(self.rect(), COLORS.yellow_soft)
 
 
 def format_duration(seconds: int) -> str:
@@ -96,28 +112,40 @@ def render_status(status: StatusLine) -> str:
 
 
 class TopBar(QFrame):
+    """76 px bar with brand, stepper, language switch, Session, Admin."""
+
+    HEIGHT = 76
+
     def __init__(self, controller: StationController, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.c = controller
         self.setObjectName("TopBar")
+        self.setFixedHeight(self.HEIGHT)
         layout = QHBoxLayout(self)
-        layout.setContentsMargins(SIZES.space_l, SIZES.space_s, SIZES.space_l, SIZES.space_s)
+        layout.setContentsMargins(SIZES.space_l, 8, SIZES.space_l, 8)
         layout.setSpacing(SIZES.space_m)
-        # Brand with olive accent on "Station"
-        self.brand = QLabel()
-        self.brand.setFont(font(SIZES.font_h2, bold=True))
+
+        # Brand: Parkomate Station (Station in olive accent via QSS)
+        self.brand = TrLabel("app.brand")
+        self.brand.setProperty("role", "h1")
         layout.addWidget(self.brand)
         layout.addStretch(1)
+
+        # StageStepper centered
         self.stepper = StageStepper()
         layout.addWidget(self.stepper)
         layout.addStretch(1)
+
+        # Right side: Language switch, Session, Admin
         self.language = LanguageSwitch()
         self.language.language_selected.connect(controller.set_language)
         layout.addWidget(self.language)
+
         self.session_button = BigButton("action.session", variant="secondary")
         self.session_button.setObjectName("TopButton")
         self.session_button.clicked.connect(lambda: controller.toggle_drawer())
         layout.addWidget(self.session_button)
+
         self.admin_button = BigButton("action.admin", variant="secondary")
         self.admin_button.setObjectName("TopButton")
         self.admin_button.clicked.connect(controller.open_admin)
@@ -134,110 +162,133 @@ class TopBar(QFrame):
             stage = Stage.COMPLETE
         self.stepper.set_state(stage, rejected=rejected, active=state is not None)
         self.language.sync(c.language())
-        # Brand label uses app.brand key which handles the olive accent via QSS
-        self.brand.setText(t("app.brand"))
         self.admin_button.setVisible(c.is_admin)
         self.admin_button.setEnabled(c.can_open_admin())
         self.admin_button.setToolTip("" if c.can_open_admin() else t("gate.admin_device_busy"))
 
+    def paintEvent(self, event: QPaintEvent) -> None:
+        # Top-right radial glow for non-real hardware sessions
+        if not self.c.ctx.using_mocks:
+            painter = QPainter(self)
+            painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+            gradient = QLinearGradient(
+                QPointF(self.width() - 100, 0),
+                QPointF(self.width(), self.height()),
+            )
+            gradient.setColorAt(0, COLORS.glow)
+            gradient.setColorAt(1, COLORS.bg)
+            painter.fillRect(self.rect(), gradient)
+        super().paintEvent(event)
+
 
 class InfoStrip(QFrame):
-    """Device · operator · session time · live counters (one compact line)."""
+    """40 px compact info strip: device · operator · session time · counters."""
+
+    HEIGHT = 40
 
     def __init__(self, controller: StationController, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.c = controller
         self.setObjectName("InfoStrip")
+        self.setFixedHeight(self.HEIGHT)
         layout = QHBoxLayout(self)
         layout.setContentsMargins(SIZES.space_l, SIZES.space_xs, SIZES.space_l, SIZES.space_xs)
         layout.setSpacing(SIZES.space_s)
+
         layout.addWidget(Icon("chip", 24, COLORS.text_muted))
-        self.device = QLabel()
-        self.device.setFont(font(SIZES.font_base, bold=True))
+        self.device = TrLabel("", role="muted")
         layout.addWidget(self.device)
+
         layout.addSpacing(SIZES.space_l)
         layout.addWidget(Icon("user", 24, COLORS.text_muted))
-        self.operator = QLabel()
+        self.operator = TrLabel("", role="muted")
         layout.addWidget(self.operator)
+
         layout.addStretch(1)
-        self.counters = QLabel()
-        self.counters.setFont(font(SIZES.font_base, bold=True))
+        self.counters = TrLabel("", role="muted")
         layout.addWidget(self.counters)
+
         language_notifier().changed.connect(self.refresh)
 
     def refresh(self, *_args: object) -> None:
         c = self.c
         state = c.device
         if state is None:
-            self.device.setText(t("info.device_none"))
+            self.device.set_key("info.device_none")
         elif state.device_id or state.qr_id:
-            self.device.setText(
-                t("info.device_id", id=state.device_id or state.qr_id, mac=state.mac_address)
+            self.device.set_key(
+                "info.device_id", id=state.device_id or state.qr_id, mac=state.mac_address
             )
         else:
-            self.device.setText(t("info.device_mac", mac=state.mac_address))
+            self.device.set_key("info.device_mac", mac=state.mac_address)
+
         operator = c.operator
-        self.operator.setText(
-            t(
-                "info.operator_time",
-                name=operator.full_name,
-                code=operator.operator_code,
-                time=format_duration(c.session_elapsed_s()),
-            )
-            if operator
-            else ""
-        )
+        self.operator.set_key(
+            "info.operator_time",
+            name=operator.full_name,
+            code=operator.operator_code,
+            time=format_duration(c.session_elapsed_s()),
+        ) if operator else ""
+
         counters = c.counters
         if counters is not None:
-            self.counters.setText(
-                t(
-                    "info.counters",
-                    ok=counters.upload_success,
-                    fail=counters.net_upload_failure,
-                    done=counters.completed,
-                    rejected=counters.rejected,
-                )
+            self.counters.set_key(
+                "info.counters",
+                ok=counters.upload_success,
+                fail=counters.net_upload_failure,
+                done=counters.completed,
+                rejected=counters.rejected,
             )
-            self.counters.setAccessibleName(self.counters.text())
+            self.counters.set_tracked(True)
 
 
 class BottomBar(QFrame):
-    """Status message (left) - disabled reason - secondary actions - THE primary action."""
+    """80 px bar: status (left) - secondary (center) - primary 60px (right)."""
+
+    HEIGHT = 80
 
     def __init__(self, controller: StationController, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.c = controller
         self.setObjectName("BottomBar")
+        self.setFixedHeight(self.HEIGHT)
+
         outer = QVBoxLayout(self)
-        outer.setContentsMargins(SIZES.space_l, 10, SIZES.space_l, 10)
+        outer.setContentsMargins(SIZES.space_l, 6, SIZES.space_l, 6)
+        outer.setSpacing(4)
+
         self.confirm = InlineConfirm()
         self.confirm.answered.connect(controller.answer)
         self.confirm.setVisible(False)
         outer.addWidget(self.confirm)
+
         self.normal = QWidget()
         row = QHBoxLayout(self.normal)
         row.setContentsMargins(0, 0, 0, 0)
         row.setSpacing(SIZES.space_m)
-        self.status_icon = Icon("info", 30, COLORS.info_fg)
-        self.status = QLabel()
-        self.status.setWordWrap(True)
+
+        self.status_icon = Icon("info", 28, COLORS.info_fg)
+        self.status = TrLabel("", role="muted")
         self.status.setFont(font(SIZES.font_base, bold=True))
         row.addWidget(self.status_icon)
         row.addWidget(self.status, 3)
-        self.reason = QLabel()
+
+        self.reason = TrLabel("", role="muted")
         self.reason.setWordWrap(True)
-        self.reason.setProperty("role", "muted")
-        self.reason.setFont(font(SIZES.font_base, bold=True))
+        self.reason.setFont(font(SIZES.font_small))
         self.reason.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         self.reason.setMaximumWidth(360)
         row.addWidget(self.reason, 2)
+
         self.secondary_box = QHBoxLayout()
         self.secondary_box.setSpacing(SIZES.space_s)
         row.addLayout(self.secondary_box)
-        self.primary = BigButton(variant="primary")
-        self.primary.setMinimumWidth(300)
+
+        self.primary = BigButton(variant="primary", hint_key="key.enter")
+        self.primary.setMinimumWidth(60)
         self.primary.clicked.connect(self._trigger_primary)
         row.addWidget(self.primary)
+
         outer.addWidget(self.normal)
         self._primary_action: Action | None = None
         self._secondary_buttons: list[BigButton] = []
@@ -268,6 +319,7 @@ class BottomBar(QFrame):
             return
         self.confirm.setVisible(False)
         self.normal.setVisible(True)
+
         vm = c.current_vm
         if vm is None or c.reject is not None:
             self._primary_action = None
@@ -276,13 +328,13 @@ class BottomBar(QFrame):
             self.reason.setText("")
             self._set_secondary([])
             return
+
         action = vm.primary()
         self._primary_action = action
         self.primary.setVisible(True)
         self.primary.set_text_key(action.key, **action.params)
         self.primary.set_hint_key(action.hint_key)
         self.primary.setEnabled(action.enabled)
-        self.primary.setObjectName(f"primary_{action.name}")
         reason = ""
         if not action.enabled and action.reason_key:
             reason = t(action.reason_key, **action.reason_params)
@@ -290,16 +342,18 @@ class BottomBar(QFrame):
         self.reason.setVisible(bool(reason))
         self.primary.setToolTip(reason)
         self.primary.setAccessibleDescription(reason)
+
         status = vm.status()
         if status is None:
             self.status.setText("")
             self.status_icon.setVisible(False)
         else:
             self.status.setText(render_status(status))
-            icon, color = _TONE_ICON.get(status.tone, _TONE_ICON["info"])
+            icon, color = TONE_ICON.get(status.tone, TONE_ICON["info"])
             self.status_icon.set_icon(icon, color)
             self.status_icon.setVisible(True)
             set_prop(self.status, "status", status.tone)
+
         self._set_secondary(vm.secondary())
 
     def _set_secondary(self, actions: list[Action]) -> None:
@@ -313,11 +367,11 @@ class BottomBar(QFrame):
         for index, button in enumerate(self._secondary_buttons):
             if index < len(actions):
                 action = actions[index]
+                button.setObjectName(f"secondary_{action.name}")
                 button.set_text_key(action.key, **action.params)
                 button.set_hint_key(action.hint_key)
                 button.set_variant(action.variant)
                 button.setEnabled(action.enabled)
-                button.setObjectName(f"secondary_{action.name}")
                 button.setVisible(True)
             else:
                 button.setVisible(False)
@@ -337,16 +391,19 @@ def _resolve(params: dict[str, object]) -> dict[str, object]:
 
 
 class SessionDrawer(QFrame):
-    """Right-side panel: devices this session, counters, ambient, End session."""
+    """480 px right-side drawer with scrim (rgba 17,24,40,0.35)."""
+
+    WIDTH = 480
 
     def __init__(self, controller: StationController, parent: QWidget) -> None:
         super().__init__(parent)
         self.c = controller
         self.setObjectName("Drawer")
-        self.setFixedWidth(460)
+        self.setFixedWidth(self.WIDTH)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(SIZES.space_l, SIZES.space_l, SIZES.space_l, SIZES.space_l)
         layout.setSpacing(SIZES.space_m)
+
         header = QHBoxLayout()
         title = TrLabel("drawer.title", role="h1")
         header.addWidget(title, 1)
@@ -354,38 +411,49 @@ class SessionDrawer(QFrame):
         self.close_button.clicked.connect(lambda: controller.toggle_drawer(False))
         header.addWidget(self.close_button)
         layout.addLayout(header)
-        self.counters = QLabel()
-        self.counters.setWordWrap(True)
+
+        self.counters = TrLabel("", role="muted")
         layout.addWidget(self.counters)
+
         ambient_row = QHBoxLayout()
         ambient_row.addWidget(Icon("thermo", 28, COLORS.text_muted))
-        self.ambient = QLabel()
-        self.ambient.setFont(font(SIZES.font_h2, bold=True))
+        self.ambient = TrLabel("", role="h2")
         ambient_row.addWidget(self.ambient, 1)
         layout.addLayout(ambient_row)
+
         self.remeasure = BigButton("action.remeasure_ambient", hint_key="key.f9")
         self.remeasure.clicked.connect(controller.remeasure_ambient)
         layout.addWidget(self.remeasure)
+
         layout.addWidget(TrLabel("drawer.devices", role="h2"))
         self.devices = QListWidget()
         self.devices.setAccessibleName(t("drawer.devices"))
         layout.addWidget(self.devices, 1)
-        self.end_button = BigButton("action.end_session", variant="danger")
+
+        self.end_button = BigButton("action.end_session", variant="pass")
         self.end_button.clicked.connect(controller.request_end_session)
         layout.addWidget(self.end_button)
+
         self.setVisible(False)
         parent.installEventFilter(self)
         language_notifier().changed.connect(self.refresh)
 
-    def eventFilter(self, watched: object, event: object) -> bool:
-        from PySide6.QtCore import QEvent
-
-        if (
-            watched is self.parent()
-            and getattr(event, "type", lambda: None)() == QEvent.Type.Resize
-        ):
+    def eventFilter(self, watched: QObject, event: QEvent) -> bool:
+        if watched is self.parent() and event.type() == QEvent.Type.Resize:
             self.reposition()
+        elif watched is self and event.type() == QEvent.Type.KeyPress:
+            ke = self._cast_key_event(event)
+            if ke is not None and ke.key() == Qt.Key.Key_Escape:
+                self.c.toggle_drawer(False)
+                return True
         return False
+
+    def _cast_key_event(self, event: QEvent) -> QKeyEvent | None:
+        """Safely cast QEvent to QKeyEvent if KeyPress."""
+
+        if event.type() == QEvent.Type.KeyPress:
+            return event  # type: ignore[return-value]
+        return None
 
     def reposition(self) -> None:
         parent = self.parentWidget()
@@ -396,20 +464,17 @@ class SessionDrawer(QFrame):
         c = self.c
         counters = c.counters
         if counters is not None:
-            self.counters.setText(
-                t(
-                    "drawer.counters",
-                    ok=counters.upload_success,
-                    fail=counters.net_upload_failure,
-                    done=counters.completed,
-                    rejected=counters.rejected,
-                )
+            self.counters.set_key(
+                "drawer.counters",
+                ok=counters.upload_success,
+                fail=counters.net_upload_failure,
+                done=counters.completed,
+                rejected=counters.rejected,
             )
-        self.ambient.setText(
-            t("drawer.ambient", value=f"{c.ambient_c:.1f}")
-            if c.ambient_c is not None
-            else t("drawer.ambient_unknown")
-        )
+        self.ambient.set_key(
+            "drawer.ambient", value=f"{c.ambient_c:.1f}"
+        ) if c.ambient_c is not None else self.ambient.set_key("drawer.ambient_unknown")
+
         self.devices.clear()
         for device in c.session_devices:
             mark = {
@@ -427,7 +492,23 @@ class SessionDrawer(QFrame):
             self.devices.addItem(QListWidgetItem(t("drawer.no_devices")))
 
 
+class Scrim(QFrame):
+    """Semi-transparent backdrop behind drawer."""
+
+    def __init__(self, on_click: Callable[[], None], parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setObjectName("Scrim")
+        self._on_click = on_click
+        self.setVisible(False)
+
+    def mousePressEvent(self, event: QMouseEvent) -> None:
+        self._on_click()
+        event.accept()
+
+
 class ProductionShell(QWidget):
+    """Main shell with TopBar, InfoStrip, ModeBanner, stage panes, BottomBar, overlays."""
+
     def __init__(self, controller: StationController, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.c = controller
@@ -435,18 +516,22 @@ class ProductionShell(QWidget):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
+
         self.top = TopBar(controller)
         self.info = InfoStrip(controller)
         self.mode_banner = ModeBanner(controller)
         layout.addWidget(self.top)
         layout.addWidget(self.info)
         layout.addWidget(self.mode_banner)
+
         body = QVBoxLayout()
         body.setContentsMargins(SIZES.space_l, SIZES.space_s + 4, SIZES.space_l, SIZES.space_s + 4)
         body.setSpacing(SIZES.space_s)
+
         self.banner = ErrorBanner()
         self.banner.retry_requested.connect(controller.retry_error)
         body.addWidget(self.banner)
+
         self.stack = QStackedWidget()
         self.views = {
             Stage.PROGRAMMING: ProgrammingView(controller),
@@ -458,8 +543,12 @@ class ProductionShell(QWidget):
             self.stack.addWidget(view)
         body.addWidget(self.stack, 1)
         layout.addLayout(body, 1)
+
         self.bottom = BottomBar(controller)
         layout.addWidget(self.bottom)
+
+        self.scrim = Scrim(lambda: controller.toggle_drawer(False), self)
+        self.scrim.setAccessibleName(t("drawer.title"))
 
         self.drawer = SessionDrawer(controller, self)
         self.takeover = RejectTakeover(self)
@@ -519,7 +608,7 @@ class ProductionShell(QWidget):
             return
         focus = self.focusWidget()
         if isinstance(focus, QLineEdit) and focus.property("enter_submits"):
-            focus.returnPressed.emit()  # the field handles Enter itself (manual ID entry)
+            focus.returnPressed.emit()
             return
         action = self.bottom.primary_action()
         if action is not None:
@@ -541,6 +630,7 @@ class ProductionShell(QWidget):
             return
         self.top.refresh()
         self.info.refresh()
+        self.scrim.setAccessibleName(t("drawer.title"))
 
     def _error_changed(self) -> None:
         state = self.c.error
@@ -553,15 +643,21 @@ class ProductionShell(QWidget):
 
     def _drawer_changed(self) -> None:
         if self.c.drawer_open:
+            self.scrim.setGeometry(0, 0, self.width(), self.height())
+            self.scrim.setVisible(True)
+            self.scrim.raise_()
             self.drawer.refresh()
             self.drawer.reposition()
             self.drawer.setVisible(True)
             self.drawer.raise_()
             self.drawer.close_button.setFocus()
         else:
+            self.scrim.setVisible(False)
             self.drawer.setVisible(False)
 
     def resizeEvent(self, event: QResizeEvent) -> None:
         super().resizeEvent(event)
+        if self.scrim.isVisible():
+            self.scrim.setGeometry(0, 0, self.width(), self.height())
         self.drawer.reposition()
         self.takeover.reposition()

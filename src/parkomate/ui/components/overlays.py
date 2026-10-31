@@ -1,10 +1,21 @@
-"""ErrorBanner, RejectTakeover and SuccessToast."""
+"""ErrorBanner, RejectTakeover, SuccessToast overlays.
+
+Overlays are anchored to content area and BottomBar footprint.
+They do NOT resize or shift stage panes or cause scrollbars.
+Left accent is a four-sided 2px tone border.
+"""
 
 from __future__ import annotations
 
 from PySide6.QtCore import QEvent, QObject, Qt, QTimer, Signal
 from PySide6.QtGui import QKeyEvent
-from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QVBoxLayout, QWidget
+from PySide6.QtWidgets import (
+    QFrame,
+    QHBoxLayout,
+    QLabel,
+    QVBoxLayout,
+    QWidget,
+)
 
 from parkomate.core.enums import Severity
 from parkomate.core.errors import ParkomateError
@@ -18,32 +29,38 @@ from parkomate.ui.theme.tokens import COLORS, SIZES
 
 
 class ErrorBanner(QFrame):
-    """Tells the operator what to do: title, one-line cause, numbered steps, one 'Try again'.
+    """Inline error banner with 4-sided 2px tone border, anchored after TopBar/InfoStrip.
 
-    Technical details are hidden behind a small 'Details for support' link.
+    Does NOT resize stage panes - fixed height, expandable content.
     """
 
     retry_requested = Signal()
 
+    HEIGHT = 56
+
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.setObjectName("ErrorBanner")
+        self.setFixedHeight(self.HEIGHT)
         self.setProperty("tone", "fail")
         self._error: ParkomateError | None = None
         self._retry_key = "action.try_again"
         self._has_retry = False
+
         outer = QHBoxLayout(self)
         outer.setContentsMargins(SIZES.space_l, SIZES.space_s, SIZES.space_l, SIZES.space_s)
         outer.setSpacing(SIZES.space_m)
-        self._icon = Icon("warn", 40, COLORS.fail_fg)
+
+        self._icon = Icon("warn", 32, COLORS.fail_fg)
         outer.addWidget(self._icon, 0, Qt.AlignmentFlag.AlignTop)
+
         text = QVBoxLayout()
         text.setSpacing(SIZES.space_xs)
         self.title = QLabel()
         self.title.setFont(font(SIZES.font_h2 + 2, bold=True))
         self.title.setWordWrap(True)
-        self.cause = QLabel()
-        self.cause.setWordWrap(True)
+        self.cause_label = QLabel()
+        self.cause_label.setWordWrap(True)
         self.steps = QLabel()
         self.steps.setWordWrap(True)
         self.steps.setTextFormat(Qt.TextFormat.PlainText)
@@ -54,10 +71,11 @@ class ErrorBanner(QFrame):
         self.details.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         self.details.setVisible(False)
         text.addWidget(self.title)
-        text.addWidget(self.cause)
+        text.addWidget(self.cause_label)
         text.addWidget(self.steps)
         text.addWidget(self.details)
         outer.addLayout(text, 1)
+
         buttons = QVBoxLayout()
         buttons.setSpacing(SIZES.space_s)
         self.retry_button = BigButton("action.try_again", variant="secondary")
@@ -68,6 +86,7 @@ class ErrorBanner(QFrame):
         buttons.addWidget(self.details_link, 0, Qt.AlignmentFlag.AlignRight)
         buttons.addStretch(1)
         outer.addLayout(buttons)
+
         self.setVisible(False)
         language_notifier().changed.connect(self.retranslate)
 
@@ -97,7 +116,7 @@ class ErrorBanner(QFrame):
         if error is None:
             return
         self.title.setText(error_title(error))
-        self.cause.setText(error_cause(error))
+        self.cause_label.setText(error_cause(error))
         steps = error_steps(error)
         self.steps.setText("\n".join(f"{i}.  {step}" for i, step in enumerate(steps, start=1)))
         self.retry_button.set_text_key(self._retry_key)
@@ -107,7 +126,7 @@ class ErrorBanner(QFrame):
 
 
 class _OverlayMixin(QFrame):
-    """Keeps the overlay sized to its parent."""
+    """Keeps overlay sized to its parent."""
 
     def __init__(self, parent: QWidget) -> None:
         super().__init__(parent)
@@ -134,10 +153,12 @@ class RejectTakeover(_OverlayMixin):
         self.setObjectName("RejectTakeover")
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self._instruction: RejectInstruction | None = None
+
         layout = QVBoxLayout(self)
         layout.setContentsMargins(64, 48, 64, 48)
         layout.setSpacing(SIZES.space_l)
         layout.addStretch(1)
+
         top = QHBoxLayout()
         top.addStretch(1)
         top.addWidget(Icon("cross", 96, COLORS.on_status_solid))
@@ -146,11 +167,13 @@ class RejectTakeover(_OverlayMixin):
         top.addWidget(self.headline)
         top.addStretch(1)
         layout.addLayout(top)
+
         self.place = QLabel()
         self.place.setFont(font(40, bold=True))
         self.place.setWordWrap(True)
         self.place.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(self.place)
+
         box_row = QHBoxLayout()
         box_row.addStretch(1)
         self.box_caption = QLabel()
@@ -158,6 +181,7 @@ class RejectTakeover(_OverlayMixin):
         self.box = QLabel()
         self.box.setFont(font(SIZES.font_box_letter, bold=True))
         self.box.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        # Uses QSS box_letter="true" rule instead of inline stylesheet
         self.box.setProperty("box_letter", "true")
         restyle(self.box)
         box_row.addWidget(self.box_caption, 0, Qt.AlignmentFlag.AlignVCenter)
@@ -165,12 +189,15 @@ class RejectTakeover(_OverlayMixin):
         box_row.addWidget(self.box)
         box_row.addStretch(1)
         layout.addLayout(box_row)
+
         self.reason = QLabel()
         self.reason.setFont(font(SIZES.font_h1))
         self.reason.setWordWrap(True)
         self.reason.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(self.reason)
+
         layout.addStretch(1)
+
         button_row = QHBoxLayout()
         button_row.addStretch(1)
         self.button = BigButton("action.device_placed", variant="takeover", hint_key="key.enter")
@@ -178,6 +205,7 @@ class RejectTakeover(_OverlayMixin):
         button_row.addWidget(self.button)
         button_row.addStretch(1)
         layout.addLayout(button_row)
+
         self.setVisible(False)
         language_notifier().changed.connect(self.retranslate)
 
@@ -220,11 +248,14 @@ class RejectTakeover(_OverlayMixin):
 
 
 class SuccessToast(QFrame):
-    """Green full-width confirmation that hides itself."""
+    """Green full-width confirmation that hides itself. Centered, max 560px wide."""
 
-    def __init__(self, parent: QWidget) -> None:
+    WIDTH = 560
+
+    def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.setObjectName("SuccessToast")
+        self.setFixedWidth(self.WIDTH)
         layout = QHBoxLayout(self)
         layout.setContentsMargins(SIZES.space_l, SIZES.space_m, SIZES.space_l, SIZES.space_m)
         layout.setSpacing(SIZES.space_m)
@@ -233,6 +264,7 @@ class SuccessToast(QFrame):
         self.label = QLabel()
         layout.addWidget(self.label)
         layout.addStretch(1)
+
         self._timer = QTimer(self)
         self._timer.setSingleShot(True)
         self._timer.timeout.connect(self.hide)
@@ -245,8 +277,10 @@ class SuccessToast(QFrame):
         self.retranslate()
         parent = self.parentWidget()
         if parent is not None:
-            width = parent.width() - 2 * SIZES.space_l
-            self.setGeometry(SIZES.space_l, SIZES.space_m, max(400, width), 84)
+            # Centered below TopBar
+            x = (parent.width() - self.width()) // 2
+            y = 120  # Below TopBar (76) + InfoStrip (40) + ModeBanner (28) + some margin
+            self.setGeometry(x, y, self.width(), 84)
         self.setVisible(True)
         self.raise_()
         self._timer.start(int(seconds * 1000))
