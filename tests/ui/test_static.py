@@ -102,7 +102,7 @@ def test_scanner_catches_literals(tmp_path: Path) -> None:
         (COLORS.text, COLORS.bg, 7.0),
         (COLORS.text_muted, COLORS.surface, 4.5),
         (COLORS.text_muted, COLORS.bg, 4.5),
-        (COLORS.on_accent, COLORS.accent, 4.5),
+        (COLORS.on_status_solid, COLORS.accent, 4.5),
         (COLORS.disabled_fg, COLORS.disabled_bg, 4.5),
         # status text: AAA
         (COLORS.pass_fg, COLORS.pass_bg, 7.0),
