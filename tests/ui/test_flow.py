@@ -523,31 +523,42 @@ def test_value_row_pass_fail_rendering(driver: StationDriver) -> None:
     assert pill_state == "pass", f"Expected pass, got {pill_state}"
 
     # Pill should have accessible name
-    assert "pass" in first_row.pill.accessibleName().lower() or "check" in first_row.pill.text().lower()
+    has_pass_info = (
+        "pass" in first_row.pill.accessibleName().lower()
+        or "check" in first_row.pill.text().lower()
+    )
+    assert has_pass_info
 
 
 def test_value_row_fail_state_on_measurement_fail(driver: StationDriver) -> None:
     """ValueRow pill should show fail state when measurement fails."""
+    from parkomate.core.models import CheckOutcome
+    from parkomate.ui.viewmodels.programming import StepState
+    from parkomate.ui.views.stages import TestingView
+
     d = driver
     d.login()
     d.through_programming()
 
-    # Force a measurement fail by going directly to testing
-    from parkomate.core.models import CheckOutcome
-
-    # Simulate a failed measurement for B3_V_C
-    d.c._reading_results = [
-        CheckOutcome(check_code=CheckCode.B3_V_A, value_num=24.0, passed=True),
-        CheckOutcome(check_code=CheckCode.B3_V_B, value_num=5.0, passed=True),
-        CheckOutcome(check_code=CheckCode.B3_V_C, value_num=3.21, passed=False),  # FAIL
-        CheckOutcome(check_code=CheckCode.B3_T_REG, value_num=28.0, passed=True),
-    ]
-    d.c._measure_state = "pass"
-
     d.read_all_sensors()
     d.mark_ok()
 
+    # Simulate a failed measurement for B3_V_C
+    d.c.testing.results = [
+        CheckOutcome(stage=Stage.TESTING, check_code=CheckCode.B3_V_A, value_num=24.0, passed=True),
+        CheckOutcome(stage=Stage.TESTING, check_code=CheckCode.B3_V_B, value_num=5.0, passed=True),
+        CheckOutcome(
+            stage=Stage.TESTING, check_code=CheckCode.B3_V_C, value_num=3.21, passed=False
+        ),
+        CheckOutcome(
+            stage=Stage.TESTING, check_code=CheckCode.B3_T_REG, value_num=28.0, passed=True
+        ),
+    ]
+    d.c.testing.measure_state = StepState.FAIL
+    d.c.testing.notify()
+
     view = d.window.shell.views[Stage.TESTING]
+    assert isinstance(view, TestingView)
     fail_row = view.elec_values[CheckCode.B3_V_C]
 
     # The pill should be in "fail" state

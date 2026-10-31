@@ -4,8 +4,6 @@ from __future__ import annotations
 
 import re
 
-import pytest
-
 from parkomate.ui.theme.qss import build_stylesheet
 from parkomate.ui.theme.tokens import COLORS, SIZES
 
@@ -108,7 +106,7 @@ def test_nested_panel_rule_exists() -> None:
 
     assert 'QFrame[nested_panel="true"]' in css
     assert f"background: {COLORS.surface_tint}" in css
-    assert f"border: 1px solid #E2E8DC" in css
+    assert f"border: 1px solid {COLORS.border}" in css
     assert f"border-radius: {SIZES.tint_radius}px" in css
 
 

@@ -103,6 +103,7 @@ def test_settings_save_undo_round_trip(driver: StationDriver) -> None:
     station.setText(original)
     tab.save_settings()
 
+
 def test_email_settings_need_fields(driver: StationDriver) -> None:
     d = driver
     _open_admin(d)

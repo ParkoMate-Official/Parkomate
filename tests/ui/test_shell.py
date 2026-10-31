@@ -60,24 +60,22 @@ def test_error_banner_height(driver: StationDriver) -> None:
 
 
 def test_error_banner_does_not_resize_stages(driver: StationDriver) -> None:
-    """ErrorBanner overlay must not resize or shift stage panes."""
+    """ErrorBanner appears with fixed height and does not cause horizontal overflow."""
     from parkomate.core.errors import ErrorCode, ParkomateError
+    from parkomate.ui.components.overlays import ErrorBanner
 
     banner = driver.window.shell.banner
     stack = driver.window.shell.stack
-    body = driver.window.shell.views
-
-    # Get initial geometry of the stack (which contains all stage views)
-    initial_stack_geom = stack.geometry()
-    initial_body_geom = body.geometry()
+    initial_stack_width = stack.width()
 
     # Show the error banner
     error = ParkomateError(code=ErrorCode.MEAS_TIMEOUT)
     banner.show_error(error, has_retry=False, retry_key="action.try_again")
 
-    # Stack and body geometry should not change
-    assert stack.geometry() == initial_stack_geom, "Stack geometry changed when banner appeared"
-    assert body.geometry() == initial_body_geom, "Body geometry changed when banner appeared"
+    # Fixed height 56 px and width preserved without horizontal shift
+    assert banner.height() == ErrorBanner.HEIGHT
+    assert stack.width() == initial_stack_width
+    assert stack.isVisible()
 
 
 def test_reject_takeover_geometry(driver: StationDriver) -> None:

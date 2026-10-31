@@ -16,7 +16,9 @@ class TestTokenContrast:
         [
             (COLORS.text, COLORS.bg, 7.0),
             (COLORS.text, COLORS.surface, 7.0),
+            (COLORS.text, COLORS.surface_alt, 7.0),
             (COLORS.text, COLORS.surface_tint, 7.0),
+            (COLORS.text, COLORS.yellow_soft, 7.0),
         ],
     )
     def test_text_on_surfaces(self, fg: str, bg: str, minimum: float) -> None:
@@ -27,15 +29,38 @@ class TestTokenContrast:
         "fg,bg,minimum",
         [
             (COLORS.text_muted, COLORS.surface, 4.5),
+            (COLORS.text_muted, COLORS.surface_alt, 4.5),
             (COLORS.text_muted, COLORS.surface_tint, 4.5),
+            (COLORS.text_muted, COLORS.bg, 4.5),
         ],
     )
     def test_text_muted_on_surfaces(self, fg: str, bg: str, minimum: float) -> None:
         assert contrast_ratio(fg, bg) >= minimum
 
-    # --- White on accent (AA: 4.5:1 for large text) ---
+    # --- White / on_status_solid on accent (AA: 4.5:1 for large text / buttons) ---
     def test_white_on_accent(self) -> None:
         assert contrast_ratio("#FFFFFF", COLORS.accent) >= 4.5
+        assert contrast_ratio(COLORS.on_status_solid, COLORS.accent) >= 4.5
+
+    # --- Mode / simulation banner text on warning background (AAA: 7:1) ---
+    def test_yellow_dark_on_yellow_soft(self) -> None:
+        assert contrast_ratio(COLORS.yellow_dark, COLORS.yellow_soft) >= 7.0
+
+    # --- Non-text UI components and graphical objects (WCAG 2.1 SC 1.4.11: 3:1) ---
+    @pytest.mark.parametrize(
+        "fg,bg,minimum",
+        [
+            (COLORS.border_strong, COLORS.surface, 3.0),
+            (COLORS.border_strong, COLORS.bg, 3.0),
+            (COLORS.border_strong, COLORS.surface_alt, 3.0),
+            (COLORS.accent, COLORS.surface, 3.0),
+            (COLORS.accent, COLORS.bg, 3.0),
+            (COLORS.pass_fg, COLORS.surface, 3.0),
+            (COLORS.fail_fg, COLORS.surface, 3.0),
+        ],
+    )
+    def test_non_text_contrast(self, fg: str, bg: str, minimum: float) -> None:
+        assert contrast_ratio(fg, bg) >= minimum
 
     # --- Status foreground on status backgrounds (AAA: 7:1) ---
     @pytest.mark.parametrize(
