@@ -46,6 +46,37 @@ _TONE_ICON = {
 }
 
 
+class ModeBanner(QFrame):
+    """Full-width yellow banner showing simulation mode."""
+
+    def __init__(self, controller: StationController, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.c = controller
+        self.setObjectName("ModeBanner")
+        self.setVisible(False)
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(SIZES.space_l, SIZES.space_s, SIZES.space_l, SIZES.space_s)
+        layout.setSpacing(SIZES.space_m)
+        self.label = QLabel()
+        self.label.setFont(font(SIZES.font_small, bold=True))
+        layout.addWidget(self.label, 1, Qt.AlignmentFlag.AlignCenter)
+        # Connect to existing signals that trigger when context might change
+        controller.page_changed.connect(self.refresh)
+        controller.tick.connect(self.refresh)
+        self.refresh()
+
+    def refresh(self) -> None:
+        if self.c.ctx.using_mocks:
+            scenario = getattr(self.c.ctx.hardware, "scenario", "")
+            if scenario:
+                self.label.setText(t("mock.badge", scenario=scenario))
+            else:
+                self.label.setText(t("mock.badge", scenario=""))
+            self.setVisible(True)
+        else:
+            self.setVisible(False)
+
+
 def format_duration(seconds: int) -> str:
     hours, rest = divmod(max(0, seconds), 3600)
     minutes, secs = divmod(rest, 60)
@@ -72,18 +103,10 @@ class TopBar(QFrame):
         layout = QHBoxLayout(self)
         layout.setContentsMargins(SIZES.space_l, SIZES.space_s, SIZES.space_l, SIZES.space_s)
         layout.setSpacing(SIZES.space_m)
-        brand_box = QVBoxLayout()
-        brand_box.setSpacing(0)
-        self.brand = TrLabel("app.brand")
+        # Brand with olive accent on "Station"
+        self.brand = QLabel()
         self.brand.setFont(font(SIZES.font_h2, bold=True))
-        self.brand.setWordWrap(False)
-        brand_box.addWidget(self.brand)
-        self.mock = TrLabel("mock.badge", role="small")
-        self.mock.setWordWrap(True)
-        self.mock.setMaximumWidth(240)
-        set_prop(self.mock, "status", "warn")
-        brand_box.addWidget(self.mock)
-        layout.addLayout(brand_box)
+        layout.addWidget(self.brand)
         layout.addStretch(1)
         self.stepper = StageStepper()
         layout.addWidget(self.stepper)
@@ -111,8 +134,8 @@ class TopBar(QFrame):
             stage = Stage.COMPLETE
         self.stepper.set_state(stage, rejected=rejected, active=state is not None)
         self.language.sync(c.language())
-        self.mock.setVisible(c.ctx.using_mocks)
-        self.mock.set_key("mock.badge", scenario=getattr(c.ctx.hardware, "scenario", ""))
+        # Brand label uses app.brand key which handles the olive accent via QSS
+        self.brand.setText(t("app.brand"))
         self.admin_button.setVisible(c.is_admin)
         self.admin_button.setEnabled(c.can_open_admin())
         self.admin_button.setToolTip("" if c.can_open_admin() else t("gate.admin_device_busy"))
@@ -414,8 +437,10 @@ class ProductionShell(QWidget):
         layout.setSpacing(0)
         self.top = TopBar(controller)
         self.info = InfoStrip(controller)
+        self.mode_banner = ModeBanner(controller)
         layout.addWidget(self.top)
         layout.addWidget(self.info)
+        layout.addWidget(self.mode_banner)
         body = QVBoxLayout()
         body.setContentsMargins(SIZES.space_l, SIZES.space_s + 4, SIZES.space_l, SIZES.space_s + 4)
         body.setSpacing(SIZES.space_s)

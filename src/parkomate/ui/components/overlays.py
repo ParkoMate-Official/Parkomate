@@ -11,7 +11,7 @@ from parkomate.core.errors import ParkomateError
 from parkomate.core.models import RejectInstruction
 from parkomate.i18n import t, tr_message
 from parkomate.ui.components.icons import Icon
-from parkomate.ui.components.widgets import BigButton, set_prop
+from parkomate.ui.components.widgets import BigButton, restyle, set_prop
 from parkomate.ui.qt_i18n import error_cause, error_steps, error_title, language_notifier
 from parkomate.ui.theme.fonts import font
 from parkomate.ui.theme.tokens import COLORS, SIZES
@@ -158,10 +158,8 @@ class RejectTakeover(_OverlayMixin):
         self.box = QLabel()
         self.box.setFont(font(SIZES.font_box_letter, bold=True))
         self.box.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.box.setStyleSheet(
-            f"border: 6px solid {COLORS.on_status_solid}; border-radius: 24px;"
-            f" padding: 0 40px; color: {COLORS.on_status_solid};"
-        )
+        self.box.setProperty("box_letter", "true")
+        restyle(self.box)
         box_row.addWidget(self.box_caption, 0, Qt.AlignmentFlag.AlignVCenter)
         box_row.addSpacing(SIZES.space_l)
         box_row.addWidget(self.box)

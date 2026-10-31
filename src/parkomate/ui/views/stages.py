@@ -19,7 +19,6 @@ from PySide6.QtWidgets import (
 )
 
 from parkomate.core.enums import (
-    MAX_SENSOR_READINGS,
     CheckCode,
     IdentityStatus,
     IdEntryMethod,
@@ -34,7 +33,7 @@ from parkomate.ui.components.widgets import (
     CounterBadge,
     StatusPill,
     TrLabel,
-    ValueRow,
+    nested_panel,
     scroll_card,
     set_prop,
 )
@@ -72,18 +71,22 @@ def local_time(value: datetime) -> str:
 
 
 class StepRow(QFrame):
-    """Numbered step with a title, a status pill and a body."""
+    """Numbered step with a title, a status pill and a body.
+
+    Uses 2px four-sided tone borders on card (QFrame[card="true"][tone="..."]).
+    """
 
     def __init__(self, number: str, title_key: str, parent: QWidget | None = None) -> None:
         super().__init__(parent)
+        self.setProperty("card", "true")
         self.setProperty("tone", "pending")
         outer = QVBoxLayout(self)
-        outer.setContentsMargins(SIZES.space_s + 4, 6, SIZES.space_s + 4, 6)
-        outer.setSpacing(2)
+        outer.setContentsMargins(SIZES.space_m, SIZES.space_m, SIZES.space_m, SIZES.space_m)
+        outer.setSpacing(SIZES.space_s)
         header = QHBoxLayout()
         self.number = QLabel(number)
         self.number.setFont(font(SIZES.font_h2, bold=True))
-        self.number.setFixedWidth(36)
+        self.number.setFixedWidth(40)
         self.title = TrLabel(title_key, role="h2")
         self.pill = StatusPill()
         header.addWidget(self.number)
@@ -91,7 +94,7 @@ class StepRow(QFrame):
         header.addWidget(self.pill)
         outer.addLayout(header)
         self.body = QVBoxLayout()
-        self.body.setContentsMargins(42, 0, 0, 0)
+        self.body.setContentsMargins(44, 0, 0, 0)
         self.body.setSpacing(SIZES.space_xs)
         outer.addLayout(self.body)
 
@@ -220,20 +223,23 @@ class ProgrammingView(StageView):
         adjust_layout.addLayout(buttons)
         right.addWidget(self.adjust)
         right.addStretch(1)
-        counters = QFrame()
-        counters.setProperty("tone", "pending")
-        grid = QGridLayout(counters)
-        grid.setContentsMargins(SIZES.space_m, SIZES.space_m, SIZES.space_m, SIZES.space_m)
-        grid.addWidget(TrLabel("prog.counters_title", role="h2"), 0, 0, 1, 2)
+        # Upload counters in a nested tint panel
+        counters, counters_layout = nested_panel()
+        counters_layout.addWidget(TrLabel("prog.counters_title"))
         self.c_ok = CounterBadge("counter.uploads_ok", "check")
         self.c_fail = CounterBadge("counter.uploads_fail", "cross")
         self.c_adjusted = CounterBadge("counter.failures_adjusted", "info")
-        grid.addWidget(self.c_ok, 1, 0)
-        grid.addWidget(self.c_fail, 1, 1)
-        grid.addWidget(self.c_adjusted, 2, 0)
-        self.reset_counters = BigButton("action.reset_counters", variant="danger")
+        counter_grid = QGridLayout()
+        counter_grid.setContentsMargins(0, SIZES.space_s, 0, 0)
+        counter_grid.setHorizontalSpacing(SIZES.space_l)
+        counter_grid.setVerticalSpacing(SIZES.space_xs)
+        counter_grid.addWidget(self.c_ok, 0, 0)
+        counter_grid.addWidget(self.c_fail, 0, 1)
+        counter_grid.addWidget(self.c_adjusted, 1, 0)
+        counters_layout.addLayout(counter_grid)
+        self.reset_counters = BigButton("action.reset_counters", variant="danger_outline")
         self.reset_counters.clicked.connect(controller.reset_counters)
-        grid.addWidget(self.reset_counters, 2, 1)
+        counters_layout.addWidget(self.reset_counters, 0, Qt.AlignmentFlag.AlignRight)
         right.addWidget(counters)
         controller.counters_changed.connect(self.update_view)
         controller.session_changed.connect(self.update_view)
@@ -331,7 +337,7 @@ class ProgrammingView(StageView):
 
 
 class DecisionRow(QFrame):
-    """'Sensor readings: [✓ Success] [✕ Failure]' with one line of guidance."""
+    """Decision row with nested tint panel, deep green success and neutral failure buttons."""
 
     def __init__(
         self, code: CheckCode, title_key: str, help_key: str, vm: TestingViewModel
@@ -339,18 +345,24 @@ class DecisionRow(QFrame):
         super().__init__()
         self.code = code
         self.vm = vm
-        self.setProperty("tone", "pending")
+        self.setProperty("nested_panel", "true")
         layout = QHBoxLayout(self)
-        layout.setContentsMargins(SIZES.space_m, SIZES.space_s, SIZES.space_m, SIZES.space_s)
+        layout.setContentsMargins(SIZES.space_m, SIZES.space_m, SIZES.space_m, SIZES.space_m)
+        layout.setSpacing(SIZES.space_m)
         text = QVBoxLayout()
-        text.addWidget(TrLabel(title_key, role="h2"))
-        text.addWidget(TrLabel(help_key, role="muted"))
+        text.setSpacing(SIZES.space_xs)
+        self.title = TrLabel(title_key, role="h2")
+        self.help = TrLabel(help_key, role="small")
+        text.addWidget(self.title)
+        text.addWidget(self.help)
         layout.addLayout(text, 1)
         self.success = BigButton("action.mark_success", variant="pass")
-        self.failure = BigButton("action.mark_failure", variant="danger")
+        self.failure = BigButton("action.mark_failure", variant="secondary")
         for button in (self.success, self.failure):
             button.setCheckable(True)
-            layout.addWidget(button)
+            button.setMinimumWidth(160)
+        layout.addWidget(self.success)
+        layout.addWidget(self.failure)
         self.success.clicked.connect(lambda: self.vm.mark(code, True))
         self.failure.clicked.connect(lambda: self.vm.mark(code, False))
 
@@ -360,7 +372,6 @@ class DecisionRow(QFrame):
         self.failure.setChecked(value is False)
         self.success.setEnabled(enabled and value is None)
         self.failure.setEnabled(enabled and value is None)
-        set_prop(self, "tone", "pending" if value is None else ("pass" if value else "fail"))
 
 
 class TestingView(StageView):
@@ -371,25 +382,40 @@ class TestingView(StageView):
     def __init__(self, controller: StationController) -> None:
         super().__init__(controller, controller.testing, ratio=(6, 5))
         left = self.left_layout
+
+        # Amber warning banner (shown conditionally)
+        self.warning_banner = QFrame()
+        self.warning_banner.setProperty("tone", "warn_left")
+        warning_layout = QHBoxLayout(self.warning_banner)
+        warning_layout.setContentsMargins(
+            SIZES.space_m, SIZES.space_s, SIZES.space_m, SIZES.space_s
+        )
+        warning_layout.setSpacing(SIZES.space_s)
+        warning_layout.addWidget(Icon("warn", 24, COLORS.warn_fg))
+        self.warning_text = QLabel()
+        self.warning_text.setFont(font(SIZES.font_base, bold=True))
+        warning_layout.addWidget(self.warning_text, 1)
+        left.addWidget(self.warning_banner)
+        self.warning_banner.setVisible(False)
+
         self.step_comm = StepRow("B1", "test.step.comm")
         self.comm_text = QLabel()
         self.step_comm.body.addWidget(self.comm_text)
         left.addWidget(self.step_comm)
+
         self.step_sensor = StepRow("B2", "test.step.sensor")
         self.reading_title = QLabel()
         self.reading_title.setFont(font(SIZES.font_h2, bold=True))
         self.step_sensor.body.addWidget(self.reading_title)
-        readings = QGridLayout()
-        readings.setHorizontalSpacing(SIZES.space_l)
-        readings.setVerticalSpacing(0)
-        self.reading_labels: list[QLabel] = []
-        for index in range(MAX_SENSOR_READINGS):
-            label = QLabel()
-            label.setFont(font(SIZES.font_base))
-            readings.addWidget(label, index // 2, index % 2)
-            self.reading_labels.append(label)
-        self.step_sensor.body.addLayout(readings)
+
+        # Inline sensor readings (compact series)
+        self.reading_series = QLabel()
+        self.reading_series.setFont(font(SIZES.font_base))
+        self.reading_series.setWordWrap(True)
+        self.step_sensor.body.addWidget(self.reading_series)
+
         left.addWidget(self.step_sensor)
+
         self.sensor_row = DecisionRow(
             CheckCode.B2_SENSOR_OK, "test.mark.sensor", "test.mark.sensor_help", self.vm
         )
@@ -401,26 +427,44 @@ class TestingView(StageView):
         left.addStretch(1)
 
         right = self.right_layout
+
+        # B3 Electrical step with card-level status pill (uses StepRow's built-in pill)
         self.step_elec = StepRow("B3", "test.step.electrical")
         right.addWidget(self.step_elec)
-        grid = QGridLayout()
-        grid.setHorizontalSpacing(SIZES.space_m)
-        grid.setVerticalSpacing(SIZES.space_s)
-        for col, key in enumerate(
-            ("test.col.check", "test.col.measured", "test.col.allowed", "test.col.result")
-        ):
+
+        # Nested tint panel for electrical readings with huge numbers
+        self.elec_panel, self.elec_panel_layout = nested_panel()
+
+        # Headers
+        header_grid = QGridLayout()
+        header_grid.setHorizontalSpacing(SIZES.space_m)
+        header_grid.setVerticalSpacing(SIZES.space_s)
+        for col, key in enumerate(("test.col.check", "test.col.allowed")):
             header = TrLabel(key, role="small")
             header.setFont(font(SIZES.font_small, bold=True))
-            grid.addWidget(header, 0, col)
-        self.cells: dict[CheckCode, ValueRow] = {
-            code: ValueRow(grid, row, code.label_key) for row, code in enumerate(self.ROWS, start=1)
-        }
-        right.addLayout(grid)
-        self.waiting = QLabel()
-        self.waiting.setFont(font(SIZES.font_h2, bold=True))
-        self.waiting.setWordWrap(True)
-        right.addWidget(self.waiting)
-        right.addStretch(1)
+            header_grid.addWidget(header, 0, col)
+        self.elec_panel_layout.addLayout(header_grid)
+
+        # Value rows with huge black numbers
+        self.elec_values: dict[CheckCode, tuple[QLabel, QLabel, QLabel]] = {}
+        for row, code in enumerate(self.ROWS, start=1):
+            name = TrLabel(code.label_key)
+            name.setFont(font(SIZES.font_base))
+            allowed = QLabel()
+            allowed.setFont(font(SIZES.font_small))
+            allowed.setWordWrap(True)
+            value = QLabel("-")
+            value.setFont(font(SIZES.font_hero, bold=True))
+            value.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+            header_grid.addWidget(name, row, 0)
+            header_grid.addWidget(allowed, row, 1)
+            header_grid.addWidget(value, row, 2)
+            self.elec_values[code] = (name, allowed, value)
+
+        self.elec_panel_layout.addStretch(1)
+        right.addWidget(self.elec_panel)
+
+        # Ambient and remeasure
         ambient = QHBoxLayout()
         ambient.addWidget(Icon("thermo", 32, COLORS.text_muted))
         self.ambient = QLabel()
@@ -430,6 +474,7 @@ class TestingView(StageView):
         self.remeasure.clicked.connect(controller.remeasure_ambient)
         ambient.addWidget(self.remeasure)
         right.addLayout(ambient)
+
         self.update_view()
 
     def _allowed_text(self, code: CheckCode) -> str:
@@ -475,44 +520,51 @@ class TestingView(StageView):
             sensor_state = StepState.FAIL
         self.step_sensor.set_state(sensor_state)
         self.reading_title.setText(t("test.reading_progress", n=count, total=total))
-        for index, label in enumerate(self.reading_labels):
-            label.setVisible(index < total)
-            if index < count:
-                reading = vm.readings[index]
-                label.setText(
-                    f"{index + 1}.  {reading.value:g} {reading.unit}   "
-                    f"{local_time(reading.read_at)}"
-                )
-            else:
-                label.setText(f"{index + 1}.  -")
+
+        # Inline sensor readings series
+        if count > 0:
+            parts = []
+            for _i, reading in enumerate(vm.readings):
+                parts.append(f"{reading.value:g} {reading.unit}")
+            self.reading_series.setText(" · ".join(parts))
+        else:
+            self.reading_series.setText("")
+
         comm_ok = vm.comm_state is StepState.PASS
         self.sensor_row.update_view(comm_ok and vm.readings_done)
         self.indicator_row.update_view(comm_ok)
-        # B3
+
+        # B3 Electrical - update nested panel with huge numbers
         results: dict[CheckCode, CheckOutcome] = {o.check_code: o for o in vm.results}
-        for code, value_row in self.cells.items():
+        for code, (_name, allowed, value) in self.elec_values.items():
             outcome = results.get(code)
+            allowed.setText(self._allowed_text(code))
             if outcome is None or outcome.value_num is None:
-                working = vm.measure_state is StepState.WORKING
-                value_row.set_value(
-                    None, self._allowed_text(code), "working" if working else "pending"
-                )
+                value.setText("-")
             else:
                 unit = "°C" if code is CheckCode.B3_T_REG else "V"
-                state = (
-                    "pending" if outcome.passed is None else ("pass" if outcome.passed else "fail")
-                )
-                value_row.set_value(
-                    f"{outcome.value_num:g} {unit}", self._allowed_text(code), state
-                )
+                value.setText(f"{outcome.value_num:g} {unit}")
+                if outcome.passed:
+                    pass
+                else:
+                    pass
+
+        # Update step_elec pill based on overall electrical state
         elec_state = vm.measure_state
         self.step_elec.set_state(elec_state)
         if vm.measure_state is StepState.WORKING:
-            self.waiting.setText(t("test.waiting", s=vm.seconds_left))
+            # Show waiting text in step body or remove
+            pass
         elif vm.measure_state is StepState.ERROR:
-            self.waiting.setText(t("test.measure_error"))
+            pass
+
+        # Warning banner
+        if hasattr(vm, 'warning') and vm.warning:
+            self.warning_banner.setVisible(True)
+            self.warning_text.setText(vm.warning)
         else:
-            self.waiting.setText("")
+            self.warning_banner.setVisible(False)
+
         self.ambient.setText(
             t("test.ambient", value=f"{self.c.ambient_c:.1f}")
             if self.c.ambient_c is not None
@@ -631,7 +683,7 @@ class LabelingView(ChecklistView):
         decoded = QHBoxLayout()
         decoded.addWidget(TrLabel("label.decoded", role="muted"))
         self.decoded = QLabel("-")
-        self.decoded.setFont(font(SIZES.font_value_large, bold=True))
+        self.decoded.setFont(font(SIZES.font_hero_large, bold=True))
         self.decoded.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         decoded.addWidget(self.decoded, 1)
         self.manual_flag = TrLabel("label.manual_flag", role="small")
@@ -744,7 +796,7 @@ class PackagingView(ChecklistView):
         right = self.right_layout
         right.addWidget(TrLabel("pack.device_title", role="h2"))
         self.device = QLabel("-")
-        self.device.setFont(font(SIZES.font_value_large, bold=True))
+        self.device.setFont(font(SIZES.font_hero_large, bold=True))
         right.addWidget(self.device)
         self.mac = QLabel()
         self.mac.setProperty("role", "muted")

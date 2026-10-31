@@ -105,18 +105,56 @@ class LoginView(QWidget):
         self.c = controller
         self.setObjectName("Page")
         panel, layout = card()
-        header = QHBoxLayout()
+        panel.setFixedWidth(580)  # Login card width
+
+        # Category label: PRODUCTION STATION (tracked uppercase for English)
+        self.category_label = TrLabel("app.production_station")
+        self.category_label.setProperty("role", "small")
+        self.category_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(self.category_label)
+
+        # Main title
         brand = TrLabel("app.brand")
-        brand.setFont(font(SIZES.font_h1 + 4, bold=True))
-        brand.setWordWrap(False)
-        header.addWidget(brand, 1)
-        self.language = LanguageSwitch()
-        self.language.language_selected.connect(controller.set_language)
-        header.addWidget(self.language)
-        layout.addLayout(header)
+        brand.setFont(font(SIZES.font_h1, bold=True))
+        brand.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(brand)
+
         self.station = QLabel()
         self.station.setProperty("role", "muted")
+        self.station.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(self.station)
+
+        # Language Switcher (Top-right of card)
+        lang_row = QHBoxLayout()
+        lang_row.addStretch(1)
+        self.language = LanguageSwitch()
+        self.language.language_selected.connect(controller.set_language)
+        lang_row.addWidget(self.language)
+        layout.addLayout(lang_row)
+
+        # Ambient Panel (Nested tint panel)
+        self.ambient = QFrame()
+        self.ambient.setProperty("nested_panel", "true")
+        ambient_layout = QHBoxLayout(self.ambient)
+        ambient_layout.setContentsMargins(
+            SIZES.space_m, SIZES.space_m, SIZES.space_m, SIZES.space_m
+        )
+        ambient_layout.setSpacing(SIZES.space_m)
+        ambient_layout.addWidget(Icon("thermo", 32, COLORS.text_muted))
+
+        self.ambient_label = TrLabel("login.ambient_label")
+        self.ambient_label.setProperty("tracked", "true")
+        ambient_layout.addWidget(self.ambient_label)
+
+        self.ambient_text = QLabel()
+        self.ambient_text.setFont(font(SIZES.font_hero, bold=True))
+        self.ambient_text.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        ambient_layout.addWidget(self.ambient_text, 1)
+
+        self.ambient_pill = StatusPill(size="normal")
+        ambient_layout.addWidget(self.ambient_pill)
+        layout.addWidget(self.ambient)
+
         self.notice = MessageBox("info")
         layout.addWidget(self.notice)
 
@@ -124,12 +162,22 @@ class LoginView(QWidget):
         form = QVBoxLayout(self.form)
         form.setContentsMargins(0, 0, 0, 0)
         form.setSpacing(SIZES.space_s)
-        form.addWidget(TrLabel("login.operator_id", role="h2"))
+
+        # Operator ID with tracked label
+        op_id_label = TrLabel("login.operator_id", role="h2")
+        op_id_label.set_tracked(True)
+        form.addWidget(op_id_label)
+
         self.code = QLineEdit()
         self.code.setMaxLength(32)
         self.code.returnPressed.connect(self._submit)
         form.addWidget(self.code)
-        form.addWidget(TrLabel("login.password", role="h2"))
+
+        # Password with tracked label
+        pwd_label = TrLabel("login.password", role="h2")
+        pwd_label.set_tracked(True)
+        form.addWidget(pwd_label)
+
         password_row = QHBoxLayout()
         self.password = QLineEdit()
         self.password.setEchoMode(QLineEdit.EchoMode.Password)
@@ -140,34 +188,24 @@ class LoginView(QWidget):
         self.show_password.toggled.connect(self._toggle_password)
         password_row.addWidget(self.show_password)
         form.addLayout(password_row)
+
         self.error = MessageBox("fail")
         form.addWidget(self.error)
+
         self.login_button = BigButton("action.login", variant="primary", hint_key="key.enter")
         self.login_button.clicked.connect(self._submit)
         form.addWidget(self.login_button)
         layout.addWidget(self.form)
 
-        self.ambient = QFrame()
-        self.ambient.setProperty("tone", "info")
-        ambient_layout = QHBoxLayout(self.ambient)
-        ambient_layout.setContentsMargins(
-            SIZES.space_l, SIZES.space_l, SIZES.space_l, SIZES.space_l
-        )
-        ambient_layout.addWidget(Icon("thermo", 48, COLORS.info_fg))
-        self.ambient_text = QLabel()
-        self.ambient_text.setFont(font(SIZES.font_h1, bold=True))
-        self.ambient_text.setWordWrap(True)
-        ambient_layout.addWidget(self.ambient_text, 1)
-        layout.addWidget(self.ambient)
-
         self.footer = QLabel()
         self.footer.setProperty("role", "small")
+        self.footer.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(self.footer)
 
         QWidget.setTabOrder(self.code, self.password)
         QWidget.setTabOrder(self.password, self.show_password)
         QWidget.setTabOrder(self.show_password, self.login_button)
-        page = _centered(panel, 640)
+        page = _centered(panel, 580)
         outer = QVBoxLayout(self)
         outer.setContentsMargins(0, 0, 0, 0)
         outer.addWidget(page)
@@ -226,8 +264,10 @@ class LoginView(QWidget):
                 self.password.clear()
         if phase is LoginPhase.AMBIENT:
             self.ambient_text.setText(t("login.measuring_ambient"))
+            self.ambient_pill.set_state("pending")
         elif phase is LoginPhase.AMBIENT_DONE and c.ambient_c is not None:
             self.ambient_text.setText(t("login.ambient_result", value=f"{c.ambient_c:.1f}"))
+            self.ambient_pill.set_state("pass")
         mock = ""
         if c.ctx.using_mocks:
             mock = t("mock.badge", scenario=getattr(c.ctx.hardware, "scenario", ""))

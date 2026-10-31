@@ -73,6 +73,11 @@ class TrLabel(QLabel):
     def retranslate(self, *_args: object) -> None:
         self.setText(t(self._key, **self._params) if self._key else "")
 
+    def set_tracked(self, tracked: bool) -> None:
+        """Enable/disable uppercase tracking for English labels."""
+        if tracked != (self.property("tracked") == "true"):
+            set_prop(self, "tracked", "true" if tracked else "false")
+
 
 class BigButton(QPushButton):
     """Large button labelled with a verb; shows its keyboard shortcut; min 56 px tall."""
@@ -92,7 +97,10 @@ class BigButton(QPushButton):
         self._hint_key = hint_key
         self.setProperty("variant", variant)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.setMinimumHeight(SIZES.button_height)
+        btn_height = (
+            SIZES.button_height if variant == "primary" else SIZES.button_height_secondary
+        )
+        self.setMinimumHeight(btn_height)
         self.setAutoDefault(False)
         language_notifier().changed.connect(self.retranslate)
         self.retranslate()
@@ -108,6 +116,11 @@ class BigButton(QPushButton):
 
     def set_variant(self, variant: str) -> None:
         set_prop(self, "variant", variant)
+        # Update minimum height based on variant
+        btn_height = (
+            SIZES.button_height if variant == "primary" else SIZES.button_height_secondary
+        )
+        self.setMinimumHeight(btn_height)
 
     def label(self) -> str:
         return t(self._key, **self._params) if self._key else ""
@@ -130,7 +143,7 @@ _STATE_STYLE = {
 
 
 class StatusPill(QFrame):
-    """Icon + word + colour. Never colour alone."""
+    """Icon + word + colour. Never colour alone. Pill-shaped with capsule radius."""
 
     def __init__(
         self, state: str = "pending", parent: QWidget | None = None, size: str = "normal"
@@ -140,12 +153,12 @@ class StatusPill(QFrame):
         self._key: str | None = None
         self._params: dict[str, Any] = {}
         layout = QHBoxLayout(self)
-        layout.setContentsMargins(10, 4, 14, 4)
+        layout.setContentsMargins(12, 6, 12, 6)
         layout.setSpacing(8)
         icon_size = 36 if size == "large" else 24
         self._icon = Icon("clock", icon_size)
         self._label = QLabel()
-        self._label.setFont(font(SIZES.font_h1 if size == "large" else SIZES.font_base, bold=True))
+        self._label.setFont(font(SIZES.font_h2 if size == "large" else SIZES.font_base, bold=True))
         layout.addWidget(self._icon)
         layout.addWidget(self._label)
         self.setSizePolicy(QSizePolicy.Policy.Maximum, QSizePolicy.Policy.Fixed)
@@ -223,7 +236,7 @@ class CheckRow(QAbstractButton):
         checked = self.isChecked()
         enabled = self.isEnabled()
         background = QColor(c.pass_bg if checked else c.surface)
-        border = QColor(c.pass_fg if checked else c.border_strong)
+        border = QColor(c.pass_fg if checked else c.border)
         width = 2.0
         if self.hasFocus():
             border = QColor(c.focus)
@@ -236,7 +249,7 @@ class CheckRow(QAbstractButton):
         painter.drawRoundedRect(rect, SIZES.radius, SIZES.radius)
 
         box = QRectF(rect.x() + 16, rect.center().y() - 20, 40, 40)
-        painter.setPen(QPen(QColor(c.pass_fg if checked else c.border_strong), 3))
+        painter.setPen(QPen(QColor(c.pass_fg if checked else c.border), 3))
         painter.setBrush(QColor(c.pass_solid if checked else c.surface))
         painter.drawRoundedRect(box, 6, 6)
         if checked:
@@ -278,23 +291,22 @@ class CheckRow(QAbstractButton):
 
 
 class StageStepper(QWidget):
-    """Programming › Testing › Labeling › Packaging - current highlighted, done ticked."""
+    """Programming › Testing › Labeling › Packaging - current highlighted, done ticked.
+
+    Active stage is an olive capsule pill. Completed stages show ✓ prefix.
+    No chevron carets.
+    """
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         layout = QHBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(6)
+        layout.setSpacing(SIZES.space_s)
         self._labels: dict[Stage, QLabel] = {}
-        for index, stage in enumerate(PRODUCTION_STAGES):
-            if index:
-                arrow = QLabel("›")
-                arrow.setProperty("role", "muted")
-                arrow.setFont(font(SIZES.font_h2))
-                layout.addWidget(arrow)
+        for _index, stage in enumerate(PRODUCTION_STAGES):
             label = QLabel()
             label.setFont(font(SIZES.font_base, bold=True))
-            label.setContentsMargins(10, 6, 10, 6)
+            label.setContentsMargins(SIZES.space_s, SIZES.space_xs, SIZES.space_s, SIZES.space_xs)
             label.setSizePolicy(QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Preferred)
             self._labels[stage] = label
             layout.addWidget(label)
@@ -384,7 +396,7 @@ class LanguageSwitch(QWidget):
         super().__init__(parent)
         layout = QHBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(0)
+        layout.setSpacing(SIZES.space_xs)
         self._group = QButtonGroup(self)
         self._group.setExclusive(True)
         self._buttons: dict[str, QPushButton] = {}
@@ -423,7 +435,7 @@ class InlineConfirm(QFrame):
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
-        self.setProperty("tone", "warn")
+        self.setProperty("tone", "warn_left")
         layout = QHBoxLayout(self)
         layout.setContentsMargins(SIZES.space_m, SIZES.space_s, SIZES.space_m, SIZES.space_s)
         layout.setSpacing(SIZES.space_m)
@@ -432,8 +444,12 @@ class InlineConfirm(QFrame):
         self.message.setWordWrap(True)
         self.message.setFont(font(SIZES.font_h2, bold=True))
         layout.addWidget(self.message, 1)
-        self.no_button = BigButton("action.cancel", variant="secondary", hint_key="key.esc")
-        self.yes_button = BigButton("action.confirm", variant="danger", hint_key="key.enter")
+        self.no_button = BigButton(
+            "action.cancel", variant="secondary", hint_key="key.esc"
+        )
+        self.yes_button = BigButton(
+            "action.confirm", variant="danger_outline", hint_key="key.enter"
+        )
         self.no_button.clicked.connect(lambda: self.answered.emit(False))
         self.yes_button.clicked.connect(lambda: self.answered.emit(True))
         layout.addWidget(self.no_button)
@@ -443,7 +459,7 @@ class InlineConfirm(QFrame):
         self.message.setText(message)
         self.yes_button.set_text_key(yes_key)
         self.no_button.set_text_key(no_key)
-        self.yes_button.set_variant("danger" if danger else "primary")
+        self.yes_button.set_variant("danger_outline" if danger else "primary")
         self.setVisible(True)
 
 
@@ -458,7 +474,7 @@ class ValueRow:
         self.name = TrLabel(name_key)
         self.name.setFont(font(SIZES.font_base))
         self.measured = QLabel("-")
-        self.measured.setFont(font(SIZES.font_h2, bold=True))
+        self.measured.setFont(font(SIZES.font_hero, bold=True))
         self.allowed = QLabel()
         self.allowed.setWordWrap(True)
         self.allowed.setFont(font(SIZES.font_small))
@@ -504,4 +520,14 @@ def scroll_card(parent: QWidget | None = None) -> tuple[QFrame, QVBoxLayout]:
     layout.setSpacing(SIZES.space_s)
     scroll.setWidget(inner)
     outer.addWidget(scroll)
+    return frame, layout
+
+
+def nested_panel(parent: QWidget | None = None) -> tuple[QFrame, QVBoxLayout]:
+    """A nested olive-tinted panel for grouped metrics."""
+    frame = QFrame(parent)
+    frame.setProperty("nested_panel", "true")
+    layout = QVBoxLayout(frame)
+    layout.setContentsMargins(SIZES.space_m, SIZES.space_m, SIZES.space_m, SIZES.space_m)
+    layout.setSpacing(SIZES.space_s)
     return frame, layout
