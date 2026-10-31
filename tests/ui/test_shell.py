@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from datetime import UTC
+
 import pytest
 from PySide6.QtCore import Qt
 from PySide6.QtTest import QTest
@@ -265,7 +267,8 @@ def test_shell_no_clipping_at_scales(driver: StationDriver, scale: float) -> Non
     Assert no widget text is clipped (widget height >= sizeHint height) and
     no overlapping geometry between banner buttons.
     """
-    from datetime import datetime, timezone
+    from datetime import datetime
+
     from parkomate.core.enums import Role
     from parkomate.core.errors import ErrorCode, ParkomateError
     from parkomate.core.models import Operator
@@ -282,7 +285,7 @@ def test_shell_no_clipping_at_scales(driver: StationDriver, scale: float) -> Non
         full_name=long_name,
         role=Role.OPERATOR,
         is_active=True,
-        created_at=datetime.now(timezone.utc),
+        created_at=datetime.now(UTC),
     )
     d.c.operator = op
 
@@ -321,4 +324,3 @@ def test_shell_no_clipping_at_scales(driver: StationDriver, scale: float) -> Non
     d.c.set_language("en")
     banner.clear()
     d.window.resize(1366, 768)
-
