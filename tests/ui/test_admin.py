@@ -78,6 +78,31 @@ def test_settings_editor_validates_and_audits(driver: StationDriver) -> None:
     assert tab.result.text() == "Nothing changed"
 
 
+def test_settings_save_undo_round_trip(driver: StationDriver) -> None:
+    """Save, edit, undo (reload) round-trip preserves persisted value."""
+    d = driver
+    _open_admin(d)
+    tab = d.window.admin.settings_tab
+    station = tab.editors["station.station_id"]
+    assert isinstance(station, QLineEdit)
+    original = station.text()
+
+    # 1. Save a new value
+    station.setText("BENCH-42")
+    tab.save_settings()
+    assert d.ctx.settings.station.station_id == "BENCH-42"
+    assert tab.result.text().startswith("✓  Saved")
+
+    # 2. Make an uncommitted edit, then click Undo (reload)
+    station.setText("TEMP-UNSAVED")
+    tab.reload.click()
+    assert station.text() == "BENCH-42"  # reverted to last saved
+    assert d.ctx.settings.station.station_id == "BENCH-42"  # DB unchanged
+
+    # 3. Restore original so other tests aren't affected
+    station.setText(original)
+    tab.save_settings()
+
 def test_email_settings_need_fields(driver: StationDriver) -> None:
     d = driver
     _open_admin(d)

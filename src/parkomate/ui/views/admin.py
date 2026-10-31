@@ -18,16 +18,13 @@ from PySide6.QtWidgets import (
     QComboBox,
     QDateEdit,
     QDoubleSpinBox,
-    QFormLayout,
     QFrame,
     QGridLayout,
-    QGroupBox,
     QHBoxLayout,
     QHeaderView,
     QLabel,
     QLineEdit,
     QPlainTextEdit,
-    QScrollArea,
     QSpinBox,
     QTableWidget,
     QTableWidgetItem,
@@ -42,10 +39,19 @@ from parkomate.core.errors import ErrorCode, ParkomateError, SettingsError
 from parkomate.core.models import Operator
 from parkomate.i18n import LANGUAGES, t, translator
 from parkomate.logging_setup import read_error_log
-from parkomate.ui.components.widgets import BigButton, InlineConfirm, TrLabel, card, set_prop
+from parkomate.ui.components.icons import Icon
+from parkomate.ui.components.widgets import (
+    BigButton,
+    InlineConfirm,
+    LabelCaps,
+    TrLabel,
+    scroll_card,
+    set_prop,
+    tint_panel,
+)
 from parkomate.ui.qt_i18n import error_cause, error_title, language_notifier
 from parkomate.ui.theme.fonts import font
-from parkomate.ui.theme.tokens import SIZES
+from parkomate.ui.theme.tokens import COLORS, SIZES
 from parkomate.ui.viewmodels.station import StationController
 
 log = logging.getLogger(__name__)
@@ -68,8 +74,14 @@ def _table(headers: Sequence[str]) -> QTableWidget:
     table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
     table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
     table.verticalHeader().setVisible(False)
+    table.verticalHeader().setDefaultSectionSize(SIZES.table_row_height)
+    table.horizontalHeader().setDefaultAlignment(
+        Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter
+    )
     table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
     table.horizontalHeader().setStretchLastSection(True)
+    table.setShowGrid(False)
+    table.setAlternatingRowColors(True)
     return table
 
 
@@ -80,8 +92,11 @@ def _set_headers(table: QTableWidget, keys: Sequence[str]) -> None:
 def _fill(table: QTableWidget, rows: list[list[str]], data: list[Any] | None = None) -> None:
     table.setRowCount(len(rows))
     for r, row in enumerate(rows):
+        table.setRowHeight(r, SIZES.table_row_height)
         for c, value in enumerate(row):
             item = QTableWidgetItem(value)
+            item.setTextAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+            item.setFont(font(SIZES.font_base))
             if c == 0 and data is not None:
                 item.setData(Qt.ItemDataRole.UserRole, data[r])
             table.setItem(r, c, item)
@@ -131,29 +146,37 @@ class SettingsTab(QWidget):
         super().__init__()
         self.c = controller
         layout = QVBoxLayout(self)
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-        inner = QWidget()
-        self.form_layout = QVBoxLayout(inner)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(SIZES.space_s)
+
+        scroll_frame, self.form_layout = scroll_card()
         self.form_layout.setSpacing(SIZES.space_l)
-        scroll.setWidget(inner)
-        layout.addWidget(scroll, 1)
+        layout.addWidget(scroll_frame, 1)
+
         self.editors: dict[str, Editor] = {}
         self.errors: dict[str, QLabel] = {}
         self.labels: dict[str, QLabel] = {}
-        self.groups: dict[str, QGroupBox] = {}
+        self.groups: dict[str, QFrame] = {}
+        self.section_titles: dict[str, LabelCaps] = {}
         self._build()
         self._build_secrets()
-        buttons = QHBoxLayout()
+
+        bottom_panel = QFrame()
+        bottom_panel.setProperty("nested_panel", "true")
+        bottom_layout = QHBoxLayout(bottom_panel)
+        bottom_layout.setContentsMargins(
+            SIZES.space_m, SIZES.space_s, SIZES.space_m, SIZES.space_s
+        )
         self.result = ResultLine()
-        buttons.addWidget(self.result, 1)
+        bottom_layout.addWidget(self.result, 1)
         self.reload = BigButton("action.reload_settings")
         self.reload.clicked.connect(self.load)
         self.save = BigButton("action.save_settings", variant="primary")
         self.save.clicked.connect(self.save_settings)
-        buttons.addWidget(self.reload)
-        buttons.addWidget(self.save)
-        layout.addLayout(buttons)
+        bottom_layout.addWidget(self.reload)
+        bottom_layout.addWidget(self.save)
+        layout.addWidget(bottom_panel)
+
         language_notifier().changed.connect(self.retranslate)
         self.retranslate()
         self.load()
@@ -166,27 +189,45 @@ class SettingsTab(QWidget):
             model = info.annotation
             if not (isinstance(model, type) and issubclass(model, BaseModel)):
                 continue
-            form = self._group(section)
+            grid = self._group(section)
             for key, field_info in model.model_fields.items():
-                self._add_field(form, f"{section}.{key}", field_info)
+                self._add_field(grid, f"{section}.{key}", field_info)
 
-    def _group(self, section: str) -> QFormLayout:
-        box = QGroupBox()
-        box.setFont(font(SIZES.font_h2, bold=True))
-        form = QFormLayout(box)
-        form.setLabelAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-        form.setHorizontalSpacing(SIZES.space_l)
-        form.setVerticalSpacing(SIZES.space_s)
-        self.groups[section] = box
-        self.form_layout.addWidget(box)
-        return form
+    def _group(self, section: str) -> QGridLayout:
+        panel = QFrame()
+        panel.setProperty("nested_panel", "true")
+        panel_layout = QVBoxLayout(panel)
+        panel_layout.setContentsMargins(
+            SIZES.space_m, SIZES.space_m, SIZES.space_m, SIZES.space_m
+        )
+        panel_layout.setSpacing(SIZES.space_m)
 
-    def _add_field(self, form: QFormLayout, dotted: str, info: Any) -> None:
+        title = LabelCaps(f"settings.section.{section}")
+        title.setFont(font(SIZES.font_base, bold=True))
+        self.section_titles[section] = title
+        panel_layout.addWidget(title)
+
+        grid = QGridLayout()
+        grid.setHorizontalSpacing(SIZES.space_l)
+        grid.setVerticalSpacing(SIZES.space_s)
+        grid.setColumnMinimumWidth(0, 300)
+        grid.setColumnStretch(0, 0)
+        grid.setColumnStretch(1, 1)
+        panel_layout.addLayout(grid)
+
+        self.groups[section] = panel
+        self.form_layout.addWidget(panel)
+        return grid
+
+    def _add_field(self, grid: QGridLayout, dotted: str, info: Any) -> None:
+        row = grid.rowCount()
         editor = self._editor_for(info)
         editor.setFont(font(SIZES.font_base))
         label = QLabel()
         label.setFont(font(SIZES.font_base))
         label.setWordWrap(True)
+        label.setFixedWidth(300)
+        label.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
         error = QLabel()
         error.setProperty("status", "fail")
         error.setWordWrap(True)
@@ -195,7 +236,8 @@ class SettingsTab(QWidget):
         column.setSpacing(2)
         column.addWidget(editor)
         column.addWidget(error)
-        form.addRow(label, column)
+        grid.addWidget(label, row, 0, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+        grid.addLayout(column, row, 1)
         self.editors[dotted] = editor
         self.errors[dotted] = error
         self.labels[dotted] = label
@@ -244,25 +286,35 @@ class SettingsTab(QWidget):
         return QLineEdit()
 
     def _build_secrets(self) -> None:
-        box = QGroupBox()
-        box.setFont(font(SIZES.font_h2, bold=True))
+        box, box_layout = tint_panel()
         self.groups["secrets"] = box
-        grid = QGridLayout(box)
+        title = LabelCaps("settings.section.secrets")
+        title.setFont(font(SIZES.font_base, bold=True))
+        self.section_titles["secrets"] = title
+        box_layout.addWidget(title)
+
         self.secret_help = QLabel()
         self.secret_help.setWordWrap(True)
         self.secret_help.setFont(font(SIZES.font_base))
-        grid.addWidget(self.secret_help, 0, 0, 1, 3)
+        self.secret_help.setProperty("role", "muted")
+        box_layout.addWidget(self.secret_help)
+
+        row = QHBoxLayout()
+        row.setSpacing(SIZES.space_m)
         self.secret_name = QComboBox()
+        self.secret_name.setMinimumWidth(220)
         self.secret_value = QLineEdit()
         self.secret_value.setEchoMode(QLineEdit.EchoMode.Password)
         self.secret_save = BigButton("action.store_secret")
         self.secret_save.clicked.connect(self._store_secret)
-        grid.addWidget(self.secret_name, 1, 0)
-        grid.addWidget(self.secret_value, 1, 1)
-        grid.addWidget(self.secret_save, 1, 2)
+        row.addWidget(self.secret_name)
+        row.addWidget(self.secret_value, 1)
+        row.addWidget(self.secret_save)
+        box_layout.addLayout(row)
+
         self.secret_state = QLabel()
         self.secret_state.setFont(font(SIZES.font_base))
-        grid.addWidget(self.secret_state, 2, 0, 1, 3)
+        box_layout.addWidget(self.secret_state)
         self.form_layout.addWidget(box)
 
     # ---------------------------------------------------------------- data
@@ -341,7 +393,11 @@ class SettingsTab(QWidget):
     def _show_issues(self, exc: SettingsError) -> None:
         first: QWidget | None = None
         for issue in exc.issues:
-            keys = issue.ctx.get("keys") if isinstance(issue.ctx.get("keys"), list) else [issue.key]
+            keys = (
+                issue.ctx.get("keys")
+                if isinstance(issue.ctx.get("keys"), list)
+                else [issue.key]
+            )
             for key in keys:
                 label = self.errors.get(key)
                 if label is None:
@@ -391,7 +447,9 @@ class SettingsTab(QWidget):
         except Exception:  # keyring backends raise their own types
             self.result.fail(
                 ParkomateError(
-                    "keyring write failed", code=ErrorCode.SECRET_MISSING, params={"name": name}
+                    "keyring write failed",
+                    code=ErrorCode.SECRET_MISSING,
+                    params={"name": name},
                 )
             )
             return
@@ -401,8 +459,8 @@ class SettingsTab(QWidget):
         self._refresh_secrets()
 
     def retranslate(self, *_args: object) -> None:
-        for section, box in self.groups.items():
-            box.setTitle(t(f"settings.section.{section}"))
+        for title in self.section_titles.values():
+            title.retranslate()
         for dotted, label in self.labels.items():
             text = t(f"settings.f.{dotted}")
             label.setText(text)
@@ -429,12 +487,19 @@ class OperatorsTab(QWidget):
         super().__init__()
         self.c = controller
         layout = QHBoxLayout(self)
+        layout.setContentsMargins(SIZES.space_m, SIZES.space_m, SIZES.space_m, SIZES.space_m)
         layout.setSpacing(SIZES.space_l)
+
+        # Left: table + action buttons + password reset
         left = QVBoxLayout()
+        left.setSpacing(SIZES.space_m)
+
         self.table = _table(self.COLUMNS)
         self.table.itemSelectionChanged.connect(self._selection_changed)
         left.addWidget(self.table, 1)
+
         actions = QHBoxLayout()
+        actions.setSpacing(SIZES.space_m)
         self.toggle_active = BigButton("action.deactivate")
         self.toggle_active.clicked.connect(self._toggle_active)
         self.unlock = BigButton("action.unlock")
@@ -444,23 +509,33 @@ class OperatorsTab(QWidget):
         for button in (self.toggle_active, self.unlock, self.toggle_role):
             actions.addWidget(button)
         left.addLayout(actions)
-        reset_row = QHBoxLayout()
+
+        reset_panel = QFrame()
+        reset_panel.setProperty("nested_panel", "true")
+        reset_layout = QHBoxLayout(reset_panel)
+        reset_layout.setContentsMargins(
+            SIZES.space_m, SIZES.space_s, SIZES.space_m, SIZES.space_s
+        )
+        reset_layout.setSpacing(SIZES.space_s)
         self.reset_pw = QLineEdit()
         self.reset_pw.setEchoMode(QLineEdit.EchoMode.Password)
         self.reset_pw2 = QLineEdit()
         self.reset_pw2.setEchoMode(QLineEdit.EchoMode.Password)
         self.reset_button = BigButton("action.reset_password")
         self.reset_button.clicked.connect(self._reset_password)
-        reset_row.addWidget(self.reset_pw)
-        reset_row.addWidget(self.reset_pw2)
-        reset_row.addWidget(self.reset_button)
-        left.addLayout(reset_row)
+        reset_layout.addWidget(self.reset_pw, 1)
+        reset_layout.addWidget(self.reset_pw2, 1)
+        reset_layout.addWidget(self.reset_button)
+        left.addWidget(reset_panel)
+
         self.result = ResultLine()
         left.addWidget(self.result)
         layout.addLayout(left, 3)
 
-        add_card, add = card()
-        add.addWidget(TrLabel("admin.op.add_title", role="h2"))
+        # Right: New operator card (using scroll_card)
+        add_card, add = scroll_card()
+        add.setSpacing(SIZES.space_m)
+        add.addWidget(LabelCaps("admin.op.add_title"))
         self.new_code = QLineEdit()
         self.new_name = QLineEdit()
         self.new_role = QComboBox()
@@ -468,13 +543,20 @@ class OperatorsTab(QWidget):
         self.new_pw.setEchoMode(QLineEdit.EchoMode.Password)
         self.new_pw2 = QLineEdit()
         self.new_pw2.setEchoMode(QLineEdit.EchoMode.Password)
-        for widget in (self.new_code, self.new_name, self.new_role, self.new_pw, self.new_pw2):
+        for widget in (
+            self.new_code,
+            self.new_name,
+            self.new_role,
+            self.new_pw,
+            self.new_pw2,
+        ):
             add.addWidget(widget)
         self.add_button = BigButton("action.add_operator", variant="primary")
         self.add_button.clicked.connect(self._add)
         add.addWidget(self.add_button)
         add.addStretch(1)
         layout.addWidget(add_card, 2)
+
         language_notifier().changed.connect(self.retranslate)
         self.retranslate()
 
@@ -632,22 +714,46 @@ class ReportsTab(QWidget):
     def __init__(self, controller: StationController) -> None:
         super().__init__()
         self.c = controller
-        layout = QVBoxLayout(self)
-        top = QHBoxLayout()
-        sessions_box = QVBoxLayout()
-        self.sessions_title = TrLabel("admin.rep.sessions_title", role="h2")
-        sessions_box.addWidget(self.sessions_title)
+        main_layout = QVBoxLayout(self)
+        main_layout.setContentsMargins(0, 0, 0, 0)
+
+        card_frame, layout = scroll_card()
+        layout.setSpacing(SIZES.space_l)
+        main_layout.addWidget(card_frame)
+
+        # Top section: Sessions table & grouped export controls
+        self.sessions_title = LabelCaps("admin.rep.sessions_title")
+        self.sessions_title.setFont(font(SIZES.font_base, bold=True))
+        layout.addWidget(self.sessions_title)
+
         self.sessions = _table(self.SESSION_COLUMNS)
-        sessions_box.addWidget(self.sessions, 1)
-        buttons = QHBoxLayout()
+        self.sessions.setMinimumHeight(180)
+        layout.addWidget(self.sessions)
+
+        # Export controls grouped panel
+        export_panel = QFrame()
+        export_panel.setProperty("nested_panel", "true")
+        export_layout = QVBoxLayout(export_panel)
+        export_layout.setContentsMargins(
+            SIZES.space_m, SIZES.space_m, SIZES.space_m, SIZES.space_m
+        )
+        export_layout.setSpacing(SIZES.space_m)
+
+        # Row 1: Session selection export
+        session_buttons = QHBoxLayout()
+        session_buttons.setSpacing(SIZES.space_m)
         self.export_xlsx = BigButton("action.export_excel", variant="primary")
         self.export_csv = BigButton("action.export_csv")
         self.export_xlsx.clicked.connect(lambda: self._export_selected("xlsx"))
         self.export_csv.clicked.connect(lambda: self._export_selected("csv"))
-        buttons.addWidget(self.export_xlsx)
-        buttons.addWidget(self.export_csv)
-        sessions_box.addLayout(buttons)
+        session_buttons.addWidget(self.export_xlsx)
+        session_buttons.addWidget(self.export_csv)
+        session_buttons.addStretch(1)
+        export_layout.addLayout(session_buttons)
+
+        # Row 2: Date range export
         range_row = QHBoxLayout()
+        range_row.setSpacing(SIZES.space_m)
         self.date_from = QDateEdit()
         self.date_to = QDateEdit()
         for edit in (self.date_from, self.date_to):
@@ -663,21 +769,31 @@ class ReportsTab(QWidget):
         range_row.addWidget(self.date_to)
         range_row.addWidget(self.range_format)
         range_row.addWidget(self.export_range)
-        sessions_box.addLayout(range_row)
+        range_row.addStretch(1)
+        export_layout.addLayout(range_row)
+
+        # Row 3: Single device export
         device_row = QHBoxLayout()
+        device_row.setSpacing(SIZES.space_m)
         self.device_search = QLineEdit()
         self.device_export = BigButton("action.export_device")
         self.device_export.clicked.connect(self._export_device)
         device_row.addWidget(self.device_search, 1)
         device_row.addWidget(self.device_export)
-        sessions_box.addLayout(device_row)
-        top.addLayout(sessions_box, 1)
-        layout.addLayout(top, 1)
+        export_layout.addLayout(device_row)
+        layout.addWidget(export_panel)
 
-        layout.addWidget(TrLabel("admin.out.title", role="h2"))
+        # Bottom section: Outbox table & actions
+        self.outbox_title = LabelCaps("admin.out.title")
+        self.outbox_title.setFont(font(SIZES.font_base, bold=True))
+        layout.addWidget(self.outbox_title)
+
         self.outbox = _table(self.OUTBOX_COLUMNS)
-        layout.addWidget(self.outbox, 1)
+        self.outbox.setMinimumHeight(160)
+        layout.addWidget(self.outbox)
+
         outbox_buttons = QHBoxLayout()
+        outbox_buttons.setSpacing(SIZES.space_m)
         self.result = ResultLine()
         outbox_buttons.addWidget(self.result, 1)
         self.open_folder = BigButton("action.open_reports_folder")
@@ -689,6 +805,7 @@ class ReportsTab(QWidget):
         for button in (self.open_folder, self.resend, self.send_now):
             outbox_buttons.addWidget(button)
         layout.addLayout(outbox_buttons)
+
         language_notifier().changed.connect(self.retranslate)
         self.retranslate()
 
@@ -838,23 +955,78 @@ class CountersTab(QWidget):
     def __init__(self, controller: StationController) -> None:
         super().__init__()
         self.c = controller
-        layout = QVBoxLayout(self)
-        layout.addWidget(TrLabel("admin.cnt.title", role="h2"))
+        main_layout = QVBoxLayout(self)
+        main_layout.setContentsMargins(0, 0, 0, 0)
+
+        card_frame, layout = scroll_card()
+        layout.setSpacing(SIZES.space_l)
+        main_layout.addWidget(card_frame)
+
+        self.title = LabelCaps("admin.cnt.title")
+        self.title.setFont(font(SIZES.font_base, bold=True))
+        layout.addWidget(self.title)
+
+        # Three tiles with huge numbers
+        tiles_layout = QHBoxLayout()
+        tiles_layout.setSpacing(SIZES.space_l)
+
+        # Tile 1: Completed
+        t1, t1_layout = tint_panel()
+        t1_title = LabelCaps("counter.completed")
+        t1_title.setFont(font(SIZES.font_small, bold=True))
+        self.t1_val = QLabel()
+        self.t1_val.setProperty("role", "hero_large")
+        self.t1_val.setFont(font(SIZES.font_hero_large, bold=True))
+        t1_layout.addWidget(t1_title)
+        t1_layout.addWidget(self.t1_val)
+        tiles_layout.addWidget(t1, 1)
+
+        # Tile 2: Rejected
+        t2, t2_layout = tint_panel()
+        t2_title = LabelCaps("counter.rejected")
+        t2_title.setFont(font(SIZES.font_small, bold=True))
+        self.t2_val = QLabel()
+        self.t2_val.setProperty("role", "hero_large")
+        self.t2_val.setFont(font(SIZES.font_hero_large, bold=True))
+        t2_layout.addWidget(t2_title)
+        t2_layout.addWidget(self.t2_val)
+        tiles_layout.addWidget(t2, 1)
+
+        # Tile 3: Uploads OK
+        t3, t3_layout = tint_panel()
+        t3_title = LabelCaps("counter.uploads_ok")
+        t3_title.setFont(font(SIZES.font_small, bold=True))
+        self.t3_val = QLabel()
+        self.t3_val.setProperty("role", "hero_large")
+        self.t3_val.setFont(font(SIZES.font_hero_large, bold=True))
+        t3_layout.addWidget(t3_title)
+        t3_layout.addWidget(self.t3_val)
+        tiles_layout.addWidget(t3, 1)
+
+        layout.addLayout(tiles_layout)
+
+        # Summary breakdown line (preserves compatibility with test_admin.py)
         self.values = QLabel()
-        self.values.setFont(font(SIZES.font_h2, bold=True))
+        self.values.setFont(font(SIZES.font_base))
         self.values.setWordWrap(True)
+        self.values.setProperty("role", "muted")
         layout.addWidget(self.values)
+
         layout.addWidget(TrLabel("admin.cnt.help", role="muted"))
+
         self.confirm = InlineConfirm()
         self.confirm.setVisible(False)
         self.confirm.answered.connect(self._answered)
         layout.addWidget(self.confirm)
-        self.reset = BigButton("action.reset_counters", variant="danger")
+
+        self.reset = BigButton("action.reset_counters", variant="danger_outline")
         self.reset.clicked.connect(self._ask)
         layout.addWidget(self.reset, 0, Qt.AlignmentFlag.AlignLeft)
+
         self.result = ResultLine()
         layout.addWidget(self.result)
         layout.addStretch(1)
+
         controller.counters_changed.connect(self.refresh)
         language_notifier().changed.connect(self.refresh)
 
@@ -863,8 +1035,14 @@ class CountersTab(QWidget):
         if counters is None:
             self.values.setText(t("admin.cnt.no_session"))
             self.reset.setEnabled(False)
+            self.t1_val.setText("—")
+            self.t2_val.setText("—")
+            self.t3_val.setText("—")
             return
         self.reset.setEnabled(True)
+        self.t1_val.setText(str(counters.completed))
+        self.t2_val.setText(str(counters.rejected))
+        self.t3_val.setText(str(counters.upload_success))
         since = _local(counters.since) if counters.since else t("admin.cnt.since_start")
         self.values.setText(
             t(
@@ -908,20 +1086,45 @@ class ErrorLogTab(QWidget):
         self.c = controller
         self._entries: list[dict[str, Any]] = []
         layout = QVBoxLayout(self)
-        row = QHBoxLayout()
+        layout.setContentsMargins(SIZES.space_m, SIZES.space_m, SIZES.space_m, SIZES.space_m)
+        layout.setSpacing(SIZES.space_m)
+
+        filter_row = QHBoxLayout()
+        filter_row.setSpacing(SIZES.space_m)
         self.filter = QComboBox()
         self.filter.currentIndexChanged.connect(lambda _i: self.refresh())
         self.refresh_button = BigButton("action.refresh")
         self.refresh_button.clicked.connect(self.refresh)
-        row.addWidget(self.filter, 1)
-        row.addWidget(self.refresh_button)
-        layout.addLayout(row)
+        filter_row.addWidget(self.filter, 1)
+        filter_row.addWidget(self.refresh_button)
+        layout.addLayout(filter_row)
+
         self.table = _table(self.COLUMNS)
         self.table.itemSelectionChanged.connect(self._show_details)
         layout.addWidget(self.table, 2)
+
+        # Empty state widget
+        self.empty_state = QFrame()
+        self.empty_state.setProperty("nested_panel", "true")
+        empty_layout = QVBoxLayout(self.empty_state)
+        empty_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        empty_layout.setContentsMargins(
+            SIZES.space_l, SIZES.space_l, SIZES.space_l, SIZES.space_l
+        )
+        self.empty_icon = Icon("check", 48, COLORS.pass_fg)
+        self.empty_label = TrLabel("admin.log.empty", role="muted")
+        self.empty_label.setFont(font(SIZES.font_h2))
+        self.empty_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        empty_layout.addWidget(self.empty_icon, 0, Qt.AlignmentFlag.AlignCenter)
+        empty_layout.addWidget(self.empty_label, 0, Qt.AlignmentFlag.AlignCenter)
+        self.empty_state.setVisible(False)
+        layout.addWidget(self.empty_state, 1)
+
         self.details = QPlainTextEdit()
         self.details.setReadOnly(True)
+        self.details.setFont(font(SIZES.font_small))
         layout.addWidget(self.details, 1)
+
         language_notifier().changed.connect(self.retranslate)
         self.retranslate()
 
@@ -939,6 +1142,8 @@ class ErrorLogTab(QWidget):
         ]
         _fill(self.table, rows, list(range(len(rows))))
         self.details.setPlainText("" if rows else t("admin.log.empty"))
+        self.empty_state.setVisible(len(rows) == 0)
+        self.details.setVisible(len(rows) > 0)
 
     def _show_details(self) -> None:
         selected = _selected_data(self.table)
@@ -979,15 +1184,23 @@ class AdminView(QWidget):
         self.setObjectName("Page")
         layout = QVBoxLayout(self)
         layout.setContentsMargins(SIZES.space_l, SIZES.space_m, SIZES.space_l, SIZES.space_m)
+        layout.setSpacing(SIZES.space_m)
+
         header = QHBoxLayout()
         header.addWidget(TrLabel("admin.title", role="h1"), 1)
         self.back = BigButton("action.back_to_production", variant="primary", hint_key="key.esc")
         self.back.clicked.connect(controller.close_admin)
         header.addWidget(self.back)
         layout.addLayout(header)
-        frame = QFrame()
-        frame.setProperty("card", True)
-        frame_layout = QVBoxLayout(frame)
+
+        # One page card containing the QTabWidget
+        self.card_frame = QFrame()
+        self.card_frame.setProperty("card", True)
+        card_layout = QVBoxLayout(self.card_frame)
+        card_layout.setContentsMargins(
+            SIZES.space_m, SIZES.space_m, SIZES.space_m, SIZES.space_m
+        )
+
         self.tabs = QTabWidget()
         self.settings_tab = SettingsTab(controller)
         self.operators_tab = OperatorsTab(controller)
@@ -1002,8 +1215,9 @@ class AdminView(QWidget):
             self.errors_tab,
         ):
             self.tabs.addTab(tab, "")
-        frame_layout.addWidget(self.tabs)
-        layout.addWidget(frame, 1)
+        card_layout.addWidget(self.tabs)
+        layout.addWidget(self.card_frame, 1)
+
         language_notifier().changed.connect(self.retranslate)
         self.retranslate()
 

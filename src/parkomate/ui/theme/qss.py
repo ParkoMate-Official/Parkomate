@@ -133,15 +133,15 @@ QPushButton[variant="secondary"]:hover {{ background: {c.surface_alt}; }}
 QPushButton[variant="secondary"]:focus {{ border: {s.focus_width}px solid {c.focus}; }}
 
 /* Danger outline - Red outline for destructive secondary actions */
-QPushButton[variant="danger_outline"] {{
+QPushButton[variant="danger_outline"], QPushButton[variant="danger"] {{
     background: {c.surface};
     color: {c.fail_fg};
     border: 2px solid {c.fail_fg};
     font-size: {s.font_base}px;
     min-height: {s.button_height_secondary}px;
 }}
-QPushButton[variant="danger_outline"]:hover {{ background: {c.fail_bg}; }}
-QPushButton[variant="danger_outline"]:focus {{ border: {s.focus_width}px solid {c.focus}; }}
+QPushButton[variant="danger_outline"]:hover, QPushButton[variant="danger"]:hover {{ background: {c.fail_bg}; }}
+QPushButton[variant="danger_outline"]:focus, QPushButton[variant="danger"]:focus {{ border: {s.focus_width}px solid {c.focus}; }}
 
 /* Pass - Green outline for success actions */
 QPushButton[variant="pass"] {{
@@ -259,6 +259,7 @@ QProgressBar::chunk {{
 /* ---------- tables & lists ---------- */
 QTableWidget, QListWidget, QPlainTextEdit {{
     background: {c.surface};
+    alternate-background-color: {c.surface_alt};
     border: 1px solid {c.border};
     border-radius: 8px;
     gridline-color: {c.border};
