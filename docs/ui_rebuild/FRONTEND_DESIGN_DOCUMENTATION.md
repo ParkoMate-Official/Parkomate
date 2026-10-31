@@ -237,73 +237,83 @@ Parkomate Station follows an **MVVM (Model-View-ViewModel)** architectural patte
 
 ## 7. Complete Color Palette
 
-All colors are defined as design tokens in `src/parkomate/ui/theme/tokens.py` (`Colors` dataclass, lines 17-46) and consumed by the generated QSS in `src/parkomate/ui/theme/qss.py`. No hardcoded color literals exist in view/component code — all styling references the tokens.
+All colors are defined as design tokens in `src/parkomate/ui/theme/tokens.py` (`Colors` dataclass, lines 17-68) and consumed by the generated QSS in `src/parkomate/ui/theme/qss.py`. No hardcoded color literals exist in view/component code — all styling references the tokens.
 
 | Color Name | HEX | RGB | Usage | Source File | Line Number |
 | ---------- | --- | --- | ----- | ----------- | ----------- |
-| `bg` | `#F2F4F7` | 242, 244, 247 | Main application background (window, pages) | `tokens.py` | 18 |
-| `surface` | `#FFFFFF` | 255, 255, 255 | Card backgrounds, input fields, button default, top/bottom bars | `tokens.py` | 19 |
-| `surface_alt` | `#F8F9FB` | 248, 249, 251 | Hover backgrounds, table headers, info strip | `tokens.py` | 20 |
-| `border` | `#C9CED6` | 201, 206, 214 | Card borders, table grid lines, dividers | `tokens.py` | 21 |
-| `border_strong` | `#667085` | 102, 112, 133 | Input borders, default button borders, drawer border | `tokens.py` | 22 |
-| `text` | `#101828` | 16, 24, 40 | Primary text color (all widgets default) | `tokens.py` | 23 |
-| `text_muted` | `#475467` | 71, 84, 103 | Secondary text, hints, placeholders, muted icons | `tokens.py` | 24 |
-| `accent` | `#1849A9` | 24, 73, 169 | **Primary brand/action color** — primary buttons, selected tab underline, progress chunks, stepper current | `tokens.py` | 26 |
-| `accent_hover` | `#123A88` | 18, 58, 136 | Primary button hover | `tokens.py` | 27 |
-| `accent_pressed` | `#0E2E6B` | 14, 46, 107 | Primary button pressed | `tokens.py` | 28 |
-| `accent_soft` | `#E7EEFB` | 231, 238, 251 | Primary button pressed bg, combo selection, table selection | `tokens.py` | 29 |
-| `on_accent` | `#FFFFFF` | 255, 255, 255 | Text on primary buttons | `tokens.py` | 30 |
-| `focus` | `#B54708` | 181, 71, 8 | **Keyboard focus ring** (amber-700, ≥3:1 on white/bg) | `tokens.py` | 32 |
-| `pass_bg` | `#E3F4E9` | 227, 244, 233 | Success tone card/banner background | `tokens.py` | 34 |
-| `pass_fg` | `#0A4D2B` | 10, 77, 43 | Success text, pass button border | `tokens.py` | 35 |
-| `pass_solid` | `#0B5D35` | 11, 93, 53 | Success solid badge, checked pass button, success toast bg | `tokens.py` | 36 |
-| `fail_bg` | `#FDE9E7` | 253, 233, 231 | Fail tone card/banner background | `tokens.py` | 37 |
-| `fail_fg` | `#86170F` | 134, 23, 15 | Fail text, danger button border, reject takeover elements | `tokens.py` | 38 |
-| `fail_solid` | `#9C1A10` | 156, 26, 16 | **Reject takeover background**, checked danger button | `tokens.py` | 39 |
-| `warn_bg` | `#FFF1DB` | 255, 241, 219 | Warning tone card (inline confirm) background | `tokens.py` | 40 |
-| `warn_fg` | `#6B3A00` | 107, 58, 0 | Warning text | `tokens.py` | 41 |
-| `info_bg` | `#E7EEFB` | 231, 238, 251 | Info tone card background | `tokens.py` | 42 |
-| `info_fg` | `#123A88` | 18, 58, 136 | Info text | `tokens.py` | 43 |
-| `on_status_solid` | `#FFFFFF` | 255, 255, 255 | Text/icons on solid status backgrounds (pass/fail/toast) | `tokens.py` | 44 |
-| `disabled_bg` | `#E4E7EC` | 228, 231, 236 | Disabled button/control background | `tokens.py` | 45 |
-| `disabled_fg` | `#475467` | 71, 84, 103 | Disabled control text | `tokens.py` | 46 |
+| `bg` | `#FBFCFE` | 251, 252, 254 | Main application background (window, pages) | `tokens.py` | 19 |
+| `surface` | `#FFFFFF` | 255, 255, 255 | Primary card background, active inputs, button surface | `tokens.py` | 20 |
+| `surface_alt` | `#FAFAF8` | 250, 250, 248 | Inactive tab background, table alternate row, info strip | `tokens.py` | 21 |
+| `surface_tint` | `#F1F4E8` | 241, 244, 232 | Nested metric panel background (soft olive tint) | `tokens.py` | 22 |
+| `border` | `#DDE3CB` | 221, 227, 203 | Standard card and container borders, table grid lines | `tokens.py` | 25 |
+| `border_strong` | `#667085` | 102, 112, 133 | Control borders, input borders, button borders | `tokens.py` | 26 |
+| `text` | `#111111` | 17, 17, 17 | Primary headings, huge numbers, input text | `tokens.py` | 29 |
+| `text_muted` | `#5B6472` | 91, 100, 114 | Subtitles, helper text, inactive steps, placeholders | `tokens.py` | 30 |
+| `accent` | `#5A6F2D` | 90, 111, 45 | **Primary brand/action color** (Olive) — primary buttons, active stepper capsule, selected tab | `tokens.py` | 33 |
+| `accent_hover` | `#4A5C25` | 74, 92, 37 | Primary button hover state | `tokens.py` | 34 |
+| `accent_pressed` | `#3B4A1D` | 59, 74, 29 | Primary button pressed / active state | `tokens.py` | 35 |
+| `accent_soft` | `#EBEFE3` | 235, 239, 227 | Selected rows, pressed secondary button | `tokens.py` | 36 |
+| `accent_brand` | `#738B3B` | 115, 139, 59 | Gradient start, large decorative only | `tokens.py` | 37 |
+| `accent_deco` | `#FACB34` | 250, 203, 52 | Progress bar fill, decorative highlights (never text) | `tokens.py` | 38 |
+| `yellow_soft` | `#FFF1DB` | 255, 241, 219 | Top simulation banner, warning background tint | `tokens.py` | 39 |
+| `yellow_dark` | `#6B3A00` | 107, 58, 0 | Simulation banner text, warning header (AAA contrast) | `tokens.py` | 40 |
+| `focus` | `#111111` | 17, 17, 17 | **Keyboard focus ring** (double ring outline, ≥3:1 against white/bg) | `tokens.py` | 43 |
+| `pass_bg` | `#F4FBF6` | 244, 251, 246 | Pass step card background tint | `tokens.py` | 46 |
+| `pass_fg` | `#0B5D35` | 11, 93, 53 | Pass badges, success buttons, pass borders (AAA) | `tokens.py` | 47 |
+| `pass_solid` | `#0B5D35` | 11, 93, 53 | Pass solid badge, checked pass button, success toast bg | `tokens.py` | 48 |
+| `fail_bg` | `#FDE9E7` | 253, 233, 231 | Locked alert background, error banner tint | `tokens.py` | 49 |
+| `fail_fg` | `#991B1B` | 153, 27, 27 | Reject takeover, fail badges, red outline buttons (AAA) | `tokens.py` | 50 |
+| `fail_solid` | `#991B1B` | 153, 27, 27 | **Reject takeover background**, checked danger button | `tokens.py` | 51 |
+| `warn_bg` | `#FFF1DB` | 255, 241, 219 | Warning banner background tint | `tokens.py` | 52 |
+| `warn_fg` | `#6B3A00` | 107, 58, 0 | Warning banner left bar, caution badges (AAA) | `tokens.py` | 53 |
+| `info_bg` | `#EFF6FF` | 239, 246, 255 | Working step card background tint | `tokens.py` | 54 |
+| `info_fg` | `#1E40AF` | 30, 64, 175 | Working/uploading badge, active step border (AAA) | `tokens.py` | 55 |
+| `on_status_solid` | `#FFFFFF` | 255, 255, 255 | Text/icons on solid status backgrounds (pass/fail/toast) | `tokens.py` | 56 |
+| `disabled_bg` | `#CBD5E1` | 203, 213, 225 | Disabled button/control background | `tokens.py` | 59 |
+| `disabled_fg` | `#475569` | 71, 85, 105 | Disabled control text (AA contrast) | `tokens.py` | 60 |
+| `tooltip_bg` | `#111111` | 17, 17, 17 | Tooltip background | `tokens.py` | 63 |
+| `tooltip_fg` | `#FFFFFF` | 255, 255, 255 | Tooltip text | `tokens.py` | 64 |
+| `glow` | `#FEF3D3` | 254, 243, 211 | Top-right radial header glow | `tokens.py` | 67 |
 
 ### Color Usage Notes
-- **Single accent color** (`#1849A9`) used for all primary actions — no secondary brand color.
-- **Status colors reserved**: Green/Red/Amber/Blue used *only* for status (pass/fail/warn/info), never decoratively (enforced by `tokens.py` docstring rules).
-- **Status never by color alone**: Every status indicator combines icon + word + color (e.g., `StatusPill`, `CheckRow`).
-- **Focus ring**: Amber `#B54708` chosen for ≥3:1 contrast against both white (`surface`) and `#F2F4F7` (`bg`).
-- **WCAG compliance**: Contrast ratios verified by `tests/ui/test_theme.py` — all text ≥ AA (4.5:1), status text ≥ AAA (7:1).
+- **Olive + Yellow identity**: Primary brand color is Olive (`#5A6F2D`). Yellow/gold (`#FACB34` / `#B59E2B`) is reserved for decorative progress fills, mode warnings, and simulation callouts.
+- **Status colors reserved**: Green/Red/Amber/Blue used *only* for status (pass/fail/warn/info), never decoratively.
+- **Status never by color alone**: Every status indicator combines icon + word + color (`StatusPill`, `CheckRow`).
+- **Focus ring**: Double-ring `#111111` outline with 2 px white gap chosen for ≥3:1 contrast against both white (`surface`) and canvas (`bg`).
+- **WCAG compliance**: Contrast ratios verified by `tests/ui/test_theme.py` and `tests/ui/test_static.py` — all text ≥ AA (4.5:1), status text ≥ AAA (7:1).
 
 ## 8. Existing Themes and Design Tokens
 
 ### 8.1 Design Token System (Single Source of Truth)
 All design tokens are defined in **`src/parkomate/ui/theme/tokens.py`** as two frozen `@dataclass`es:
 
-- **`Colors`** (lines 17-46): 27 color tokens covering backgrounds, surfaces, borders, text, accent, focus, status (pass/fail/warn/info), and disabled states.
-- **`Sizes`** (lines 49-69): 20 sizing tokens covering font sizes (8 variants), button/check row heights, border radius, spacing scale (5 steps), focus width, and minimum window dimensions.
+- **`Colors`** (lines 17-68): 33 color tokens covering canvas, surfaces, borders, text, brand olive/yellow, focus, status (pass/fail/warn/info), disabled, and tooltips.
+- **`Sizes`** (lines 71-120): 28 sizing tokens covering font sizes (8 variants), button/input heights, border radii (7 variants), spacing scale (5 steps), focus width/gap, tabs, tooltips, and minimum window dimensions.
 
 ```python
 @dataclass(frozen=True, slots=True)
 class Colors:
-    bg: str = "#F2F4F7"
+    bg: str = "#FBFCFE"
     surface: str = "#FFFFFF"
-    # ... 25 more colors
+    accent: str = "#5A6F2D"
+    # ... 30 more colors
 
 @dataclass(frozen=True, slots=True)
 class Sizes:
     font_base: int = 18
-    font_small: int = 15
-    # ... 18 more sizes
+    button_height: int = 56
+    input_height: int = 48
+    card_radius: int = 24
+    # ... 24 more sizes
 ```
 
 Singletons `COLORS = Colors()` and `SIZES = Sizes()` are imported throughout the codebase.
 
 ### 8.2 Stylesheet Generation
 - **`src/parkomate/ui/theme/qss.py:12`** — `build_stylesheet(c: Colors = COLORS, s: Sizes = SIZES) -> str`
-- Generates a single ~240-line QSS string by f-string interpolation of token values
-- Applied once at `QApplication` level in `src/parkomate/ui/main.py:31`
-- **No external CSS/SCSS files**, no Tailwind, no CSS modules, no per-component stylesheets
+- Generates a single application QSS string by f-string interpolation of token values.
+- Applied once at `QApplication` level in `src/parkomate/ui/main.py:31`.
+- **No external CSS/SCSS files**, no inline `setStyleSheet()`.
 
 ### 8.3 Dynamic Property Styling (Opt-In Pattern)
 Widgets opt into visual variants via **Qt dynamic properties** set in Python, read by QSS attribute selectors:
@@ -311,22 +321,25 @@ Widgets opt into visual variants via **Qt dynamic properties** set in Python, re
 | Property | Values | Example Selector |
 | -------- | ------ | ---------------- |
 | `variant` | `"primary"`, `"secondary"`, `"danger"`, `"pass"`, `"link"`, `"toggle"`, `"takeover"` | `QPushButton[variant="primary"]` |
-| `role` | `"h1"`, `"h2"`, `"muted"`, `"small"`, `"value"`, `"value_large"`, `"hint"` | `QLabel[role="h1"]` |
+| `role` | `"h1"`, `"h2"`, `"muted"`, `"small"`, `"hero-number"`, `"value"`, `"value_large"`, `"hint"` | `QLabel[role="hero-number"]` |
 | `tone` | `"pass"`, `"fail"`, `"warn"`, `"info"`, `"pending"` | `QFrame[tone="pass"]` |
 | `status` | `"pass"`, `"fail"`, `"warn"`, `"info"`, `"pending"` | `QLabel[status="pass"]` |
 | `step` | `"current"`, `"done"`, `"todo"`, `"rejected"` | `QLabel[step="current"]` |
 | `card` | `true` | `QFrame[card="true"]` |
+| `nested_panel` | `"true"` | `QFrame[nested_panel="true"]` |
+| `box_letter` | `"true"` | `QLabel[box_letter="true"]` |
+| `danger_outline` | `"true"` | `QPushButton[danger_outline="true"]` |
 | `invalid` | `"true"` | `QLineEdit[invalid="true"]` |
 
 Helper functions in `src/parkomate/ui/components/widgets.py:36-47`:
-- `restyle(widget)` — calls `style().unpolish()` / `polish()` to refresh after property change
-- `set_prop(widget, name, value)` — sets property only if changed, then calls `restyle()`
+- `restyle(widget)` — calls `style().unpolish()` / `polish()` to refresh after property change.
+- `set_prop(widget, name, value)` — sets property only if changed, then calls `restyle()`.
 
 ### 8.4 Theme Variants
-**Currently only one theme** (light industrial) is implemented. The token system supports easy addition of dark/high-contrast themes by providing alternate `Colors`/`Sizes` instances to `build_stylesheet()`.
+**Single Light Industrial Olive Theme** implemented. The token system supports easy addition of dark/high-contrast themes by providing alternate `Colors`/`Sizes` instances to `build_stylesheet()`.
 
 ### 8.5 WCAG Contrast Utilities
-`tokens.py` includes `relative_luminance()` and `contrast_ratio()` functions (lines 76-89) used by `tests/ui/test_theme.py` to verify:
+`tokens.py` includes `relative_luminance()` and `contrast_ratio()` functions used by `tests/ui/test_theme.py` to verify:
 - All text ≥ 4.5:1 (WCAG AA)
 - Status text ≥ 7:1 (WCAG AAA)
 
@@ -832,25 +845,30 @@ All issues are **cosmetic/maintenance** — no functional bugs or visual regress
 ## 17. Accessibility Observations
 
 ### 17.1 Color Contrast (Verified by Automated Tests)
-- **Test**: `tests/ui/test_theme.py` uses `contrast_ratio()` from `tokens.py`
+- **Test**: `tests/ui/test_theme.py` and `tests/ui/test_static.py` use `contrast_ratio()` from `tokens.py`
 - **Requirements**:
   - All text: ≥ 4.5:1 (WCAG AA) — **PASS**
   - Status text (pass/fail/warn/info): ≥ 7:1 (WCAG AAA) — **PASS**
-- **Key contrast ratios** (calculated from token values):
-  - `text` (#101828) on `bg` (#F2F4F7): **12.6:1** ✓
-  - `text` on `surface` (#FFFFFF): **15.3:1** ✓
-  - `text_muted` (#475467) on `surface`: **8.5:1** ✓
-  - `pass_fg` (#0A4D2B) on `pass_bg` (#E3F4E9): **7.2:1** ✓ (AAA)
-  - `fail_fg` (#86170F) on `fail_bg` (#FDE9E7): **7.8:1** ✓ (AAA)
-  - `warn_fg` (#6B3A00) on `warn_bg` (#FFF1DB): **8.1:1** ✓ (AAA)
-  - `info_fg` (#123A88) on `info_bg` (#E7EEFB): **7.3:1** ✓ (AAA)
-  - `focus` (#B54708) on `surface`: **4.7:1** ✓ (AA for focus indicator)
-  - `focus` on `bg`: **5.1:1** ✓
-  - `on_accent` (#FFFFFF) on `accent` (#1849A9): **6.2:1** ✓ (AA for large text, AAA for 18px+ bold)
+- **Key contrast ratios** (calculated from active Olive + Yellow token values):
+  - `text` (`#111111`) on `surface` (`#FFFFFF`): **18.2:1** ✓ (AAA)
+  - `text` (`#111111`) on `bg` (`#FBFCFE`): **17.6:1** ✓ (AAA)
+  - `text_muted` (`#5B6472`) on `surface` (`#FFFFFF`): **5.7:1** ✓ (AA)
+  - `text_muted` (`#5B6472`) on `bg` (`#FBFCFE`): **5.5:1** ✓ (AA)
+  - `on_status_solid` (`#FFFFFF`) on `accent` (`#5A6F2D`): **4.88:1** ✓ (AA)
+  - `disabled_fg` (`#475569`) on `disabled_bg` (`#CBD5E1`): **4.54:1** ✓ (AA)
+  - `pass_fg` (`#0B5D35`) on `pass_bg` (`#F4FBF6`): **8.27:1** ✓ (AAA)
+  - `pass_fg` (`#0B5D35`) on `surface` (`#FFFFFF`): **8.52:1** ✓ (AAA)
+  - `on_status_solid` (`#FFFFFF`) on `pass_solid` (`#0B5D35`): **8.52:1** ✓ (AAA)
+  - `fail_fg` (`#991B1B`) on `fail_bg` (`#FDE9E7`): **7.82:1** ✓ (AAA)
+  - `fail_fg` (`#991B1B`) on `surface` (`#FFFFFF`): **8.71:1** ✓ (AAA)
+  - `on_status_solid` (`#FFFFFF`) on `fail_solid` (`#991B1B`): **8.71:1** ✓ (AAA)
+  - `warn_fg` (`#6B3A00`) on `warn_bg` (`#FFF1DB`): **8.87:1** ✓ (AAA)
+  - `info_fg` (`#1E40AF`) on `info_bg` (`#EFF6FF`): **8.44:1** ✓ (AAA)
+  - `focus` (`#111111`) on `surface` / `bg`: **18.2:1** / **17.6:1** ✓ (≥ 3:1)
 
 ### 17.2 Focus Indicators
-- **All interactive elements** have visible focus styles (3px/4px solid `focus` amber `#B54708`)
-- **Exceptions**: `RejectTakeover` button uses 4px `text` (#101828) for contrast on red background
+- **All interactive elements** feature high-contrast double-ring focus styling (`outline: 2px solid #111111; outline-offset: 2px;`)
+- **Exceptions**: `RejectTakeover` button uses solid high-contrast white text on red background
 - **Focus order**: Logical tab order; explicit `setTabOrder()` on Login form
 - **No focus traps** except intentional modal overlays (`RejectTakeover`, `InlineConfirm`)
 
