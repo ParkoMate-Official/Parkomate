@@ -304,6 +304,8 @@ class SettingsTab(QWidget):
                 value = editor.text().strip()
                 if dotted == "email.recipients":
                     value = [part.strip() for part in value.split(",") if part.strip()]
+                elif dotted == "workflow.retriable_checks":
+                    value = [part.strip().upper() for part in value.split(",") if part.strip()]
             target = data
             parts = dotted.split(".")
             for part in parts[:-1]:
