@@ -418,8 +418,7 @@ class CounterBadge(QFrame):
         caption_row.setSpacing(SIZES.space_xs)
         if icon:
             caption_row.addWidget(Icon(icon, 22, COLORS.text_muted))
-        self._caption = TrLabel(caption_key)
-        self._caption.set_tracked(True)
+        self._caption = LabelCaps(caption_key)
         caption_row.addWidget(self._caption)
         caption_row.addStretch(1)
         layout.addLayout(caption_row)
@@ -443,9 +442,9 @@ class CounterBadge(QFrame):
         return self._value.text()
 
     def retranslate(self, *_args: object) -> None:
-        caption = t(self._caption_key)
         self._caption.set_key(self._caption_key)
-        self.setAccessibleName(f"{caption} {self._value.text()}")
+        caption_text = self._caption.text()
+        self.setAccessibleName(f"{caption_text} {self._value.text()}")
 
 
 class LanguageSwitch(QWidget):
@@ -532,13 +531,15 @@ class ValueRow:
     """
 
     def __init__(self, grid: QGridLayout, row: int, name_key: str) -> None:
-        self.name = TrLabel(name_key)
-        self.name.setFont(font(SIZES.font_base))
+        self.name = LabelCaps(name_key)
+        self.name.setProperty("role", "small")
         self.measured = QLabel("-")
         self.measured.setFont(font(SIZES.font_hero, bold=True))
+        self.measured.setProperty("role", "value_large")
         self.allowed = QLabel()
         self.allowed.setWordWrap(True)
         self.allowed.setFont(font(SIZES.font_small))
+        self.allowed.setProperty("role", "muted")
         self.pill = StatusPill()
         for column, widget in enumerate((self.name, self.measured, self.allowed, self.pill)):
             grid.addWidget(widget, row, column)

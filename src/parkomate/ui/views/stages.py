@@ -31,8 +31,10 @@ from parkomate.ui.components.widgets import (
     BigButton,
     CheckRow,
     CounterBadge,
+    LabelCaps,
     StatusPill,
     TrLabel,
+    ValueRow,
     scroll_card,
     set_prop,
     tint_panel,
@@ -168,14 +170,21 @@ class ProgrammingView(StageView):
     def __init__(self, controller: StationController) -> None:
         super().__init__(controller, controller.programming)
         left = self.left_layout
+
+        # Step 1: Connect
         self.step_connect = StepRow("1", "prog.step.connect")
         self.port_combo = QComboBox()
         self.port_combo.setMinimumWidth(320)
         self.port_combo.activated.connect(self._port_chosen)
+        # Elided text with tooltip
+        self.port_combo.setEditable(False)
+        self.port_combo.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
         self.chip = QLabel()
         self.chip.setProperty("role", "muted")
         self.step_connect.body.addWidget(self.port_combo)
         self.step_connect.body.addWidget(self.chip)
+
+        # Step 2: Whitelist
         self.step_whitelist = StepRow("2", "prog.step.authorised")
         self.mac = QLabel()
         self.mac.setFont(font(SIZES.font_h2, bold=True))
@@ -183,29 +192,38 @@ class ProgrammingView(StageView):
         self.whitelist_text.setWordWrap(True)
         self.step_whitelist.body.addWidget(self.mac)
         self.step_whitelist.body.addWidget(self.whitelist_text)
+
+        # Step 3: Firmware
         self.step_firmware = StepRow("3", "prog.step.firmware")
         self.firmware_text = QLabel()
         self.firmware_text.setWordWrap(True)
         self.step_firmware.body.addWidget(self.firmware_text)
+
+        # Step 4: Upload
         self.step_upload = StepRow("4", "prog.step.upload")
         self.progress = QProgressBar()
         self.progress.setRange(0, 100)
         self.progress.setFormat("%p %")
+        self.progress.setMinimumHeight(16)
         self.upload_info = QLabel()
         self.step_upload.body.addWidget(self.progress)
         self.step_upload.body.addWidget(self.upload_info)
+
         for step in (self.step_connect, self.step_whitelist, self.step_firmware, self.step_upload):
             left.addWidget(step)
         left.addStretch(1)
 
         right = self.right_layout
-        right.addWidget(TrLabel("prog.result_title", role="h2"))
+        # RESULT - tracked label for English
+        self.result_label = LabelCaps("prog.result_title", role="h2")
+        right.addWidget(self.result_label)
         self.result_pill = StatusPill(size="large")
         right.addWidget(self.result_pill, 0, Qt.AlignmentFlag.AlignLeft)
         self.result_text = QLabel()
         self.result_text.setWordWrap(True)
         self.result_text.setFont(font(SIZES.font_h2))
         right.addWidget(self.result_text)
+        # Adjust prompt - inline tint panel
         self.adjust = QFrame()
         self.adjust.setProperty("tone", "info")
         adjust_layout = QVBoxLayout(self.adjust)
@@ -213,8 +231,8 @@ class ProgrammingView(StageView):
         adjust_layout.addWidget(TrLabel("prog.adjust.question", role="h2"))
         adjust_layout.addWidget(TrLabel("prog.adjust.help", role="muted"))
         buttons = QHBoxLayout()
-        self.adjust_yes = BigButton("action.adjust_yes", variant="primary")
-        self.adjust_no = BigButton("action.adjust_no")
+        self.adjust_yes = BigButton("action.adjust_yes", variant="primary", hint_key="key.enter")
+        self.adjust_no = BigButton("action.adjust_no", variant="secondary", hint_key="key.esc")
         self.adjust_yes.clicked.connect(lambda: self.vm.answer_adjust(True))
         self.adjust_no.clicked.connect(lambda: self.vm.answer_adjust(False))
         buttons.addWidget(self.adjust_yes)
@@ -225,7 +243,9 @@ class ProgrammingView(StageView):
         right.addStretch(1)
         # Upload counters in a nested tint panel
         counters, counters_layout = tint_panel()
-        counters_layout.addWidget(TrLabel("prog.counters_title"))
+        # COUNTERS - tracked label for English
+        counters_label = LabelCaps("prog.counters_title")
+        counters_layout.addWidget(counters_label)
         self.c_ok = CounterBadge("counter.uploads_ok", "check")
         self.c_fail = CounterBadge("counter.uploads_fail", "cross")
         self.c_adjusted = CounterBadge("counter.failures_adjusted", "info")
@@ -237,7 +257,7 @@ class ProgrammingView(StageView):
         counter_grid.addWidget(self.c_fail, 0, 1)
         counter_grid.addWidget(self.c_adjusted, 1, 0)
         counters_layout.addLayout(counter_grid)
-        self.reset_counters = BigButton("action.reset_counters", variant="danger_outline")
+        self.reset_counters = BigButton("action.reset_counters", variant="danger_outline", hint_key="key.esc")
         self.reset_counters.clicked.connect(controller.reset_counters)
         counters_layout.addWidget(self.reset_counters, 0, Qt.AlignmentFlag.AlignRight)
         right.addWidget(counters)
@@ -428,39 +448,38 @@ class TestingView(StageView):
 
         right = self.right_layout
 
-        # B3 Electrical step with card-level status pill (uses StepRow's built-in pill)
+        # B3 Electrical step with card-level status pill
         self.step_elec = StepRow("B3", "test.step.electrical")
         right.addWidget(self.step_elec)
 
         # Nested tint panel for electrical readings with huge numbers
         self.elec_panel, self.elec_panel_layout = tint_panel()
 
-        # Headers
-        header_grid = QGridLayout()
-        header_grid.setHorizontalSpacing(SIZES.space_m)
-        header_grid.setVerticalSpacing(SIZES.space_s)
-        for col, key in enumerate(("test.col.check", "test.col.allowed")):
+        # Value rows grid with headers
+        self.elec_grid = QGridLayout()
+        self.elec_grid.setContentsMargins(SIZES.space_m, SIZES.space_m, 0, 0)
+        self.elec_grid.setHorizontalSpacing(SIZES.space_l)
+        self.elec_grid.setVerticalSpacing(SIZES.space_s)
+
+        # Headers: Check | Measured | Allowed range | Result
+        headers = [
+            ("test.col.check", 0),
+            ("test.col.measured", 1),
+            ("test.col.allowed", 2),
+            ("test.col.result", 3),
+        ]
+        for key, col in headers:
             header = TrLabel(key, role="small")
             header.setFont(font(SIZES.font_small, bold=True))
-            header_grid.addWidget(header, 0, col)
-        self.elec_panel_layout.addLayout(header_grid)
+            self.elec_grid.addWidget(header, 0, col)
 
-        # Value rows with huge black numbers
-        self.elec_values: dict[CheckCode, tuple[QLabel, QLabel, QLabel]] = {}
+        # Value rows
+        self.elec_values: dict[CheckCode, ValueRow] = {}
         for row, code in enumerate(self.ROWS, start=1):
-            name = TrLabel(code.label_key)
-            name.setFont(font(SIZES.font_base))
-            allowed = QLabel()
-            allowed.setFont(font(SIZES.font_small))
-            allowed.setWordWrap(True)
-            value = QLabel("-")
-            value.setFont(font(SIZES.font_hero, bold=True))
-            value.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-            header_grid.addWidget(name, row, 0)
-            header_grid.addWidget(allowed, row, 1)
-            header_grid.addWidget(value, row, 2)
-            self.elec_values[code] = (name, allowed, value)
+            value_row = ValueRow(self.elec_grid, row, code.label_key)
+            self.elec_values[code] = value_row
 
+        self.elec_panel_layout.addLayout(self.elec_grid)
         self.elec_panel_layout.addStretch(1)
         right.addWidget(self.elec_panel)
 
@@ -470,7 +489,7 @@ class TestingView(StageView):
         self.ambient = QLabel()
         self.ambient.setFont(font(SIZES.font_h2, bold=True))
         ambient.addWidget(self.ambient, 1)
-        self.remeasure = BigButton("action.remeasure_ambient", hint_key="key.f9")
+        self.remeasure = BigButton("action.remeasure_ambient", variant="pass", hint_key="key.f9")
         self.remeasure.clicked.connect(controller.remeasure_ambient)
         ambient.addWidget(self.remeasure)
         right.addLayout(ambient)
@@ -536,18 +555,16 @@ class TestingView(StageView):
 
         # B3 Electrical - update nested panel with huge numbers
         results: dict[CheckCode, CheckOutcome] = {o.check_code: o for o in vm.results}
-        for code, (_name, allowed, value) in self.elec_values.items():
+        for code, value_row in self.elec_values.items():
             outcome = results.get(code)
-            allowed.setText(self._allowed_text(code))
+            value_row.allowed.setText(self._allowed_text(code))
             if outcome is None or outcome.value_num is None:
-                value.setText("-")
+                value_row.set_value("-", self._allowed_text(code), "pending")
             else:
                 unit = "°C" if code is CheckCode.B3_T_REG else "V"
-                value.setText(f"{outcome.value_num:g} {unit}")
-                if outcome.passed:
-                    pass
-                else:
-                    pass
+                measured = f"{outcome.value_num:g} {unit}"
+                state = "pass" if outcome.passed else "fail"
+                value_row.set_value(measured, self._allowed_text(code), state)
 
         # Update step_elec pill based on overall electrical state
         elec_state = vm.measure_state
